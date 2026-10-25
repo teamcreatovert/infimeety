@@ -7,7 +7,7 @@ export interface Toast {
   body?: string;
 }
 
-export type SettingsTab = 'account' | 'voice' | 'screen' | 'appearance' | 'sounds' | 'updates';
+export type SettingsTab = 'account' | 'voice' | 'screen' | 'appearance' | 'sounds' | 'desktop' | 'updates';
 
 export interface Bubble {
   x: number;

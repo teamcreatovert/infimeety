@@ -7,7 +7,12 @@ GOOGLE_CLIENT_SECRET=
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 
-# Optional: Cloudflare Realtime TURN key, for friends behind strict NATs.
+# Optional: TURN relay for friends behind strict NATs. Any server with a fixed login
+# (e.g. ExpressTURN's free plan: TURN_SERVER=free.expressturn.com:3478)...
+TURN_SERVER=
+TURN_USERNAME=
+TURN_PASSWORD=
+# ...or a Cloudflare Realtime TURN key.
 TURN_KEY_ID=
 TURN_KEY_API_TOKEN=
 

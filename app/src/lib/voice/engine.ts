@@ -13,7 +13,7 @@ import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
 const DEFAULT_ICE: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
 let ice: { servers: RTCIceServer[]; at: number } | null = null;
 
-/** Cached ICE servers (STUN, plus Cloudflare TURN when the backend has it configured). */
+/** Cached ICE servers (STUN, plus the TURN relay when the backend has one configured). */
 export function iceNow() {
   if (!ice || Date.now() - ice.at > 6 * 3600_000) void refreshIce();
   return ice?.servers ?? DEFAULT_ICE;

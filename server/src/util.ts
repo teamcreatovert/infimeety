@@ -12,6 +12,9 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   DISCORD_CLIENT_ID?: string;
   DISCORD_CLIENT_SECRET?: string;
+  TURN_SERVER?: string;
+  TURN_USERNAME?: string;
+  TURN_PASSWORD?: string;
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
   DEV_LOGIN?: string;

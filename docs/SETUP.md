@@ -110,15 +110,25 @@ the same account.
 
 ## 6. (Optional) TURN relay for strict networks
 
-Most friends connect directly. For the few behind strict corporate/mobile NATs, add Cloudflare's
-TURN relay (1,000 GB/month free): Cloudflare dashboard → **Realtime → TURN Server → Create**,
-then:
+Most friends connect directly. For the few behind strict corporate/mobile NATs, calls go
+through a TURN relay. Any TURN server with a fixed login works; the default is
+[ExpressTURN](https://www.expressturn.com/)'s free plan (1,000 GB/month, email sign-up, no card).
+Sign up, open the dashboard, then paste its **TURN Server**, **Username** and **Password**:
 
 ```bash
 cd server/pages
-npx wrangler pages secret put TURN_KEY_ID --project-name infimeety
-npx wrangler pages secret put TURN_KEY_API_TOKEN --project-name infimeety
+npx wrangler pages secret put TURN_SERVER --project-name infimeety
+npx wrangler pages secret put TURN_USERNAME --project-name infimeety
+npx wrangler pages secret put TURN_PASSWORD --project-name infimeety
+npm --prefix .. run pages:deploy
 ```
+
+Pages secrets only apply from the next deploy, hence the last line. Check it at
+`https://infimeety.pages.dev/api/ice/status`: `"turn":"ok"` means the relay accepted the login.
+If you press **Refresh Credentials** in ExpressTURN, put the new username and password again.
+
+Cloudflare Realtime TURN also works (it needs a card on file): set `TURN_KEY_ID` and
+`TURN_KEY_API_TOKEN` instead.
 
 ---
 

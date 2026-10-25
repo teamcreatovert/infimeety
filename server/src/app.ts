@@ -13,6 +13,7 @@ import {
   upsertUser,
   userFromToken,
 } from './auth';
+import { iceServers, turnStatus } from './turn';
 import {
   type Env,
   type UserRow,
@@ -348,19 +349,11 @@ app.get('/avatars/:key', async (c) => {
   });
 });
 
-/** ICE servers for WebRTC. Uses Cloudflare TURN when configured, otherwise public STUN. */
-app.get('/ice', auth, async (c) => {
-  const stun = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
-  if (!c.env.TURN_KEY_ID || !c.env.TURN_KEY_API_TOKEN) return c.json({ iceServers: stun });
-  const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${c.env.TURN_KEY_ID}/credentials/generate`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${c.env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ttl: 86400 }),
-  });
-  if (!res.ok) return c.json({ iceServers: stun });
-  const { iceServers } = await res.json<{ iceServers: unknown }>();
-  return c.json({ iceServers: Array.isArray(iceServers) ? iceServers : [iceServers] });
-});
+/** ICE servers for WebRTC: public STUN, plus the TURN relay when one is configured. */
+app.get('/ice', auth, async (c) => c.json({ iceServers: await iceServers(c.env) }));
+
+/** Public health check: is the TURN relay configured and accepting our login? */
+app.get('/ice/status', async (c) => c.json(await turnStatus(c.env)));
 
 // ─── Channels & rooms ──────────────────────────────────────────────────────────
 

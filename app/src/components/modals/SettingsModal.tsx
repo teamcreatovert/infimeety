@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
+import { AppWindow, AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
@@ -24,6 +24,7 @@ const TABS: { id: SettingsTab; label: string; icon: ReactNode; tint: string }[] 
   { id: 'screen', label: 'Screen Share', icon: <MonitorUp size={15} />, tint: '#bf5af2' },
   { id: 'appearance', label: 'Appearance', icon: <Palette size={15} />, tint: '#ff9f0a' },
   { id: 'sounds', label: 'Sounds', icon: <Bell size={15} />, tint: '#ff375f' },
+  { id: 'desktop', label: 'Overlay & Tray', icon: <AppWindow size={15} />, tint: '#5e5ce6' },
   { id: 'updates', label: 'Updates', icon: <Download size={15} />, tint: '#8e8e93' },
 ];
 
@@ -61,6 +62,7 @@ export function SettingsModal() {
             {tab === 'screen' && <ScreenTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'sounds' && <SoundsTab />}
+            {tab === 'desktop' && <DesktopTab />}
             {tab === 'updates' && <UpdatesTab />}
           </motion.div>
         </div>
@@ -415,6 +417,48 @@ function SoundsTab() {
         <Switch checked={s.messageSounds} onChange={(v) => s.set({ messageSounds: v })} />
       </Row>
     </Group>
+  );
+}
+
+function DesktopTab() {
+  const s = useSettings();
+  return (
+    <>
+      <Group title="Voice overlay" footer="While you're in a call and using another app or game, a light overlay shows who's talking. Clicks pass straight through it.">
+        <Row label="Show voice overlay">
+          <Switch checked={s.overlay} onChange={(v) => s.set({ overlay: v })} />
+        </Row>
+        <Row label="Show">
+          <Segmented
+            id="overlay-show"
+            className="w-[240px]"
+            value={s.overlayShow}
+            onChange={(v) => s.set({ overlayShow: v })}
+            options={[
+              { value: 'speaking', label: "Who's talking" },
+              { value: 'everyone', label: 'Everyone' },
+            ]}
+          />
+        </Row>
+        <Row label="Position">
+          <Select
+            value={s.overlayCorner}
+            onChange={(v) => s.set({ overlayCorner: v })}
+            options={[
+              { value: 'top-left', label: 'Top left' },
+              { value: 'top-right', label: 'Top right' },
+              { value: 'bottom-left', label: 'Bottom left' },
+              { value: 'bottom-right', label: 'Bottom right' },
+            ]}
+          />
+        </Row>
+      </Group>
+      <Group title="Window" footer="To quit completely, right-click the Infimeety icon in the system tray (next to the clock) and choose Quit.">
+        <Row label="Keep running when closed" detail="The close button hides Infimeety to the tray, so calls and messages keep coming in">
+          <Switch checked={s.closeToTray} onChange={(v) => s.set({ closeToTray: v })} />
+        </Row>
+      </Group>
+    </>
   );
 }
 

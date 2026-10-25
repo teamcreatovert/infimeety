@@ -24,5 +24,11 @@ export default defineConfig({
     target: 'chrome110',
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        overlay: fileURLToPath(new URL('./overlay.html', import.meta.url)),
+      },
+    },
   },
 });

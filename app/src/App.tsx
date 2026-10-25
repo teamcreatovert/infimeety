@@ -16,6 +16,7 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { ParticipantMenu } from './components/voice/ParticipantMenu';
 import { IncomingCall } from './components/home/IncomingCall';
 import { startDeepLinks } from './lib/deeplink';
+import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
 import { startRevocationWatcher } from './lib/transfer';
@@ -61,6 +62,7 @@ export default function App() {
     void useAuth.getState().init();
     startUpdateChecks();
     void startDeepLinks();
+    startDesktop();
 
     // Feels like a native app: no browser context menu outside text.
     const onContext = (e: MouseEvent) => {

@@ -29,6 +29,8 @@ export const SCREEN_PRESETS = {
 } as const;
 export type ScreenQuality = keyof typeof SCREEN_PRESETS;
 
+export type OverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export interface SettingsState {
   theme: 'system' | 'dark' | 'light';
   accent: Accent;
@@ -57,6 +59,12 @@ export interface SettingsState {
   streamVolumes: Record<string, number>;
 
   autoUpdate: boolean;
+
+  /** Desktop: the close button hides to the tray; a who's-talking overlay while in a call. */
+  closeToTray: boolean;
+  overlay: boolean;
+  overlayShow: 'speaking' | 'everyone';
+  overlayCorner: OverlayCorner;
 
   set: (patch: Partial<SettingsState>) => void;
   setUserVolume: (userId: string, volume: number) => void;
@@ -93,6 +101,11 @@ export const useSettings = create<SettingsState>()(
       streamVolumes: {},
 
       autoUpdate: true,
+
+      closeToTray: true,
+      overlay: true,
+      overlayShow: 'speaking',
+      overlayCorner: 'top-left',
 
       set: (patch) => set(patch),
       setUserVolume: (userId, volume) => set((s) => ({ userVolumes: { ...s.userVolumes, [userId]: volume } })),

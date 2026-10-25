@@ -1,3 +1,4 @@
+mod desktop;
 mod media;
 mod system_audio;
 
@@ -6,14 +7,8 @@ use tauri::{DragDropEvent, Manager, WebviewEvent, WindowEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // A second launch focuses the running window instead of opening another copy.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
+        // A second launch brings back the running window (even from the tray) instead of opening another copy.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
         // infimeety://invite/CODE links; a second launch hands its link to the running app.
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
@@ -24,6 +19,8 @@ pub fn run() {
             let registry = media::Registry::load(app.handle())?;
             app.manage(registry);
             app.manage(system_audio::SystemAudio::default());
+            app.manage(desktop::CloseToTray::default());
+            desktop::setup_tray(app)?;
             // The installer registers infimeety:// too; this keeps it pointing at the running build.
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -37,6 +34,7 @@ pub fn run() {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 window.state::<media::Registry>().set_dropped(paths.clone());
             }
+            desktop::on_window_event(window, event);
         })
         .on_webview_event(|webview, event| {
             if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
@@ -53,6 +51,9 @@ pub fn run() {
             media::media_forget,
             system_audio::system_audio_start,
             system_audio::system_audio_stop,
+            desktop::set_close_to_tray,
+            desktop::overlay_open,
+            desktop::overlay_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Infimeety");

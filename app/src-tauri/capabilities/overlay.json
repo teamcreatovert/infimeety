@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "The who's-talking overlay only listens for state from the main window",
+  "windows": ["overlay"],
+  "permissions": ["core:event:default"]
+}
