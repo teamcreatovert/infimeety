@@ -1,0 +1,48 @@
+name: Release
+
+# Push a tag like v0.2.0 to build a signed Windows installer and publish the
+# GitHub release + latest.json that installed apps auto-update from.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'app/src-tauri -> target'
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: Infimeety ${{ github.ref_name }}
+          releaseBody: A fresh update for Infimeety. Open the app and click "Update & restart".
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

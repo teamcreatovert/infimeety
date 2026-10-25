@@ -1,0 +1,164 @@
+import { create } from 'zustand';
+import type { Channel, Member, PublicUser, Room, VoiceSnapshot } from '../../../shared/protocol';
+import { api } from '@/lib/api';
+import type { HubStatus } from '@/lib/hub';
+
+const SELECTION_KEY = 'infimeety.selection';
+const saved = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(SELECTION_KEY) ?? '{}') as { channel?: string; rooms?: Record<string, string> };
+  } catch {
+    return {};
+  }
+})();
+
+interface ChannelsState {
+  channels: Channel[];
+  loaded: boolean;
+  activeChannelId: string | null;
+  activeRoom: Record<string, string>;
+  members: Record<string, Member[]>;
+  /** Every user we've seen, for resolving names/avatars in messages. */
+  users: Record<string, PublicUser>;
+  online: Record<string, string[]>;
+  voice: Record<string, VoiceSnapshot>;
+  hubStatus: Record<string, HubStatus>;
+  /** roomId → userId → expiry timestamp */
+  typing: Record<string, Record<string, number>>;
+
+  load: () => Promise<void>;
+  refresh: (channelId: string) => Promise<void>;
+  select: (channelId: string | null) => void;
+  selectRoom: (channelId: string, roomId: string) => void;
+  create: (input: { name: string; emoji: string; color: string }) => Promise<Channel>;
+  join: (code: string) => Promise<Channel>;
+  update: (channelId: string, patch: Partial<Pick<Channel, 'name' | 'emoji' | 'color'>>) => Promise<void>;
+  removeLocal: (channelId: string) => void;
+  loadMembers: (channelId: string) => Promise<void>;
+  addRoom: (channelId: string, kind: Room['kind'], name: string) => Promise<Room>;
+  upsertUser: (user: PublicUser) => void;
+  setTyping: (roomId: string, userId: string) => void;
+  set: (patch: Partial<ChannelsState>) => void;
+}
+
+function persistSelection(s: Pick<ChannelsState, 'activeChannelId' | 'activeRoom'>) {
+  localStorage.setItem(SELECTION_KEY, JSON.stringify({ channel: s.activeChannelId, rooms: s.activeRoom }));
+}
+
+export const useChannels = create<ChannelsState>()((set, get) => ({
+  channels: [],
+  loaded: false,
+  activeChannelId: saved.channel ?? null,
+  activeRoom: saved.rooms ?? {},
+  members: {},
+  users: {},
+  online: {},
+  voice: {},
+  hubStatus: {},
+  typing: {},
+
+  async load() {
+    const channels = await api<Channel[]>('/channels');
+    const active = channels.find((c) => c.id === get().activeChannelId)?.id ?? channels[0]?.id ?? null;
+    set({ channels, loaded: true, activeChannelId: active });
+    await Promise.all(channels.map((c) => get().loadMembers(c.id)));
+  },
+
+  async refresh(channelId) {
+    const channels = await api<Channel[]>('/channels');
+    const stillMember = channels.some((c) => c.id === channelId);
+    set({ channels });
+    if (!stillMember) return get().removeLocal(channelId);
+    await get().loadMembers(channelId);
+  },
+
+  select(channelId) {
+    set({ activeChannelId: channelId });
+    persistSelection(get());
+  },
+
+  selectRoom(channelId, roomId) {
+    set((s) => ({ activeChannelId: channelId, activeRoom: { ...s.activeRoom, [channelId]: roomId } }));
+    persistSelection(get());
+  },
+
+  async create(input) {
+    const channel = await api<Channel>('/channels', { method: 'POST', json: input });
+    set((s) => ({ channels: [...s.channels, channel], activeChannelId: channel.id }));
+    persistSelection(get());
+    await get().loadMembers(channel.id);
+    return channel;
+  },
+
+  async join(code) {
+    const channel = await api<Channel>('/channels/join', { method: 'POST', json: { code } });
+    set((s) => ({
+      channels: s.channels.some((c) => c.id === channel.id) ? s.channels : [...s.channels, channel],
+      activeChannelId: channel.id,
+    }));
+    persistSelection(get());
+    await get().loadMembers(channel.id);
+    return channel;
+  },
+
+  async update(channelId, patch) {
+    const channel = await api<Channel>(`/channels/${channelId}`, { method: 'PATCH', json: patch });
+    set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
+  },
+
+  removeLocal(channelId) {
+    set((s) => {
+      const channels = s.channels.filter((c) => c.id !== channelId);
+      return {
+        channels,
+        activeChannelId: s.activeChannelId === channelId ? (channels[0]?.id ?? null) : s.activeChannelId,
+      };
+    });
+    persistSelection(get());
+  },
+
+  async loadMembers(channelId) {
+    const members = await api<Member[]>(`/channels/${channelId}/members`);
+    set((s) => {
+      const users = { ...s.users };
+      for (const m of members) users[m.id] = { id: m.id, name: m.name, username: m.username, avatarUrl: m.avatarUrl };
+      return { members: { ...s.members, [channelId]: members }, users };
+    });
+  },
+
+  async addRoom(channelId, kind, name) {
+    const room = await api<Room>(`/channels/${channelId}/rooms`, { method: 'POST', json: { kind, name } });
+    set((s) => ({
+      channels: s.channels.map((c) => (c.id === channelId && !c.rooms.some((r) => r.id === room.id) ? { ...c, rooms: [...c.rooms, room] } : c)),
+    }));
+    return room;
+  },
+
+  upsertUser(user) {
+    set((s) => ({
+      users: { ...s.users, [user.id]: user },
+      members: Object.fromEntries(
+        Object.entries(s.members).map(([cid, list]) => [cid, list.map((m) => (m.id === user.id ? { ...m, ...user } : m))]),
+      ),
+    }));
+  },
+
+  setTyping(roomId, userId) {
+    set((s) => ({ typing: { ...s.typing, [roomId]: { ...s.typing[roomId], [userId]: Date.now() + 4000 } } }));
+  },
+
+  set: (patch) => set(patch),
+}));
+
+export function useActiveChannel() {
+  return useChannels((s) => s.channels.find((c) => c.id === s.activeChannelId) ?? null);
+}
+
+export function useActiveRoom() {
+  return useChannels((s) => {
+    const channel = s.channels.find((c) => c.id === s.activeChannelId);
+    if (!channel) return null;
+    const chosen = s.activeRoom[channel.id];
+    return channel.rooms.find((r) => r.id === chosen) ?? channel.rooms.find((r) => r.kind === 'text') ?? channel.rooms[0] ?? null;
+  });
+}

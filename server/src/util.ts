@@ -1,0 +1,140 @@
+import type { Attachment, Channel, Me, Member, Message, Provider, PublicUser, Role, Room } from '../../shared/protocol';
+import type { ChannelHub } from './hub';
+
+export interface Env {
+  DB: D1Database;
+  AVATARS: KVNamespace;
+  HUB: DurableObjectNamespace<ChannelHub>;
+  PUBLIC_URL: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  DISCORD_CLIENT_ID?: string;
+  DISCORD_CLIENT_SECRET?: string;
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
+  DEV_LOGIN?: string;
+}
+
+export interface UserRow {
+  id: string;
+  email: string | null;
+  name: string;
+  username: string | null;
+  avatar_url: string | null;
+  avatar_key: string | null;
+  provider_avatar_url: string | null;
+  onboarded: number;
+  created_at: number;
+}
+
+export function b64url(input: ArrayBuffer | Uint8Array): string {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function randomToken(bytes = 32): string {
+  return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+export async function sha256(input: string): Promise<string> {
+  return b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input)));
+}
+
+/** Time-sortable id: 9 chars of base36 milliseconds + 8 random base36 chars. */
+export function newId(): string {
+  const time = Date.now().toString(36).padStart(9, '0');
+  const rand = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => (b % 36).toString(36)).join('');
+  return time + rand;
+}
+
+export function inviteCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => alphabet[b % alphabet.length]).join('');
+}
+
+export const toPublicUser = (r: Pick<UserRow, 'id' | 'name' | 'username' | 'avatar_url'>): PublicUser => ({
+  id: r.id,
+  name: r.name,
+  username: r.username,
+  avatarUrl: r.avatar_url,
+});
+
+export const toMe = (r: UserRow, providers: Provider[]): Me => ({
+  ...toPublicUser(r),
+  email: r.email,
+  providerAvatarUrl: r.provider_avatar_url,
+  hasCustomAvatar: !!r.avatar_key,
+  onboarded: !!r.onboarded,
+  providers,
+});
+
+export const toRoom = (r: any): Room => ({
+  id: r.id,
+  channelId: r.channel_id,
+  kind: r.kind,
+  name: r.name,
+  position: r.position,
+});
+
+export const toChannel = (r: any, rooms: Room[]): Channel => ({
+  id: r.id,
+  name: r.name,
+  emoji: r.emoji,
+  color: r.color,
+  ownerId: r.owner_id,
+  inviteCode: r.role === 'member' ? null : r.invite_code,
+  role: r.role,
+  rooms,
+});
+
+export const toMember = (r: any): Member => ({ ...toPublicUser(r), role: r.role, joinedAt: r.joined_at });
+
+export const toMessage = (r: any): Message => ({
+  id: r.id,
+  roomId: r.room_id,
+  userId: r.user_id,
+  content: r.content,
+  attachments: r.attachments ? JSON.parse(r.attachments) : [],
+  replyTo: r.reply_to,
+  reactions: r.reactions ? JSON.parse(r.reactions) : {},
+  createdAt: r.created_at,
+  editedAt: r.edited_at,
+});
+
+export const isAdmin = (role: Role | null | undefined) => role === 'owner' || role === 'admin';
+
+/** Attachments are metadata the sender vouches for; keep them small and well-formed. */
+export function sanitizeAttachments(input: unknown, ownerId: string): Attachment[] {
+  if (!Array.isArray(input)) return [];
+  const out: Attachment[] = [];
+  for (const a of input.slice(0, 10)) {
+    if (!a || typeof a !== 'object') continue;
+    const { id, name, mime, size, width, height } = a as Record<string, unknown>;
+    if (typeof id !== 'string' || id.length > 64 || !/^[\w-]+$/.test(id)) continue;
+    if (typeof mime !== 'string' || !/^(image|video|audio)\/[\w.+-]{1,40}$/.test(mime)) continue;
+    if (typeof size !== 'number' || size < 0 || size > 4 * 1024 ** 3) continue;
+    out.push({
+      id,
+      ownerId,
+      name: String(name ?? 'file').slice(0, 200),
+      mime,
+      size: Math.floor(size),
+      width: typeof width === 'number' ? Math.floor(width) : undefined,
+      height: typeof height === 'number' ? Math.floor(height) : undefined,
+    });
+  }
+  return out;
+}
+
+export async function memberRole(env: Env, channelId: string, userId: string): Promise<Role | null> {
+  const row = await env.DB.prepare('SELECT role FROM channel_members WHERE channel_id = ? AND user_id = ?')
+    .bind(channelId, userId)
+    .first<{ role: Role }>();
+  return row?.role ?? null;
+}
+
+export function hub(env: Env, channelId: string) {
+  return env.HUB.get(env.HUB.idFromName(channelId));
+}

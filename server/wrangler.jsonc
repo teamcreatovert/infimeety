@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "infimeety-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "observability": { "enabled": true },
+
+  // PUBLIC_URL must be this Worker's public URL in production (used for OAuth redirects and avatar links).
+  "vars": {
+    "PUBLIC_URL": "http://localhost:8787"
+  },
+
+  // `wrangler d1 create infimeety` prints the real database_id — paste it here before deploying.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "infimeety",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // `wrangler kv namespace create AVATARS` prints the real id — paste it here before deploying.
+  "kv_namespaces": [{ "binding": "AVATARS", "id": "00000000000000000000000000000000" }],
+
+  "durable_objects": {
+    "bindings": [{ "name": "HUB", "class_name": "ChannelHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChannelHub"] }]
+}

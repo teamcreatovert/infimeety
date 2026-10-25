@@ -1,0 +1,389 @@
+import clsx from 'clsx';
+import { motion } from 'motion/react';
+import { AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { Me } from '../../../../shared/protocol';
+import { AvatarEditor } from '../auth/AvatarEditor';
+import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
+import { Modal } from '../ui/overlay';
+import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
+import { APP_VERSION } from '@/config';
+import { api } from '@/lib/api';
+import { spring } from '@/lib/motion';
+import { sounds } from '@/lib/sounds';
+import { useUpdater } from '@/lib/updater';
+import { listDevices, voice } from '@/lib/voice/engine';
+import { useAuth } from '@/stores/auth';
+import { ACCENTS, SCREEN_PRESETS, WALLPAPERS, useSettings, type Accent, type ScreenQuality, type Wallpaper } from '@/stores/settings';
+import { toast, useUI, type SettingsTab } from '@/stores/ui';
+
+const TABS: { id: SettingsTab; label: string; icon: ReactNode; tint: string }[] = [
+  { id: 'account', label: 'Account', icon: <UserRound size={15} />, tint: '#0a84ff' },
+  { id: 'voice', label: 'Voice & Video', icon: <Mic size={15} />, tint: '#30d158' },
+  { id: 'screen', label: 'Screen Share', icon: <MonitorUp size={15} />, tint: '#bf5af2' },
+  { id: 'appearance', label: 'Appearance', icon: <Palette size={15} />, tint: '#ff9f0a' },
+  { id: 'sounds', label: 'Sounds', icon: <Bell size={15} />, tint: '#ff375f' },
+  { id: 'updates', label: 'Updates', icon: <Download size={15} />, tint: '#8e8e93' },
+];
+
+export function SettingsModal() {
+  const tab = useUI((s) => s.settingsTab);
+  const close = () => useUI.getState().set({ settingsTab: null });
+  return (
+    <Modal open={!!tab} onClose={close} width={820}>
+      <div className="flex h-[580px]">
+        <nav className="hairline-r flex w-[214px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4">
+          <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em]">Settings</div>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => useUI.getState().set({ settingsTab: t.id })}
+              className={clsx('relative flex h-8 items-center gap-2.5 rounded-[8px] px-2 text-[13px] transition-colors', tab === t.id ? 'text-white' : 'hover:bg-fill-2')}
+            >
+              {tab === t.id && <motion.span layoutId="settings-tab" transition={spring} className="absolute inset-0 rounded-[8px] bg-accent" />}
+              <span className="relative grid h-[22px] w-[22px] place-items-center rounded-[6px] text-white" style={{ background: t.tint }}>
+                {t.icon}
+              </span>
+              <span className="relative">{t.label}</span>
+            </button>
+          ))}
+          <div className="mt-auto px-2.5 pb-1 text-[11px] text-fg-3">Infimeety {APP_VERSION}</div>
+        </nav>
+        <div className="relative min-w-0 flex-1">
+          <button aria-label="Close" onClick={close} className="absolute right-3.5 top-3.5 z-10 grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg">
+            <X size={14} />
+          </button>
+          <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={spring} className="scroll h-full px-7 pb-6 pt-5">
+            <h2 className="mb-5 font-display text-[20px] font-bold tracking-[-0.02em]">{TABS.find((t) => t.id === tab)?.label}</h2>
+            {tab === 'account' && <AccountTab />}
+            {tab === 'voice' && <VoiceTab />}
+            {tab === 'screen' && <ScreenTab />}
+            {tab === 'appearance' && <AppearanceTab />}
+            {tab === 'sounds' && <SoundsTab />}
+            {tab === 'updates' && <UpdatesTab />}
+          </motion.div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AccountTab() {
+  const me = useAuth((s) => s.me)!;
+  const setMe = useAuth((s) => s.setMe);
+  const [name, setName] = useState(me.name);
+  const [username, setUsername] = useState(me.username ?? '');
+  const availability = useUsernameCheck(username, me.username);
+  const dirty = name.trim() !== me.name || username !== me.username;
+
+  const save = async () => {
+    try {
+      setMe(await api<Me>('/me', { method: 'PATCH', json: { name: name.trim(), username } }));
+      toast({ kind: 'success', title: 'Profile updated' });
+    } catch {
+      toast({ kind: 'error', title: "Couldn't save your profile" });
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-6">
+        <AvatarEditor size={96} />
+      </div>
+      <Group title="Profile">
+        <Row label="Display name">
+          <TextField className="h-8! w-[240px]" inputClassName="text-[13px]!" value={name} onChange={(e) => setName(e.target.value)} maxLength={48} />
+        </Row>
+        <Row label="Username">
+          <TextField
+            className="h-8! w-[240px]"
+            inputClassName="text-[13px]!"
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+            leading={<AtSign size={13} />}
+            trailing={<UsernameStatus state={availability} />}
+          />
+        </Row>
+        <Row label="Email" detail={`From ${me.providers.filter((p) => p !== 'dev').map((p) => p[0].toUpperCase() + p.slice(1)).join(' & ') || 'test login'}`}>
+          <span className="text-[13px] text-fg-2">{me.email}</span>
+        </Row>
+      </Group>
+      <div className="flex justify-between">
+        <Button variant="ghost" className="text-danger!" icon={<LogOut size={14} />} onClick={() => (voice.leave({ silent: true }), useUI.getState().set({ settingsTab: null }), void useAuth.getState().signOut())}>
+          Sign out
+        </Button>
+        <Button variant="primary" disabled={!dirty || availability !== 'ok' || !name.trim()} onClick={() => void save()}>
+          Save changes
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function VoiceTab() {
+  const s = useSettings();
+  const [devices, setDevices] = useState<Awaited<ReturnType<typeof listDevices>> | null>(null);
+  const [level, setLevel] = useState(0);
+  const [preview, setPreview] = useState<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    void listDevices().then(setDevices);
+  }, []);
+
+  // Live mic meter while this tab is open.
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let raf = 0;
+    let ctx: AudioContext | null = null;
+    void navigator.mediaDevices
+      .getUserMedia({
+        audio: {
+          deviceId: s.inputDeviceId !== 'default' ? { exact: s.inputDeviceId } : undefined,
+          echoCancellation: s.echoCancellation,
+          noiseSuppression: s.noiseSuppression,
+          autoGainControl: s.autoGainControl,
+        },
+      })
+      .then((st) => {
+        stream = st;
+        ctx = new AudioContext();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        ctx.createMediaStreamSource(st).connect(analyser);
+        const data = new Float32Array(analyser.fftSize);
+        const loop = () => {
+          analyser.getFloatTimeDomainData(data);
+          let sum = 0;
+          for (const v of data) sum += v * v;
+          setLevel(Math.min(1, Math.sqrt(sum / data.length) * 6));
+          raf = requestAnimationFrame(loop);
+        };
+        loop();
+      })
+      .catch(() => {});
+    return () => {
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close();
+    };
+  }, [s.inputDeviceId, s.echoCancellation, s.noiseSuppression, s.autoGainControl]);
+
+  useEffect(() => () => preview?.getTracks().forEach((t) => t.stop()), [preview]);
+  useEffect(() => {
+    if (videoRef.current && preview) videoRef.current.srcObject = preview;
+  }, [preview]);
+
+  const togglePreview = async () => {
+    if (preview) return setPreview(null);
+    try {
+      setPreview(await navigator.mediaDevices.getUserMedia({ video: { deviceId: s.cameraDeviceId !== 'default' ? { ideal: s.cameraDeviceId } : undefined } }));
+    } catch {
+      toast({ kind: 'error', title: 'Camera unavailable' });
+    }
+  };
+
+  const opts = (list?: { id: string; label: string }[]) => [{ value: 'default', label: 'System default' }, ...(list ?? []).filter((d) => d.id !== 'default').map((d) => ({ value: d.id, label: d.label }))];
+
+  return (
+    <>
+      <Group title="Microphone">
+        <Row label="Input device">
+          <Select value={s.inputDeviceId} options={opts(devices?.inputs)} onChange={(v) => s.set({ inputDeviceId: v })} />
+        </Row>
+        <Row label="Input level" detail="Speak to test your mic">
+          <div className="flex h-2 w-[240px] gap-[3px]">
+            {Array.from({ length: 24 }, (_, i) => (
+              <span key={i} className="flex-1 rounded-full transition-colors duration-75" style={{ background: i / 24 < level ? (i > 19 ? 'var(--warning)' : 'var(--success)') : 'var(--fill-3)' }} />
+            ))}
+          </div>
+        </Row>
+        <Row label="Noise suppression" detail="Removes background noise like fans and keyboards">
+          <Switch checked={s.noiseSuppression} onChange={(v) => s.set({ noiseSuppression: v })} />
+        </Row>
+        <Row label="Echo cancellation">
+          <Switch checked={s.echoCancellation} onChange={(v) => s.set({ echoCancellation: v })} />
+        </Row>
+        <Row label="Automatic gain" detail="Keeps your voice at a steady volume">
+          <Switch checked={s.autoGainControl} onChange={(v) => s.set({ autoGainControl: v })} />
+        </Row>
+      </Group>
+      <Group title="Speakers">
+        <Row label="Output device">
+          <Select value={s.outputDeviceId} options={opts(devices?.outputs)} onChange={(v) => s.set({ outputDeviceId: v })} />
+        </Row>
+      </Group>
+      <Group title="Camera">
+        <Row label="Camera">
+          <Select value={s.cameraDeviceId} options={opts(devices?.cameras)} onChange={(v) => s.set({ cameraDeviceId: v })} />
+        </Row>
+        <div className="p-3.5">
+          <div className="relative grid aspect-video place-items-center overflow-hidden rounded-[12px] bg-black/40">
+            {preview ? <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} /> : <span className="text-[12px] text-fg-3">Camera preview is off</span>}
+            <Button size="sm" className="absolute bottom-2.5 right-2.5" onClick={() => void togglePreview()}>
+              {preview ? 'Stop preview' : 'Test camera'}
+            </Button>
+          </div>
+        </div>
+      </Group>
+    </>
+  );
+}
+
+function ScreenTab() {
+  const s = useSettings();
+  return (
+    <>
+      <Group title="Quality" footer="Higher quality needs more upload bandwidth. In big rooms the bitrate is shared between viewers automatically.">
+        <Row label="Resolution & frame rate">
+          <Select value={s.screenQuality} options={(Object.keys(SCREEN_PRESETS) as ScreenQuality[]).map((q) => ({ value: q, label: SCREEN_PRESETS[q].label }))} onChange={(v) => s.set({ screenQuality: v })} />
+        </Row>
+        <Row label="Optimize for" detail="Movies keeps motion smooth; Text keeps it sharp">
+          <Segmented
+            id="screen-mode-settings"
+            className="w-[240px]"
+            value={s.screenMode}
+            onChange={(v) => s.set({ screenMode: v })}
+            options={[
+              { value: 'motion', label: 'Movies' },
+              { value: 'detail', label: 'Text' },
+            ]}
+          />
+        </Row>
+        <Row label="Share sound" detail="Includes your computer's audio when sharing your entire screen">
+          <Switch checked={s.shareAudio} onChange={(v) => s.set({ shareAudio: v })} />
+        </Row>
+      </Group>
+      <Group title="Watching together">
+        <div className="space-y-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-fg-2">
+          <p>Share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Friends’ faces float as bubbles you can drag anywhere.</p>
+          <p className="text-fg-3">
+            Netflix, Disney+ and other DRM-protected sites can appear black when captured. In your browser, turn off <i>Use graphics acceleration</i> (Settings → System), restart it, and share again.
+          </p>
+        </div>
+      </Group>
+    </>
+  );
+}
+
+function Swatch({ active, onClick, style, label }: { active: boolean; onClick: () => void; style: React.CSSProperties; label: string }) {
+  return (
+    <button aria-label={label} title={label} onClick={onClick} className="relative h-6 w-6 rounded-full transition-transform hover:scale-110" style={style}>
+      {active && <motion.span layoutId={`swatch-${label.split(' ')[0]}`} className="absolute -inset-[3px] rounded-full" style={{ boxShadow: '0 0 0 2px var(--fg)' }} transition={spring} />}
+    </button>
+  );
+}
+
+function AppearanceTab() {
+  const s = useSettings();
+  return (
+    <>
+      <Group title="Theme">
+        <Row label="Appearance">
+          <Segmented
+            id="theme"
+            className="w-[260px]"
+            value={s.theme}
+            onChange={(v) => s.set({ theme: v })}
+            options={[
+              { value: 'system', label: 'Auto' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
+        </Row>
+        <Row label="Accent color">
+          <div className="flex gap-2.5">
+            {(Object.keys(ACCENTS) as Accent[]).map((a) => (
+              <Swatch key={a} label={`accent ${a}`} active={s.accent === a} onClick={() => s.set({ accent: a })} style={{ background: ACCENTS[a] }} />
+            ))}
+          </div>
+        </Row>
+      </Group>
+      <Group title="Wallpaper" footer="The colors behind the glass.">
+        <div className="grid grid-cols-5 gap-2.5 p-3.5">
+          {(Object.keys(WALLPAPERS) as Wallpaper[]).map((w) => {
+            const [a, b, c] = WALLPAPERS[w];
+            return (
+              <button key={w} onClick={() => s.set({ wallpaper: w })} className="group text-center">
+                <div
+                  className="aspect-[4/3] rounded-[10px] transition-transform group-hover:scale-[1.03]"
+                  style={{
+                    background: `radial-gradient(circle at 20% 20%, ${a}, transparent 60%), radial-gradient(circle at 85% 85%, ${b}, transparent 60%), radial-gradient(circle at 60% 40%, ${c}, transparent 55%), #0b0b10`,
+                    boxShadow: s.wallpaper === w ? '0 0 0 2px var(--bg), 0 0 0 4px var(--accent)' : 'inset 0 0 0 0.5px var(--hairline-strong)',
+                  }}
+                />
+                <div className="mt-1.5 text-[11.5px] capitalize text-fg-2">{w}</div>
+              </button>
+            );
+          })}
+        </div>
+        <Row label="Living wallpaper" detail="Colors drift slowly. Pauses during calls.">
+          <Switch checked={s.livingWallpaper} onChange={(v) => s.set({ livingWallpaper: v })} />
+        </Row>
+        <Row label="Reduce transparency" detail="Solid panels instead of glass">
+          <Switch checked={s.reduceTransparency} onChange={(v) => s.set({ reduceTransparency: v })} />
+        </Row>
+      </Group>
+    </>
+  );
+}
+
+function SoundsTab() {
+  const s = useSettings();
+  return (
+    <Group title="Sound effects" footer="Soft cues for joining, leaving, muting, messages and screen sharing.">
+      <Row label="Play sound effects">
+        <Switch checked={s.soundsEnabled} onChange={(v) => s.set({ soundsEnabled: v })} />
+      </Row>
+      <Row label="Volume">
+        <div className="flex w-[240px] items-center gap-3">
+          <Slider value={s.soundVolume} onChange={(v) => s.set({ soundVolume: v })} />
+          <Button size="sm" onClick={() => sounds.join()}>
+            Test
+          </Button>
+        </div>
+      </Row>
+      <Row label="New message sound" detail="When a message arrives in a room you're not looking at">
+        <Switch checked={s.messageSounds} onChange={(v) => s.set({ messageSounds: v })} />
+      </Row>
+    </Group>
+  );
+}
+
+function UpdatesTab() {
+  const { status, update, error } = useUpdater();
+  const autoUpdate = useSettings((s) => s.autoUpdate);
+  const label =
+    status === 'checking'
+      ? 'Checking…'
+      : status === 'available'
+        ? `Version ${update?.version} is available`
+        : status === 'uptodate'
+          ? 'Infimeety is up to date'
+          : status === 'unsupported'
+            ? 'Updates run in installed builds (not in dev mode)'
+            : status === 'error'
+              ? `Couldn't check for updates`
+              : `You're on version ${APP_VERSION}`;
+  return (
+    <>
+      <Group footer={status === 'error' ? error : 'Updates download in the background, install with one click and reopen the app — you stay signed in.'}>
+        <Row label={label} detail={`Current version ${APP_VERSION}`}>
+          {status === 'available' ? (
+            <Button variant="primary" size="sm" onClick={() => void useUpdater.getState().install()}>
+              Update & restart
+            </Button>
+          ) : (
+            <Button size="sm" loading={status === 'checking'} onClick={() => void useUpdater.getState().check(true)}>
+              Check now
+            </Button>
+          )}
+        </Row>
+        <Row label="Check automatically">
+          <Switch checked={autoUpdate} onChange={(v) => useSettings.getState().set({ autoUpdate: v })} />
+        </Row>
+      </Group>
+    </>
+  );
+}

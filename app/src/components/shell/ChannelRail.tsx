@@ -1,0 +1,100 @@
+import { motion } from 'motion/react';
+import { Plus, Settings } from 'lucide-react';
+import type { Channel } from '../../../../shared/protocol';
+import { Tooltip } from '../ui/overlay';
+import { channelGradient } from '@/lib/format';
+import { spring, snappy } from '@/lib/motion';
+import { useChannels } from '@/stores/channels';
+import { useMessages } from '@/stores/messages';
+import { useUI } from '@/stores/ui';
+import { useVoice } from '@/stores/voice';
+
+export function ChannelRail() {
+  const channels = useChannels((s) => s.channels);
+  const activeId = useChannels((s) => s.activeChannelId);
+  const select = useChannels((s) => s.select);
+  const openUI = useUI((s) => s.set);
+
+  return (
+    <nav className="glass-rail hairline-r relative z-10 flex w-[76px] shrink-0 flex-col items-center">
+      <div className="flex w-full flex-1 flex-col items-center gap-2.5 overflow-y-auto overflow-x-hidden pb-3 pt-[9px] [scrollbar-width:none]">
+        {channels.map((c) => (
+          <RailItem key={c.id} channel={c} active={c.id === activeId} onSelect={() => select(c.id)} />
+        ))}
+        {channels.length > 0 && <div className="my-0.5 h-px w-7 shrink-0 bg-[var(--hairline-strong)]" />}
+        <Tooltip label="Create or join a channel" side="right">
+          <motion.button
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.92 }}
+            transition={snappy}
+            onClick={() => openUI({ createChannel: 'create' })}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-fill-2 text-success shadow-[inset_0_0_0_0.5px_var(--hairline-strong)] transition-colors hover:bg-success hover:text-white"
+          >
+            <Plus size={20} strokeWidth={2.2} />
+          </motion.button>
+        </Tooltip>
+      </div>
+
+      <div className="flex shrink-0 flex-col items-center pb-3.5">
+        <Tooltip label="Settings" side="right">
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={() => openUI({ settingsTab: 'account' })}
+            className="grid h-9 w-9 place-items-center rounded-[11px] text-fg-2 transition-colors hover:bg-fill-2 hover:text-fg"
+          >
+            <Settings size={18} />
+          </motion.button>
+        </Tooltip>
+      </div>
+    </nav>
+  );
+}
+
+function RailItem({ channel, active, onSelect }: { channel: Channel; active: boolean; onSelect: () => void }) {
+  const unread = useMessages((s) => channel.rooms.reduce((n, r) => n + (s.unread[r.id] ?? 0), 0));
+  const inVoiceHere = useVoice((s) => s.channelId === channel.id);
+  const liveHere = useChannels((s) => (s.voice[channel.id]?.participants.length ?? 0) > 0);
+
+  return (
+    <div className="relative flex w-full shrink-0 justify-center">
+      {active && (
+        <motion.span layoutId="rail-pill" transition={spring} className="absolute left-0 top-1/2 h-8 w-[3.5px] -translate-y-1/2 rounded-r-full bg-fg" />
+      )}
+      {!active && unread > 0 && <span className="absolute left-0 top-1/2 h-2 w-[3.5px] -translate-y-1/2 rounded-r-full bg-fg" />}
+      <Tooltip label={channel.name} side="right">
+        <motion.button
+          onClick={onSelect}
+          whileHover={{ scale: 1.06, borderRadius: 16 }}
+          whileTap={{ scale: 0.93 }}
+          transition={snappy}
+          className="emoji relative grid h-11 w-11 place-items-center rounded-[14px] text-[21px]"
+          style={{
+            background: channelGradient(channel.color),
+            boxShadow: active
+              ? '0 0 0 2px var(--ring-bg), 0 0 0 3.5px var(--fg), 0 4px 14px rgba(0,0,0,0.3)'
+              : 'inset 0 0.5px 0 rgba(255,255,255,0.4), 0 2px 8px rgba(0,0,0,0.22)',
+          }}
+        >
+          {channel.emoji}
+          {unread > 0 && (
+            <span className="absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 font-sans text-[10.5px] font-bold text-white shadow-[0_0_0_2.5px_var(--ring-bg)]">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+          {(inVoiceHere || liveHere) && (
+            <span
+              className="absolute -bottom-1 -right-1 grid h-[18px] w-[18px] place-items-center rounded-full shadow-[0_0_0_2.5px_var(--ring-bg)]"
+              style={{ background: inVoiceHere ? 'var(--success)' : 'var(--fill-3)' }}
+            >
+              <span className="flex h-2 items-end gap-[1.5px]">
+                {[0.5, 1, 0.7].map((h, i) => (
+                  <span key={i} className="w-[2px] rounded-full bg-white" style={{ height: `${h * 100}%` }} />
+                ))}
+              </span>
+            </span>
+          )}
+        </motion.button>
+      </Tooltip>
+    </div>
+  );
+}

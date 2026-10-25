@@ -1,0 +1,15 @@
+# Copy to .dev.vars for local development (never commit .dev.vars).
+# In production set these with `npx wrangler secret put NAME`.
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+
+# Optional: Cloudflare Realtime TURN key, for friends behind strict NATs.
+TURN_KEY_ID=
+TURN_KEY_API_TOKEN=
+
+# Local testing only: shows a "Continue as test user" button. Never set this in production.
+DEV_LOGIN=true

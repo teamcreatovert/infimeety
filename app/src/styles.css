@@ -1,0 +1,340 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter/opsz.css';
+
+/* ─── Design tokens ─────────────────────────────────────────────────────────── */
+
+:root {
+  --accent: #0a84ff;
+  --accent-fg: #ffffff;
+  --bg: #08080c;
+  --fg: rgba(255, 255, 255, 0.94);
+  --fg-2: rgba(235, 235, 245, 0.64);
+  --fg-3: rgba(235, 235, 245, 0.38);
+  --fill-1: rgba(255, 255, 255, 0.045);
+  --fill-2: rgba(255, 255, 255, 0.075);
+  --fill-3: rgba(255, 255, 255, 0.11);
+  --glass-rail: rgba(14, 14, 20, 0.62);
+  --glass-side: rgba(22, 22, 30, 0.5);
+  --glass-main: rgba(18, 18, 24, 0.34);
+  --glass-pop: rgba(36, 36, 46, 0.72);
+  --glass-tile: rgba(255, 255, 255, 0.055);
+  --hairline: rgba(255, 255, 255, 0.075);
+  --hairline-strong: rgba(255, 255, 255, 0.13);
+  --highlight: rgba(255, 255, 255, 0.09);
+  --danger: #ff453a;
+  --success: #30d158;
+  --warning: #ffd60a;
+  --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.6), 0 18px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --blur: 48px;
+  --ring-bg: #1b1b22;
+  --caption-hover: rgba(255, 255, 255, 0.0605);
+  --caption-press: rgba(255, 255, 255, 0.0419);
+  --wall-opacity: 0.5;
+  --vignette: rgba(0, 0, 0, 0.45);
+  --stage: #050507;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #e9ebf1;
+  --fg: rgba(0, 0, 0, 0.88);
+  --fg-2: rgba(60, 60, 67, 0.7);
+  --fg-3: rgba(60, 60, 67, 0.42);
+  --fill-1: rgba(0, 0, 0, 0.035);
+  --fill-2: rgba(0, 0, 0, 0.06);
+  --fill-3: rgba(0, 0, 0, 0.09);
+  --glass-rail: rgba(255, 255, 255, 0.5);
+  --glass-side: rgba(255, 255, 255, 0.58);
+  --glass-main: rgba(255, 255, 255, 0.42);
+  --glass-pop: rgba(252, 252, 255, 0.82);
+  --glass-tile: rgba(255, 255, 255, 0.5);
+  --hairline: rgba(0, 0, 0, 0.07);
+  --hairline-strong: rgba(0, 0, 0, 0.12);
+  --highlight: rgba(255, 255, 255, 0.7);
+  --danger: #ff3b30;
+  --success: #34c759;
+  --warning: #ffcc00;
+  --shadow-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 18px 50px rgba(0, 0, 0, 0.16), 0 3px 10px rgba(0, 0, 0, 0.08);
+  --ring-bg: #f1f2f6;
+  --caption-hover: rgba(0, 0, 0, 0.0373);
+  --caption-press: rgba(0, 0, 0, 0.0241);
+  --wall-opacity: 0.32;
+  --vignette: rgba(255, 255, 255, 0.25);
+  --stage: #0b0b0e;
+  color-scheme: light;
+}
+
+:root[data-transparency='reduced'] {
+  --blur: 0px;
+  --glass-rail: rgb(16, 16, 22);
+  --glass-side: rgb(24, 24, 31);
+  --glass-main: rgb(20, 20, 26);
+  --glass-pop: rgb(38, 38, 47);
+}
+:root[data-theme='light'][data-transparency='reduced'] {
+  --glass-rail: rgb(236, 237, 242);
+  --glass-side: rgb(244, 245, 248);
+  --glass-main: rgb(250, 250, 252);
+  --glass-pop: rgb(255, 255, 255);
+}
+
+@theme inline {
+  --font-sans: 'SF Pro Text', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter Variable', 'Segoe UI Variable Text', system-ui, sans-serif;
+  --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter Variable', 'Segoe UI Variable Display', system-ui, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  --color-accent: var(--accent);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fill-1: var(--fill-1);
+  --color-fill-2: var(--fill-2);
+  --color-fill-3: var(--fill-3);
+  --color-hairline: var(--hairline);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+}
+
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: -0.006em;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  cursor: default;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+button {
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  user-select: text;
+}
+
+.selectable {
+  user-select: text;
+  cursor: text;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+/* Text inputs show focus on their surrounding .field instead. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+/* Thin overlay-style scrollbars, shown on hover (macOS-like). */
+.scroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.scroll::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+.scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--fill-3);
+}
+.scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fg-3);
+}
+
+/* ─── Glass materials ───────────────────────────────────────────────────────── */
+
+.glass-rail {
+  background: var(--glass-rail);
+  backdrop-filter: blur(var(--blur)) saturate(170%);
+}
+.glass-side {
+  background: var(--glass-side);
+  backdrop-filter: blur(var(--blur)) saturate(170%);
+}
+.glass-main {
+  background: var(--glass-main);
+  backdrop-filter: blur(var(--blur)) saturate(160%);
+}
+.glass-pop {
+  background: var(--glass-pop);
+  backdrop-filter: blur(40px) saturate(190%);
+  box-shadow: var(--shadow-pop), inset 0 0.5px 0 var(--highlight);
+}
+.glass-tile {
+  background: var(--glass-tile);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), inset 0 0.5px 0 var(--highlight);
+}
+
+.hairline-r {
+  box-shadow: inset -0.5px 0 0 var(--hairline-strong);
+}
+.hairline-l {
+  box-shadow: inset 0.5px 0 0 var(--hairline-strong);
+}
+.hairline-b {
+  box-shadow: inset 0 -0.5px 0 var(--hairline);
+}
+.hairline-t {
+  box-shadow: inset 0 0.5px 0 var(--hairline);
+}
+
+.field {
+  background: var(--fill-1);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong);
+  border-radius: 10px;
+  transition: box-shadow 0.18s ease, background 0.18s ease;
+}
+.field:focus-within {
+  background: var(--fill-2);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-strong), 0 0 0 3.5px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* ─── Windows caption buttons (Windows 11 metrics and colors) ────────────────── */
+
+.caption-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', sans-serif;
+  font-size: 10px;
+  color: inherit;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.caption-btn:hover {
+  background: var(--caption-hover);
+}
+.caption-btn:active {
+  background: var(--caption-press);
+}
+.caption-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.caption-close:active {
+  background: rgba(196, 43, 28, 0.9);
+  color: rgba(255, 255, 255, 0.7);
+}
+.caption-btn:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ─── Range slider ──────────────────────────────────────────────────────────── */
+
+input[type='range'].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+}
+input[type='range'].slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--pct, 50%), var(--fill-3) var(--pct, 50%));
+}
+input[type='range'].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+input[type='range'].slider:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+/* ─── Misc ──────────────────────────────────────────────────────────────────── */
+
+.emoji {
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+video::-webkit-media-controls-panel {
+  background-image: none;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--fill-1) 25%, var(--fill-3) 50%, var(--fill-1) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6vw, 4vh, 0) scale(1.08);
+  }
+}
+@keyframes drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  50% {
+    transform: translate3d(-5vw, -6vh, 0) scale(0.95);
+  }
+}
+@keyframes drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-4vw, 5vh, 0);
+  }
+}
