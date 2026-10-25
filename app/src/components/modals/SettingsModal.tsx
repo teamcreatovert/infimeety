@@ -4,6 +4,7 @@ import { AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X }
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
+import { DiscordLogo, GoogleLogo } from '../auth/SignIn';
 import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
 import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
@@ -68,8 +69,13 @@ export function SettingsModal() {
   );
 }
 
+/** Signing out clears `me` while this sheet is still animating closed; render nothing then. */
 function AccountTab() {
-  const me = useAuth((s) => s.me)!;
+  const me = useAuth((s) => s.me);
+  return me ? <AccountForm me={me} /> : null;
+}
+
+function AccountForm({ me }: { me: Me }) {
   const setMe = useAuth((s) => s.setMe);
   const [name, setName] = useState(me.name);
   const [username, setUsername] = useState(me.username ?? '');
@@ -108,6 +114,7 @@ function AccountTab() {
           <span className="text-[13px] text-fg-2">{me.email}</span>
         </Row>
       </Group>
+      <ConnectedAccounts me={me} />
       <div className="flex justify-between">
         <Button variant="ghost" className="text-danger!" icon={<LogOut size={14} />} onClick={() => (voice.leave({ silent: true }), useUI.getState().set({ settingsTab: null }), void useAuth.getState().signOut())}>
           Sign out
@@ -117,6 +124,66 @@ function AccountTab() {
         </Button>
       </div>
     </>
+  );
+}
+
+/** Sign in with Google or Discord into the same account: connect the other one here. */
+function ConnectedAccounts({ me }: { me: Me }) {
+  const linking = useAuth((s) => s.linking);
+  const available = useAuth((s) => s.providers);
+  const connected = me.providers.filter((p) => p !== 'dev');
+
+  const connect = async (provider: 'google' | 'discord') => {
+    const name = provider === 'google' ? 'Google' : 'Discord';
+    const result = await useAuth.getState().link(provider).catch(() => 'failed');
+    if (result === 'linked') toast({ kind: 'success', title: `${name} connected`, body: 'You can now sign in with either one.' });
+    else if (result === 'in_use') toast({ kind: 'error', title: `That ${name} account belongs to another Infimeety account` });
+    else if (result === 'provider_taken') toast({ kind: 'error', title: `A ${name} account is already connected` });
+    else if (result !== 'cancelled') toast({ kind: 'error', title: `Couldn't connect ${name}`, body: 'Please try again.' });
+  };
+
+  const disconnect = async (provider: 'google' | 'discord') => {
+    if (!confirm(`Disconnect ${provider === 'google' ? 'Google' : 'Discord'}? You won't be able to sign in with it anymore.`)) return;
+    try {
+      await useAuth.getState().unlink(provider);
+    } catch {
+      toast({ kind: 'error', title: "Couldn't disconnect" });
+    }
+  };
+
+  const row = (provider: 'google' | 'discord', label: string, logo: ReactNode) => {
+    const isConnected = me.providers.includes(provider);
+    return (
+      <Row
+        key={provider}
+        label={
+          <span className="flex items-center gap-2.5">
+            <span className="grid h-7 w-7 place-items-center rounded-[8px]" style={{ background: provider === 'google' ? '#fff' : '#5865F2', color: '#fff' }}>
+              {logo}
+            </span>
+            {label}
+          </span>
+        }
+        detail={isConnected ? 'Connected. You can sign in with it.' : 'Connect it to sign in to this same account.'}
+      >
+        {isConnected ? (
+          <Button size="sm" variant="ghost" disabled={connected.length <= 1} onClick={() => void disconnect(provider)}>
+            Disconnect
+          </Button>
+        ) : (
+          <Button size="sm" variant="primary" loading={linking === provider} disabled={!available?.[provider] || (!!linking && linking !== provider)} onClick={() => void connect(provider)}>
+            {linking === provider ? 'Waiting for browser…' : 'Connect'}
+          </Button>
+        )}
+      </Row>
+    );
+  };
+
+  return (
+    <Group title="Connected accounts" footer="Connecting both means Google and Discord sign you into this same account. Your friends and channels stay put.">
+      {row('google', 'Google', <GoogleLogo />)}
+      {row('discord', 'Discord', <DiscordLogo />)}
+    </Group>
   );
 }
 

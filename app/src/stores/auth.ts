@@ -18,6 +18,10 @@ interface AuthState {
   signIn: (provider: OAuthProvider) => Promise<void>;
   cancelSignIn: () => void;
   devSignIn: (name: string) => Promise<void>;
+  /** Connect another sign-in method to the current account (opens the browser). */
+  link: (provider: OAuthProvider) => Promise<'linked' | 'cancelled' | string>;
+  unlink: (provider: OAuthProvider) => Promise<void>;
+  linking: OAuthProvider | null;
   signOut: () => Promise<void>;
   setMe: (me: Me) => void;
 }
@@ -103,6 +107,39 @@ export const useAuth = create<AuthState>()((set, get) => {
     cancelSignIn() {
       pollAbort?.abort();
       set({ pending: null });
+    },
+
+    linking: null,
+
+    async link(provider) {
+      const verifier = randomId(32);
+      const challenge = await sha256(verifier);
+      const { url } = await api<{ url: string }>(`/auth/${provider}/link`, { method: 'POST', json: { challenge } });
+      set({ linking: provider });
+      await openExternal(url);
+      try {
+        const deadline = Date.now() + 5 * 60_000;
+        while (Date.now() < deadline && get().linking === provider) {
+          await new Promise((r) => setTimeout(r, 1200));
+          try {
+            const res = await api<{ linked?: boolean }>('/auth/redeem', { method: 'POST', json: { verifier } });
+            if (res.linked) {
+              await loadMe();
+              return 'linked';
+            }
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 400) return err.code;
+          }
+        }
+        return 'cancelled';
+      } finally {
+        set({ linking: null });
+      }
+    },
+
+    async unlink(provider) {
+      const me = await api<Me>(`/me/identities/${provider}`, { method: 'DELETE' });
+      set({ me });
     },
 
     async devSignIn(name) {

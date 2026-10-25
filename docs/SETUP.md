@@ -51,8 +51,12 @@ Then:
 
 ```bash
 npm run db:migrate:remote
-npm run deploy
+npm run deploy:all        # Worker (hosts the realtime Durable Object) + Pages
 ```
+
+The app talks to **https://infimeety.pages.dev/api** (Pages project `infimeety`, config in
+`server/pages/wrangler.jsonc`). `https://infimeety.pages.dev` itself is the landing page.
+The Worker at `infimeety-api.<subdomain>.workers.dev` hosts the Durable Object both share.
 
 Free-plan notes: Durable Objects are free when they use the SQLite backend (already configured
 via `new_sqlite_classes`). Idle channels hibernate and cost nothing. Messages are tiny text rows
@@ -69,14 +73,14 @@ in D1 (5 GB free). Custom avatars live in Workers KV (1 GB free).
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Web application**
    - Authorized redirect URIs:
-     - `https://<your-worker-url>/auth/google/callback`
+     - `https://infimeety.pages.dev/api/auth/google/callback`
      - `http://localhost:8787/auth/google/callback` (local testing)
-4. Copy the client ID and secret:
+4. Store the client ID and secret in the Pages project (each command asks for the value):
 
 ```bash
-cd server
-npx wrangler secret put GOOGLE_CLIENT_ID
-npx wrangler secret put GOOGLE_CLIENT_SECRET
+cd server/pages
+npx wrangler pages secret put GOOGLE_CLIENT_ID --project-name infimeety
+npx wrangler pages secret put GOOGLE_CLIENT_SECRET --project-name infimeety
 ```
 
 For local testing, put the same values in `server/.dev.vars`.
@@ -85,13 +89,14 @@ For local testing, put the same values in `server/.dev.vars`.
 
 1. Go to <https://discord.com/developers/applications> → **New Application** ("Infimeety").
 2. **OAuth2** → add redirects:
-   - `https://<your-worker-url>/auth/discord/callback`
+   - `https://infimeety.pages.dev/api/auth/discord/callback`
    - `http://localhost:8787/auth/discord/callback`
-3. Copy **Client ID** and **Client Secret** (click *Reset Secret* to reveal one):
+3. Store **Client ID** and **Client Secret** (click *Reset Secret* to reveal one):
 
 ```bash
-npx wrangler secret put DISCORD_CLIENT_ID
-npx wrangler secret put DISCORD_CLIENT_SECRET
+cd server/pages
+npx wrangler pages secret put DISCORD_CLIENT_ID --project-name infimeety
+npx wrangler pages secret put DISCORD_CLIENT_SECRET --project-name infimeety
 ```
 
 If someone signs in with Google and Discord using the same verified email, both logins open
@@ -99,11 +104,9 @@ the same account.
 
 ## 5. Point the app at your backend
 
-Create `app/.env.production`:
-
-```
-VITE_API_URL=https://<your-worker-url>
-```
+`app/.env.production` holds the Worker URL used by installer builds
+(currently `https://infimeety-api.leveling-life-sync.workers.dev`).
+`npm run dev` keeps using the local Worker.
 
 ## 6. (Optional) TURN relay for strict networks
 
@@ -112,8 +115,9 @@ TURN relay (1,000 GB/month free): Cloudflare dashboard → **Realtime → TURN S
 then:
 
 ```bash
-npx wrangler secret put TURN_KEY_ID
-npx wrangler secret put TURN_KEY_API_TOKEN
+cd server/pages
+npx wrangler pages secret put TURN_KEY_ID --project-name infimeety
+npx wrangler pages secret put TURN_KEY_API_TOKEN --project-name infimeety
 ```
 
 ---
@@ -142,7 +146,8 @@ session lives in the WebView profile, which updates never touch, so users stay s
 4. In the GitHub repo → **Settings → Secrets and variables → Actions**:
    - Secret `TAURI_SIGNING_PRIVATE_KEY` → contents of `~/.tauri/infimeety.key`
    - Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` → the password you chose
-   - Variable `VITE_API_URL` → your Worker URL
+
+   (The API address for release builds comes from `app/.env.production`.)
 
 ### Shipping an update
 

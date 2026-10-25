@@ -43,6 +43,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["infimeety"] }
+    },
     "updater": {
       "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY",
       "endpoints": ["https://github.com/teamcreatovert/infimeety/releases/latest/download/latest.json"],

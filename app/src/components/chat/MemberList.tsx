@@ -1,8 +1,11 @@
-import { Crown, ShieldCheck } from 'lucide-react';
+import { Crown, ShieldCheck, UserPlus } from 'lucide-react';
 import type { Channel, Member } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { Tooltip } from '../ui/overlay';
+import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
+import { useFriends } from '@/stores/friends';
+import { toast } from '@/stores/ui';
 
 const EMPTY: Member[] = [];
 const NONE: string[] = [];
@@ -47,7 +50,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 function MemberRow({ m, online, inVoice }: { m: Member; online: boolean; inVoice: boolean }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-[9px] px-2 py-1.5 transition-colors hover:bg-fill-1" style={{ opacity: online ? 1 : 0.45 }}>
+    <div className="group/member flex items-center gap-2.5 rounded-[9px] px-2 py-1.5 transition-colors hover:bg-fill-1" style={{ opacity: online ? 1 : 0.45 }}>
       <Avatar user={m} size={32} presence={online ? 'online' : 'offline'} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
@@ -65,6 +68,34 @@ function MemberRow({ m, online, inVoice }: { m: Member; online: boolean; inVoice
         </div>
         <div className="truncate text-[11.5px] text-fg-3">{inVoice ? '🔊 In a voice room' : `@${m.username}`}</div>
       </div>
+      <FriendAction m={m} />
     </div>
+  );
+}
+
+/** Discord-style: hover anyone in a channel to add them as a friend. */
+function FriendAction({ m }: { m: Member }) {
+  const meId = useAuth((s) => s.me?.id);
+  const status = useFriends((s) => s.friends.find((f) => f.user.id === m.id)?.status);
+  if (m.id === meId || status === 'accepted') return null;
+  if (status === 'outgoing') return <span className="text-[10.5px] text-fg-3">Requested</span>;
+  const add = async () => {
+    try {
+      const f = await useFriends.getState().add(m.username ?? '');
+      toast({ kind: 'success', title: f.status === 'accepted' ? `You and ${m.name} are now friends` : `Friend request sent to ${m.name}` });
+    } catch {
+      toast({ kind: 'error', title: "Couldn't send the friend request" });
+    }
+  };
+  return (
+    <Tooltip label={status === 'incoming' ? 'Accept friend request' : 'Add friend'}>
+      <button
+        aria-label="Add friend"
+        onClick={() => void add()}
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-success group-hover/member:opacity-100"
+      >
+        <UserPlus size={15} />
+      </button>
+    </Tooltip>
   );
 }

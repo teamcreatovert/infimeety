@@ -63,10 +63,13 @@ async function setImmersive(on: boolean) {
   await appWindow.setFullscreen(on);
 }
 
-export function VoiceRoomView({ channel, room }: { channel: Channel; room: Room }) {
+/** `chatRoom` overrides the side chat (DM calls show the DM conversation). */
+export function VoiceRoomView({ channel, room, chatRoom }: { channel: Channel; room: Room; chatRoom?: Room }) {
   const here = useVoice((s) => s.roomId === room.id);
-  return here ? <Stage channel={channel} room={room} /> : <Lobby channel={channel} room={room} />;
+  return here ? <Stage channel={channel} room={room} chatRoom={chatRoom ?? room} /> : <Lobby channel={channel} room={room} />;
 }
+
+const stageTitle = (channel: Channel, room: Room) => (channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : room.name);
 
 // ─── Lobby ───────────────────────────────────────────────────────────────────
 
@@ -172,7 +175,7 @@ function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean; chann
 
 // ─── Stage ───────────────────────────────────────────────────────────────────
 
-function Stage({ channel, room }: { channel: Channel; room: Room }) {
+function Stage({ channel, room, chatRoom }: { channel: Channel; room: Room; chatRoom: Room }) {
   const participants = useRoomParticipants(channel.id, room.id);
   const users = useChannels((s) => s.users);
   const remote = useVoice((s) => s.remote);
@@ -244,7 +247,7 @@ function Stage({ channel, room }: { channel: Channel; room: Room }) {
           <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5">
             <AudioLines size={18} className="text-success" />
             <h1 data-tauri-drag-region className="font-display text-[15px] font-semibold tracking-[-0.015em]">
-              {room.name}
+              {stageTitle(channel, room)}
             </h1>
             <span data-tauri-drag-region className="text-[12px] text-fg-3">
               {participants.length} {participants.length === 1 ? 'person' : 'people'}
@@ -259,7 +262,7 @@ function Stage({ channel, room }: { channel: Channel; room: Room }) {
             <div className="grid h-full place-items-center text-fg-2">
               <div className="flex flex-col items-center gap-3">
                 <Spinner size={22} />
-                <span className="text-[13px]">Joining {room.name}…</span>
+                <span className="text-[13px]">{channel.kind === 'dm' ? `Calling ${channel.peer?.name ?? 'your friend'}…` : `Joining ${room.name}…`}</span>
               </div>
             </div>
           ) : focused ? (
@@ -280,7 +283,7 @@ function Stage({ channel, room }: { channel: Channel; room: Room }) {
 
         <Dock channel={channel} room={room} participants={participants} hidden={hideChrome} myPeer={myPeer} />
       </div>
-      <VoiceChatPanel open={voiceChat} channel={channel} room={room} overlay={!!focused} />
+      <VoiceChatPanel open={voiceChat} channel={channel} room={chatRoom} overlay={!!focused} />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { SignIn } from './components/auth/SignIn';
 import { Lightbox } from './components/Lightbox';
 import { ChannelSettingsModal } from './components/modals/ChannelSettingsModal';
 import { CreateChannelModal } from './components/modals/CreateChannelModal';
+import { InviteModal, JoinInviteModal } from './components/modals/InviteModals';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { Background } from './components/shell/Background';
 import { Shell } from './components/shell/Shell';
@@ -13,12 +14,16 @@ import { Toasts } from './components/ui/Toasts';
 import { Spinner } from './components/ui/primitives';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ParticipantMenu } from './components/voice/ParticipantMenu';
+import { IncomingCall } from './components/home/IncomingCall';
+import { startDeepLinks } from './lib/deeplink';
+import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
 import { startRevocationWatcher } from './lib/transfer';
 import { startUpdateChecks } from './lib/updater';
 import { voice } from './lib/voice/engine';
 import { useAuth } from './stores/auth';
 import { useChannels } from './stores/channels';
+import { useFriends } from './stores/friends';
 import { ACCENTS, useSettings } from './stores/settings';
 import { toast } from './stores/ui';
 
@@ -55,6 +60,7 @@ export default function App() {
   useEffect(() => {
     void useAuth.getState().init();
     startUpdateChecks();
+    void startDeepLinks();
 
     // Feels like a native app: no browser context menu outside text.
     const onContext = (e: MouseEvent) => {
@@ -83,9 +89,12 @@ export default function App() {
     if (status !== 'ready') {
       voice.leave({ silent: true });
       closeAllHubs();
+      disconnectLobby();
+      useFriends.getState().reset();
       useChannels.setState({ channels: [], loaded: false, members: {}, online: {}, voice: {} });
       return;
     }
+    connectLobby();
     useChannels
       .getState()
       .load()
@@ -129,8 +138,11 @@ export default function App() {
         <SettingsModal />
         <CreateChannelModal />
         <ChannelSettingsModal />
+        <InviteModal />
+        {status === 'ready' && <JoinInviteModal />}
         <Lightbox />
         <UpdatePrompt />
+        {status === 'ready' && <IncomingCall />}
       </div>
     </MotionConfig>
   );

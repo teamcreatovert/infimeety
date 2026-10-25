@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowDown, Hash, Volume2 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Channel, Room } from '../../../../shared/protocol';
+import type { Channel, PublicUser, Room } from '../../../../shared/protocol';
+import { Avatar } from '../ui/Avatar';
 import { Spinner } from '../ui/primitives';
 import { MessageItem } from './MessageItem';
 import { formatDay } from '@/lib/format';
@@ -12,7 +13,7 @@ import { useMessages, type LocalMessage } from '@/stores/messages';
 const GROUP_WINDOW = 7 * 60_000;
 const EMPTY: LocalMessage[] = [];
 
-export function MessageList({ channel, room, onReply, compact }: { channel: Channel; room: Room; onReply: (m: LocalMessage) => void; compact?: boolean }) {
+export function MessageList({ channel, room, onReply, compact, dmPeer }: { channel: Channel; room: Room; onReply: (m: LocalMessage) => void; compact?: boolean; dmPeer?: PublicUser }) {
   const state = useMessages((s) => s.rooms[room.id]);
   const items = state?.items ?? EMPTY;
   const meId = useAuth((s) => s.me?.id);
@@ -84,7 +85,7 @@ export function MessageList({ channel, room, onReply, compact }: { channel: Chan
               <Spinner />
             </div>
           )}
-          {state?.loaded && !state.hasMore && <RoomIntro room={room} compact={compact} />}
+          {state?.loaded && !state.hasMore && (dmPeer ? <DmIntro peer={dmPeer} /> : <RoomIntro room={room} compact={compact} />)}
           {items.map((m, i) => {
             const prev = items[i - 1];
             const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
@@ -130,6 +131,17 @@ function DayDivider({ ms }: { ms: number }) {
       <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
       <span className="text-[11px] font-semibold text-fg-3">{formatDay(ms)}</span>
       <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
+    </div>
+  );
+}
+
+function DmIntro({ peer }: { peer: PublicUser }) {
+  return (
+    <div className="px-5 pb-4 pt-12">
+      <Avatar user={peer} size={72} />
+      <h2 className="mt-4 font-display text-[26px] font-bold tracking-[-0.025em]">{peer.name}</h2>
+      <div className="text-[14px] font-medium text-fg-2">@{peer.username}</div>
+      <p className="mt-3 text-[13.5px] text-fg-2">This is the beginning of your conversation with {peer.name}. Say hi 👋</p>
     </div>
   );
 }

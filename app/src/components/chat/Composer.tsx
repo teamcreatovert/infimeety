@@ -233,7 +233,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
               }
               if (e.key === 'Escape' && replyTo) onCancelReply();
             }}
-            placeholder={room.kind === 'text' ? `Message #${room.name}` : `Chat in ${room.name}`}
+            placeholder={channel.kind === 'dm' ? `Message ${channel.peer?.name ?? 'your friend'}` : room.kind === 'text' ? `Message #${room.name}` : `Chat in ${room.name}`}
             className="max-h-[220px] min-h-[34px] flex-1 resize-none bg-transparent px-1.5 py-[7px] text-[14.5px] leading-[1.4] outline-none placeholder:text-fg-3"
           />
           <IconButton label="Emoji" size={34} className="rounded-full!" onClick={(e) => setEmoji(e.currentTarget.getBoundingClientRect())}>

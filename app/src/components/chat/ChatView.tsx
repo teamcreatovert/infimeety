@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { Hash, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { Channel, Room } from '../../../../shared/protocol';
+import type { Channel, PublicUser, Room } from '../../../../shared/protocol';
 import { IconButton } from '../ui/primitives';
 import { Composer, TypingIndicator } from './Composer';
 import { MemberList } from './MemberList';
@@ -10,7 +10,7 @@ import { useChannels } from '@/stores/channels';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { useUI } from '@/stores/ui';
 
-export function ChatView({ channel, room, compact }: { channel: Channel; room: Room; compact?: boolean }) {
+export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel; room: Room; compact?: boolean; dmPeer?: PublicUser }) {
   const [replyTo, setReplyTo] = useState<LocalMessage | null>(null);
   const unread = useMessages((s) => s.unread[room.id] ?? 0);
   const memberList = useUI((s) => s.memberList);
@@ -50,7 +50,7 @@ export function ChatView({ channel, room, compact }: { channel: Channel; room: R
             </IconButton>
           </header>
         )}
-        <MessageList channel={channel} room={room} onReply={setReplyTo} compact={compact} />
+        <MessageList channel={channel} room={room} onReply={setReplyTo} compact={compact} dmPeer={dmPeer} />
         <TypingIndicator roomId={room.id} />
         <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
       </div>

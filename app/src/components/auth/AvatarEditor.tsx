@@ -26,10 +26,11 @@ async function prepareAvatar(file: File): Promise<{ body: Blob; type: string }> 
 const providerName = (me: Me) => (me.providers.includes('google') ? 'Google' : me.providers.includes('discord') ? 'Discord' : 'original');
 
 export function AvatarEditor({ size = 104 }: { size?: number }) {
-  const me = useAuth((s) => s.me)!;
+  const me = useAuth((s) => s.me);
   const setMe = useAuth((s) => s.setMe);
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  if (!me) return null; // signed out while a sheet is still animating closed
 
   const upload = async (file: File) => {
     setBusy(true);

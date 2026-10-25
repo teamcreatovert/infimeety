@@ -1,0 +1,24 @@
+// Cloudflare Pages project: https://infimeety.pages.dev
+//   /       landing page (public/)
+//   /api/*  the shared API (functions/api/[[path]].ts)
+// Uses the same D1 database, KV namespace and ChannelHub Durable Object as the
+// `infimeety-api` Worker (which hosts the Durable Object class).
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "infimeety",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2025-09-01",
+  "vars": {
+    "PUBLIC_URL": "https://infimeety.pages.dev/api"
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "infimeety", "database_id": "30eda584-40b3-4f07-a69a-5498e3624770" }
+  ],
+  "kv_namespaces": [{ "binding": "AVATARS", "id": "8bdf1a31d8eb4d1886f62a90a1ef50fc" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "HUB", "class_name": "ChannelHub", "script_name": "infimeety-api" },
+      { "name": "LOBBY", "class_name": "Lobby", "script_name": "infimeety-api" }
+    ]
+  }
+}

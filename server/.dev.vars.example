@@ -13,3 +13,6 @@ TURN_KEY_API_TOKEN=
 
 # Local testing only: shows a "Continue as test user" button. Never set this in production.
 DEV_LOGIN=true
+
+# Local dev uses the local Worker URL (wrangler.jsonc has the production one).
+PUBLIC_URL=http://localhost:8787

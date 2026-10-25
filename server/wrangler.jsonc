@@ -7,7 +7,7 @@
 
   // PUBLIC_URL must be this Worker's public URL in production (used for OAuth redirects and avatar links).
   "vars": {
-    "PUBLIC_URL": "http://localhost:8787"
+    "PUBLIC_URL": "https://infimeety-api.leveling-life-sync.workers.dev"
   },
 
   // `wrangler d1 create infimeety` prints the real database_id — paste it here before deploying.
@@ -15,16 +15,22 @@
     {
       "binding": "DB",
       "database_name": "infimeety",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "30eda584-40b3-4f07-a69a-5498e3624770",
       "migrations_dir": "migrations"
     }
   ],
 
   // `wrangler kv namespace create AVATARS` prints the real id — paste it here before deploying.
-  "kv_namespaces": [{ "binding": "AVATARS", "id": "00000000000000000000000000000000" }],
+  "kv_namespaces": [{ "binding": "AVATARS", "id": "8bdf1a31d8eb4d1886f62a90a1ef50fc" }],
 
   "durable_objects": {
-    "bindings": [{ "name": "HUB", "class_name": "ChannelHub" }]
+    "bindings": [
+      { "name": "HUB", "class_name": "ChannelHub" },
+      { "name": "LOBBY", "class_name": "Lobby" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ChannelHub"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ChannelHub"] },
+    { "tag": "v2", "new_sqlite_classes": ["Lobby"] }
+  ]
 }

@@ -7,3 +7,5 @@ target/
 *.log
 .DS_Store
 app/src-tauri/gen/
+Secrets/
+*.tsbuildinfo

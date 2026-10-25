@@ -5,6 +5,7 @@ import { Modal, Popover, type Anchor } from '../ui/overlay';
 import { Button, Segmented, TextField } from '../ui/primitives';
 import { ApiError } from '@/lib/api';
 import { CHANNEL_COLORS, channelGradient } from '@/lib/format';
+import { parseJoinInput } from '@/lib/invite';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useChannels } from '@/stores/channels';
@@ -74,9 +75,8 @@ export function CreateChannelModal() {
                 className="mt-6 h-12!"
                 inputClassName="text-center font-mono text-[20px]! tracking-[0.3em] uppercase"
                 placeholder="ABCD2345"
-                maxLength={8}
                 value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                onChange={(e) => setCode(parseJoinInput(e.target.value))}
               />
             </motion.div>
           ) : (

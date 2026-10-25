@@ -7,7 +7,9 @@ import { Avatar } from '../ui/Avatar';
 import { Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { AttachmentView } from './AttachmentView';
 import { EmojiPicker } from './EmojiPicker';
+import { InviteCard } from '../modals/InviteModals';
 import { QUICK_REACTIONS } from '@/lib/emoji';
+import { findInviteCode } from '@/lib/invite';
 import { formatFull, formatTime, isJumboEmoji } from '@/lib/format';
 import { localMedia } from '@/lib/platform';
 import { getHub } from '@/lib/realtime';
@@ -49,6 +51,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
   };
 
   const jumbo = !msg.attachments.length && isJumboEmoji(msg.content);
+  const inviteCode = findInviteCode(msg.content);
   const reactions = Object.entries(msg.reactions);
 
   return (
@@ -111,6 +114,8 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
             </div>
           )
         )}
+
+        {inviteCode && !msg.pending && <InviteCard code={inviteCode} />}
 
         {msg.attachments.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-2">

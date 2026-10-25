@@ -42,11 +42,9 @@ export function Sidebar({ channel }: { channel: Channel }) {
   const voiceRooms = channel.rooms.filter((r) => r.kind === 'voice');
   const ui = useUI((s) => s.set);
 
-  const copyInvite = async () => {
+  const copyInvite = () => {
     setMenu(null);
-    if (!channel.inviteCode) return ui({ channelSettings: channel.id });
-    await navigator.clipboard.writeText(channel.inviteCode);
-    toast({ kind: 'success', title: 'Invite code copied', body: `Friends can join with ${channel.inviteCode}` });
+    ui({ inviteTo: channel.id });
   };
 
   const leave = async () => {
@@ -254,7 +252,7 @@ export function ParticipantIcons({ p, size = 13 }: { p: VoiceParticipant; size?:
   );
 }
 
-function VoicePanel() {
+export function VoicePanel() {
   const status = useVoice((s) => s.status);
   const channelId = useVoice((s) => s.channelId);
   const roomId = useVoice((s) => s.roomId);
@@ -288,7 +286,7 @@ function VoicePanel() {
                   {trouble ? 'Connection trouble' : connecting ? 'Connecting…' : 'Voice connected'}
                 </div>
                 <button onClick={() => useChannels.getState().selectRoom(channel.id, room.id)} className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline">
-                  {room.name} · {channel.name}
+                  {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : `${room.name} · ${channel.name}`}
                 </button>
               </div>
               <IconButton label="Disconnect" tone="danger" onClick={() => voice.leave()}>
@@ -326,7 +324,7 @@ function PanelButton({ active, onClick, icon, children }: { active: boolean; onC
   );
 }
 
-function UserBar() {
+export function UserBar() {
   const me = useAuth((s) => s.me);
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);

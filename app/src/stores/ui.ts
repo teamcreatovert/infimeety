@@ -21,6 +21,10 @@ interface UIState {
   settingsTab: SettingsTab | null;
   createChannel: 'create' | 'join' | null;
   channelSettings: string | null;
+  /** Channel id whose "Invite friends" sheet is open. */
+  inviteTo: string | null;
+  /** Invite code opened from a link, waiting for the user to confirm joining. */
+  pendingInvite: string | null;
   lightbox: { src: string; kind: 'image' | 'video'; name: string } | null;
   memberList: boolean;
   /** Side chat inside a voice room. */
@@ -46,6 +50,8 @@ export const useUI = create<UIState>()((set) => ({
   settingsTab: null,
   createChannel: null,
   channelSettings: null,
+  inviteTo: null,
+  pendingInvite: null,
   lightbox: null,
   memberList: true,
   voiceChat: false,

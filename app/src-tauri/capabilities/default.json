@@ -17,6 +17,7 @@
     "core:window:allow-show",
     "core:window:allow-request-user-attention",
     "opener:default",
+    "deep-link:default",
     "updater:default",
     "process:default"
   ]

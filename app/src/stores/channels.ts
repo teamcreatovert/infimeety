@@ -32,6 +32,10 @@ interface ChannelsState {
   selectRoom: (channelId: string, roomId: string) => void;
   create: (input: { name: string; emoji: string; color: string }) => Promise<Channel>;
   join: (code: string) => Promise<Channel>;
+  /** Open (creating if needed) the DM with a friend and switch to it. */
+  openDm: (userId: string) => Promise<Channel>;
+  /** Same, without switching to it. */
+  ensureDm: (userId: string) => Promise<Channel>;
   update: (channelId: string, patch: Partial<Pick<Channel, 'name' | 'emoji' | 'color'>>) => Promise<void>;
   removeLocal: (channelId: string) => void;
   loadMembers: (channelId: string) => Promise<void>;
@@ -59,7 +63,8 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
 
   async load() {
     const channels = await api<Channel[]>('/channels');
-    const active = channels.find((c) => c.id === get().activeChannelId)?.id ?? channels[0]?.id ?? null;
+    // `null` means Home (friends + DMs).
+    const active = channels.find((c) => c.id === get().activeChannelId)?.id ?? null;
     set({ channels, loaded: true, activeChannelId: active });
     await Promise.all(channels.map((c) => get().loadMembers(c.id)));
   },
@@ -101,6 +106,19 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
     return channel;
   },
 
+  async ensureDm(userId) {
+    const dm = await api<Channel>('/dms', { method: 'POST', json: { userId } });
+    set((s) => ({ channels: s.channels.some((c) => c.id === dm.id) ? s.channels.map((c) => (c.id === dm.id ? dm : c)) : [...s.channels, dm] }));
+    await get().loadMembers(dm.id);
+    return dm;
+  },
+
+  async openDm(userId) {
+    const dm = await get().ensureDm(userId);
+    get().select(dm.id);
+    return dm;
+  },
+
   async update(channelId, patch) {
     const channel = await api<Channel>(`/channels/${channelId}`, { method: 'PATCH', json: patch });
     set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
@@ -111,7 +129,7 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
       const channels = s.channels.filter((c) => c.id !== channelId);
       return {
         channels,
-        activeChannelId: s.activeChannelId === channelId ? (channels[0]?.id ?? null) : s.activeChannelId,
+        activeChannelId: s.activeChannelId === channelId ? null : s.activeChannelId,
       };
     });
     persistSelection(get());

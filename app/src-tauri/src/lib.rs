@@ -14,6 +14,8 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        // infimeety://invite/CODE links; a second launch hands its link to the running app.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -22,6 +24,12 @@ pub fn run() {
             let registry = media::Registry::load(app.handle())?;
             app.manage(registry);
             app.manage(system_audio::SystemAudio::default());
+            // The installer registers infimeety:// too; this keeps it pointing at the running build.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register_all();
+            }
             Ok(())
         })
         // Only files the user physically dropped can be shared; the webview can't name arbitrary paths.

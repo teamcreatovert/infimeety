@@ -30,15 +30,45 @@ export interface Room {
 
 export interface Channel {
   id: string;
+  /** 'space' = a server-like channel; 'dm' = a private two-person conversation. */
+  kind: 'space' | 'dm';
   name: string;
   emoji: string;
   color: string;
   ownerId: string;
-  /** Only sent to owners/admins. */
+  /** Any member can share it (null for DMs). */
   inviteCode: string | null;
   role: Role;
   rooms: Room[];
+  /** For DMs: the other person. */
+  peer?: PublicUser;
 }
+
+/** Public preview of an invite link (no sign-in needed). */
+export interface InvitePreview {
+  code: string;
+  name: string;
+  emoji: string;
+  color: string;
+  members: number;
+}
+
+export type FriendStatus = 'accepted' | 'incoming' | 'outgoing';
+
+export interface Friend {
+  user: PublicUser;
+  status: FriendStatus;
+  since: number;
+}
+
+/** Messages on the per-user lobby socket (friends, presence, new DMs). */
+export type LobbyMsg =
+  | { t: 'lobby.welcome'; online: string[] }
+  | { t: 'friend.presence'; userId: string; online: boolean }
+  | { t: 'friend.upsert'; friend: Friend }
+  | { t: 'friend.removed'; userId: string }
+  | { t: 'channel.added'; channelId: string }
+  | { t: 'pong' };
 
 export interface Member extends PublicUser {
   role: Role;

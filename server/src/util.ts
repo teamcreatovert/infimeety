@@ -1,10 +1,12 @@
-import type { Attachment, Channel, Me, Member, Message, Provider, PublicUser, Role, Room } from '../../shared/protocol';
+import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, Role, Room } from '../../shared/protocol';
 import type { ChannelHub } from './hub';
+import type { Lobby } from './lobby';
 
 export interface Env {
   DB: D1Database;
   AVATARS: KVNamespace;
   HUB: DurableObjectNamespace<ChannelHub>;
+  LOBBY: DurableObjectNamespace<Lobby>;
   PUBLIC_URL: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -78,13 +80,16 @@ export const toRoom = (r: any): Room => ({
   position: r.position,
 });
 
-export const toChannel = (r: any, rooms: Room[]): Channel => ({
+export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => ({
   id: r.id,
+  kind: r.kind === 'dm' ? 'dm' : 'space',
+  peer,
   name: r.name,
   emoji: r.emoji,
   color: r.color,
   ownerId: r.owner_id,
-  inviteCode: r.role === 'member' ? null : r.invite_code,
+  // Like Discord's default, every member can invite; DMs have no invite.
+  inviteCode: r.kind === 'dm' ? null : r.invite_code,
   role: r.role,
   rooms,
 });
@@ -138,3 +143,23 @@ export async function memberRole(env: Env, channelId: string, userId: string): P
 export function hub(env: Env, channelId: string) {
   return env.HUB.get(env.HUB.idFromName(channelId));
 }
+
+export async function invitePreview(env: Env, rawCode: string): Promise<InvitePreview | null> {
+  const code = rawCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 8) return null;
+  const row = await env.DB.prepare(
+    `SELECT c.name, c.emoji, c.color, (SELECT COUNT(*) FROM channel_members m WHERE m.channel_id = c.id) AS members
+     FROM channels c WHERE c.invite_code = ? AND c.kind = 'space'`,
+  )
+    .bind(code)
+    .first<{ name: string; emoji: string; color: string; members: number }>();
+  return row ? { code, ...row } : null;
+}
+
+/** The single presence/notification hub every signed-in client connects to. */
+export function lobby(env: Env) {
+  return env.LOBBY.get(env.LOBBY.idFromName('lobby'));
+}
+
+/** Friendship rows are keyed by the ordered pair (user_a < user_b). */
+export const orderedPair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);

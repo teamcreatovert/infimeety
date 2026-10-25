@@ -174,9 +174,32 @@ export async function userFromToken(env: Env, token: string | null | undefined):
     .first<UserRow>();
 }
 
-export function callbackPage(ok: boolean, detail: string) {
-  const title = ok ? "You're signed in" : 'Sign-in failed';
-  const body = ok ? 'You can close this tab and return to Infimeety.' : detail;
+/**
+ * Attaches a provider identity to an existing user ("Connect Discord" in Settings).
+ * One identity per provider per user; an identity can't move between accounts.
+ */
+export async function linkIdentity(env: Env, provider: Provider, profile: Profile, userId: string): Promise<'linked' | 'in_use' | 'provider_taken'> {
+  const existing = await env.DB.prepare('SELECT user_id FROM identities WHERE provider = ? AND provider_id = ?')
+    .bind(provider, profile.providerId)
+    .first<{ user_id: string }>();
+  if (existing) return existing.user_id === userId ? 'linked' : 'in_use';
+  const sameProvider = await env.DB.prepare('SELECT 1 FROM identities WHERE user_id = ? AND provider = ?').bind(userId, provider).first();
+  if (sameProvider) return 'provider_taken';
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO identities (provider, provider_id, user_id) VALUES (?, ?, ?)').bind(provider, profile.providerId, userId),
+    // Fill gaps (e.g. a Discord-only account gains an email), never overwrite.
+    env.DB.prepare('UPDATE users SET email = COALESCE(email, ?), provider_avatar_url = COALESCE(provider_avatar_url, ?) WHERE id = ?').bind(
+      profile.email,
+      profile.avatar,
+      userId,
+    ),
+  ]);
+  return 'linked';
+}
+
+export function callbackPage(ok: boolean, detail: string, heading?: string) {
+  const title = heading ?? (ok ? "You're signed in" : 'Sign-in failed');
+  const body = ok ? detail || 'You can close this tab and return to Infimeety.' : detail;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Infimeety</title><style>
   :root{color-scheme:dark}
