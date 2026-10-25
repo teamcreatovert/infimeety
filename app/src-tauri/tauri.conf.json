@@ -45,7 +45,7 @@
   "plugins": {
     "updater": {
       "pubkey": "REPLACE_WITH_UPDATER_PUBLIC_KEY",
-      "endpoints": ["https://github.com/OWNER/REPO/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/teamcreatovert/infimeety/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
     }
   }

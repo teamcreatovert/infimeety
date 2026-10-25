@@ -136,8 +136,9 @@ session lives in the WebView profile, which updates never touch, so users stay s
 
 2. Paste the **public** key it prints into `app/src-tauri/tauri.conf.json` →
    `plugins.updater.pubkey`.
-3. Push this project to GitHub, then set `plugins.updater.endpoints` to
-   `https://github.com/<you>/<repo>/releases/latest/download/latest.json`.
+3. The updater already checks
+   `https://github.com/teamcreatovert/infimeety/releases/latest/download/latest.json`.
+   Keep the repo's releases public, or installed apps can't download updates.
 4. In the GitHub repo → **Settings → Secrets and variables → Actions**:
    - Secret `TAURI_SIGNING_PRIVATE_KEY` → contents of `~/.tauri/infimeety.key`
    - Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` → the password you chose
