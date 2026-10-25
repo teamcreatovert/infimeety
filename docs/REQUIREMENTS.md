@@ -36,7 +36,7 @@ Every request from the planning conversation, tracked in one place.
 ## Screen sharing
 - ✅ Entire screen or a specific app window (system picker): verified in the desktop app (~1080p, 0% loss)
 - ✅ Share system audio with the screen: native WASAPI capture, stereo 192 kbps Opus, verified in the desktop app
-- ⚠️ Known issue: friends' voices played by Infimeety leak into the shared system audio (echo) even though the capture excludes Infimeety's process tree. A diagnostic tool is ready; investigation paused.
+- ✅ No echo: friends' voices played by Infimeety are excluded from the shared sound (capture excludes the WebView2 browser process tree; verified with a beep test, 0.000 leak)
 - ⏳ Specific browser tab: web version only
 - ✅ Quality presets (720p30 → 1440p60) and Movies/Text optimization
 - ⏳ Per-app-only audio capture (needs native Windows process loopback)

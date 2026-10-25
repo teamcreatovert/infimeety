@@ -1,9 +1,13 @@
 //! Native system-sound capture for screen sharing.
 //!
 //! WebView2's screen capture comes without system audio, so the desktop app records it
-//! itself: every app's sound *except Infimeety's own process tree* (WASAPI process
-//! loopback in "exclude" mode, Windows 10 2004+). Excluding ourselves means friends'
-//! voices coming out of your speakers are never sent back to them as an echo.
+//! itself: every app's sound *except Infimeety's own* (WASAPI process loopback in
+//! "exclude" mode, Windows 10 2004+). Excluding ourselves means friends' voices coming
+//! out of your speakers are never sent back to them as an echo.
+//!
+//! All of Infimeety's sound is played by WebView2's audio service. Windows' loopback does
+//! not count the WebView2 browser as part of `infimeety.exe`'s process tree (verified by
+//! capture tests), so we exclude the WebView2 browser process tree instead.
 //!
 //! Samples stream to the webview as raw 48 kHz stereo f32 chunks over a Tauri channel.
 
@@ -15,7 +19,7 @@ use std::sync::{
 use std::time::Duration;
 use tauri::{
     ipc::{Channel, InvokeResponseBody},
-    State,
+    State, Webview,
 };
 
 /// Stop flag of the running capture, if any.
@@ -31,14 +35,19 @@ impl SystemAudio {
 }
 
 #[tauri::command]
-pub async fn system_audio_start(state: State<'_, SystemAudio>, on_data: Channel<InvokeResponseBody>) -> Result<(), String> {
+pub async fn system_audio_start(
+    webview: Webview,
+    state: State<'_, SystemAudio>,
+    on_data: Channel<InvokeResponseBody>,
+) -> Result<(), String> {
     state.stop();
+    let exclude_pid = webview_browser_pid(&webview).ok_or("Couldn't find Infimeety's audio process")?;
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let flag = stop.clone();
     std::thread::Builder::new()
         .name("system-audio".into())
-        .spawn(move || capture(on_data, flag, ready_tx))
+        .spawn(move || capture(exclude_pid, on_data, flag, ready_tx))
         .map_err(|e| e.to_string())?;
     ready_rx
         .recv_timeout(Duration::from_secs(5))
@@ -52,8 +61,28 @@ pub fn system_audio_stop(state: State<'_, SystemAudio>) {
     state.stop();
 }
 
+/// Process id of the WebView2 browser process that hosts (and plays audio for) this webview.
 #[cfg(windows)]
-fn capture(out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
+fn webview_browser_pid(webview: &Webview) -> Option<u32> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    webview
+        .with_webview(move |platform| {
+            let mut pid = 0u32;
+            // SAFETY: plain COM getters on the live controller, called on the UI thread by Tauri.
+            let ok = unsafe { platform.controller().CoreWebView2().and_then(|core| core.BrowserProcessId(&mut pid)).is_ok() };
+            let _ = tx.send(ok.then_some(pid));
+        })
+        .ok()?;
+    rx.recv_timeout(Duration::from_secs(2)).ok().flatten()
+}
+
+#[cfg(not(windows))]
+fn webview_browser_pid(_webview: &Webview) -> Option<u32> {
+    Some(std::process::id())
+}
+
+#[cfg(windows)]
+fn capture(exclude_pid: u32, out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
     use std::collections::VecDeque;
     use wasapi::{initialize_mta, AudioClient, Direction, SampleType, StreamMode, WaveFormat};
 
@@ -61,8 +90,8 @@ fn capture(out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sende
         initialize_mta().ok()?;
         let format = WaveFormat::new(32, 32, &SampleType::Float, 48_000, 2, None);
         let block = format.get_blockalign() as usize;
-        // `false` = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE: everything but us.
-        let mut client = AudioClient::new_application_loopback_client(std::process::id(), false)?;
+        // `false` = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE: everything but our webview's audio.
+        let mut client = AudioClient::new_application_loopback_client(exclude_pid, false)?;
         client.initialize_client(&format, &Direction::Capture, &StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 0 })?;
         let event = client.set_get_eventhandle()?;
         let capture = client.get_audiocaptureclient()?;
@@ -112,6 +141,6 @@ fn capture(out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sende
 }
 
 #[cfg(not(windows))]
-fn capture(_out: Channel<InvokeResponseBody>, _stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
+fn capture(_exclude_pid: u32, _out: Channel<InvokeResponseBody>, _stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
     let _ = ready.send(Err("System sound capture is only available on Windows".into()));
 }

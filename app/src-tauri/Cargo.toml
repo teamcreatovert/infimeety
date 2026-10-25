@@ -32,3 +32,4 @@ strip = true
 
 [target."cfg(windows)".dependencies]
 wasapi = "0.26.0"
+webview2-com = "0.39"
