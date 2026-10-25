@@ -1,6 +1,6 @@
 import { invitePreview, type Env } from '../../../src/util';
 
-const DOWNLOAD_URL = 'https://github.com/teamcreatovert/infimeety/releases/latest';
+const DOWNLOAD_URL = 'https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe';
 const COLORS: Record<string, [string, string]> = {
   blue: ['#5E9BFF', '#3D6BFF'],
   purple: ['#B57BFF', '#7B61FF'],
