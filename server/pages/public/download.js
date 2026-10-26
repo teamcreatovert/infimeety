@@ -21,8 +21,7 @@
   // The hero button and the highlighted card follow this device.
   var hero = document.getElementById('hero-download');
   var heroLabel = hero && hero.querySelector('span');
-  var card = platform && document.getElementById('p-' + platform);
-  var downloadIcon = hero && hero.querySelector('svg') ? hero.querySelector('svg').innerHTML : '';
+  var card = platform && document.getElementById(platform === 'windows' ? 'p-windows' : 'p-web');
   function signInIcon() {
     var icon = hero.querySelector('svg');
     if (icon) icon.innerHTML = '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" />';
@@ -32,13 +31,8 @@
     if (platform === 'windows') {
       hero.href = document.getElementById('dl-windows').href;
       heroLabel.textContent = 'Download for Windows';
-    } else if (platform === 'mac') {
-      hero.href = document.getElementById('dl-mac').href;
-      heroLabel.textContent = 'Download for Mac';
-      var help = document.getElementById('mac-help');
-      if (help) help.setAttribute('open', '');
-    } else if (platform === 'ios' || platform === 'android') {
-      // Phones: the app is coming; the web app is the way in today.
+    } else if (platform) {
+      // Only Windows has an app; Macs and phones use Infimeety in the browser.
       hero.href = '/web/';
       hero.setAttribute('data-web', '');
       heroLabel.textContent = 'Open Infimeety';
@@ -46,44 +40,17 @@
     }
   }
 
-  // The latest version, and whether it has a Mac build yet.
+  // The latest version.
   fetch('https://api.github.com/repos/teamcreatovert/infimeety/releases/latest')
     .then(function (r) {
       return r.ok ? r.json() : null;
     })
     .then(function (release) {
       if (!release) return;
-      var names = (release.assets || []).map(function (a) {
-        return a.name;
-      });
       var version = String(release.tag_name || '').replace(/^v/, '');
-      if (names.indexOf('Infimeety.apk') >= 0) {
-        document.querySelector('.android-web').hidden = true;
-        document.querySelector('.android-app').hidden = false;
-        var soon = document.getElementById('android-soon');
-        if (soon) soon.remove();
-        if (platform === 'android' && hero) {
-          hero.href = document.getElementById('dl-android').href;
-          hero.removeAttribute('data-web');
-          heroLabel.textContent = 'Download for Android';
-          hero.querySelector('svg').innerHTML = downloadIcon;
-        }
-      }
-      if (names.indexOf('Infimeety.dmg') < 0) {
-        var m = document.getElementById('dl-mac');
-        m.setAttribute('aria-disabled', 'true');
-        m.removeAttribute('href');
-        m.textContent = 'Mac: coming with the next update';
-        if (platform === 'mac' && hero) {
-          hero.href = '/web/';
-          heroLabel.textContent = 'Open in your browser';
-          hero.setAttribute('data-web', '');
-          signInIcon();
-        }
-      }
       if (version) {
         var meta = document.getElementById('meta');
-        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11 · macOS 11 or later · Every modern browser';
+        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11 · Every modern browser';
         var v = document.getElementById('version');
         if (v) v.insertBefore(document.createTextNode('Version ' + version + ' · '), v.firstChild);
       }

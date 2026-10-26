@@ -1,18 +1,20 @@
 name: Release
 
-# Builds the Windows installer and the Mac app, code-signs the Windows one through SignPath
-# once that is set up (docs/CODE-SIGNING.md), signs both for the updater and publishes one
-# GitHub release + the latest.json that installed apps auto-update from.
+# Builds the Windows installer, code-signs it through SignPath once that is set up
+# (docs/CODE-SIGNING.md), signs it for the updater and publishes one GitHub release + the
+# latest.json that installed apps auto-update from.
 #
 # Start it by pushing a version tag (git tag v0.2.0 && git push origin v0.2.0), or from
 # Actions → Release → Run workflow, which also takes release notes and a dry-run switch.
 #
 # Windows order matters: infimeety.exe is signed before it's packed into the installer, the
 # installer is signed next, and the updater signature (.sig) is made last, over the final
-# bytes. Changing a file after its .sig is made breaks updates for everyone. The Mac build
-# does all of that itself (tauri build signs the app, then makes and signs the update).
+# bytes. Changing a file after its .sig is made breaks updates for everyone.
 #
-# A failed Mac build doesn't hold back Windows: the release goes out with what was built.
+# Releases are Windows-only for now. Mac and Android are paused: GitHub's Apple Silicon Macs
+# were too busy to ever pick up the job (it gave up after 15 minutes and turned every run
+# red), and Android has no signing key yet. publish-release.mjs still adds a Mac or Android
+# build if one is downloaded into release-assets.
 on:
   push:
     tags: ['v*']
@@ -226,77 +228,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  macos:
-    needs: check
-    # Apple Silicon runner; the build is universal (Apple Silicon + Intel) in one app.
-    runs-on: macos-latest
-    timeout-minutes: 90
-    env:
-      VERSION: ${{ needs.check.outputs.version }}
-      BUNDLE: src-tauri/target/universal-apple-darwin/release/bundle
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: 'app/src-tauri -> target'
-
-      - name: Install app dependencies
-        working-directory: app
-        run: npm ci
-
-      # With an Apple Developer ID set up (docs/SETUP.md §8), the app is signed and notarized,
-      # so it opens without warnings. Without one it's ad-hoc signed: it runs, and the first
-      # launch needs System Settings → Privacy & Security → Open Anyway. Either way tauri build
-      # then packs and signs the update (Infimeety.app.tar.gz + .sig) with the updater key.
-      - name: Build
-        working-directory: app
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          NOTARY_ID: ${{ secrets.APPLE_ID }}
-          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          NOTARY_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [[ -n "$CERTIFICATE" ]]; then
-            export APPLE_CERTIFICATE="$CERTIFICATE" APPLE_CERTIFICATE_PASSWORD="$CERTIFICATE_PASSWORD" APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
-            [[ -n "$NOTARY_ID" ]] && export APPLE_ID="$NOTARY_ID" APPLE_PASSWORD="$NOTARY_PASSWORD" APPLE_TEAM_ID="$NOTARY_TEAM"
-          else
-            echo "::warning::No Apple Developer ID set up, so the Mac app is ad-hoc signed and NOT notarized. See docs/SETUP.md §8."
-          fi
-          npx tauri build --target universal-apple-darwin --bundles app,dmg --ci
-
-      - name: Keep the app
-        uses: actions/upload-artifact@v7
-        with:
-          name: Infimeety-${{ env.VERSION }}-macos
-          path: |
-            app/${{ env.BUNDLE }}/dmg/Infimeety_${{ env.VERSION }}_universal.dmg
-            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz
-            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz.sig
-          if-no-files-found: error
-          retention-days: 7
-
-  # Android is paused: releases don't build it. The Mobile workflow still builds the APK by
-  # hand; to bring it back here, add the ANDROID_KEYSTORE secrets (docs/MOBILE.md) and a job
-  # that calls mobile.yml with require-key: true, and list it under publish's needs.
+  # Paused (see the top): a `macos` job (git history: v0.3.9's release.yml) and an `android` job
+  # calling mobile.yml with require-key: true, once the ANDROID_KEYSTORE secrets exist
+  # (docs/MOBILE.md). To bring one back, add its job and list it under publish's needs.
 
   publish:
-    needs: [check, windows, macos]
-    # Windows must have built; the Mac app joins the release if it built too.
+    needs: [check, windows]
     if: ${{ !cancelled() && needs.windows.result == 'success' && inputs.dry-run != true }}
     runs-on: ubuntu-latest
     env:
@@ -312,10 +249,6 @@ jobs:
         with:
           pattern: Infimeety-${{ needs.check.outputs.version }}-*
           path: release-assets
-
-      - name: Note a missing Mac build
-        if: needs.macos.result != 'success'
-        run: echo "::warning::The Mac build failed, so this release is Windows-only. Mac users keep their current version."
 
       - name: Publish the release
         env:
