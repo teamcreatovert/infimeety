@@ -155,7 +155,8 @@ session lives in the WebView profile, which updates never touch, so users stay s
    Keep the repo's releases public, or installed apps can't download updates.
 4. In the GitHub repo → **Settings → Secrets and variables → Actions**:
    - Secret `TAURI_SIGNING_PRIVATE_KEY` → contents of `~/.tauri/infimeety.key`
-   - Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` → the password you chose
+   - Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` → the password you chose (skip it if the key
+     has no password)
 
    (The API address for release builds comes from `app/.env.production`.)
 
@@ -170,11 +171,15 @@ session lives in the WebView profile, which updates never touch, so users stay s
    git push origin main --tags
    ```
 
-3. The **Release** workflow builds the signed Windows installer plus `latest.json` and
-   publishes the GitHub release. Everyone running Infimeety sees the update prompt.
+   Or use **Actions → Release → Run workflow**, which also takes release notes and a dry-run
+   switch.
+3. The **Release** workflow builds the Windows installer, code-signs it once SignPath is set
+   up ([CODE-SIGNING.md](CODE-SIGNING.md)), signs it for the updater, then publishes the
+   GitHub release and `latest.json`. Everyone running Infimeety sees the update prompt.
 
 Building an installer locally (`npm run desktop:build`) also needs the key:
-set `TAURI_SIGNING_PRIVATE_KEY` (and `_PASSWORD`) in your shell first.
+set `TAURI_SIGNING_PRIVATE_KEY` (and `_PASSWORD`) in your shell first. Local builds are never
+code-signed, so ship releases from the workflow.
 
 ---
 

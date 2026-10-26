@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "app": signs infimeety.exe before it's packed into the
+  installer. SignPath doesn't read this file; paste it into the SignPath project
+  (slug "app"). See docs/CODE-SIGNING.md.
+  The release workflow uploads the exe as a GitHub artifact, which is a ZIP.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="infimeety.exe" product-name="Infimeety" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

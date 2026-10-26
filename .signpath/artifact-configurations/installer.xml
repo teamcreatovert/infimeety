@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "installer": signs the NSIS installer, which already
+  contains the signed infimeety.exe. SignPath doesn't read this file; paste it into the
+  SignPath project (slug "installer"). See docs/CODE-SIGNING.md.
+  The release workflow uploads the installer as a GitHub artifact, which is a ZIP.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="Infimeety_${version}_x64-setup.exe" product-name="Infimeety" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
