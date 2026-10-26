@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Button, Spinner, TextField } from '../ui/primitives';
-import { API_URL } from '@/config';
+import { API_URL, DOWNLOAD_PAGE } from '@/config';
 import { isTauri } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
 import { softSpring, spring } from '@/lib/motion';
@@ -130,7 +130,7 @@ export function SignIn() {
         {!isTauri && (
           <>
             {' '}
-            <a href="/download" className="font-medium text-accent hover:underline">
+            <a href={DOWNLOAD_PAGE} className="font-medium text-accent hover:underline">
               Get the desktop app
             </a>
           </>
