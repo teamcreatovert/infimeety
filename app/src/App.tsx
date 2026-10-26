@@ -18,6 +18,7 @@ import { ProfileCard } from './components/people/ProfileCard';
 import { UserMenu } from './components/people/UserMenu';
 import { IncomingCall } from './components/home/IncomingCall';
 import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
 import { startWebLinks } from './lib/weblinks';
@@ -142,6 +143,7 @@ export default function App() {
           </AnimatePresence>
         </div>
         <Toasts />
+        <ConfirmDialog />
         <UserMenu />
         <ProfileCard />
         <SettingsModal />

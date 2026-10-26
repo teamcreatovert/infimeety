@@ -46,6 +46,8 @@ export interface SettingsState {
   cameraDeviceId: string;
   echoCancellation: boolean;
   noiseFilter: NoiseFilter;
+  /** How loud calls play (everyone together), 0–2. Each person also has their own volume. */
+  outputVolume: number;
   autoGainControl: boolean;
 
   soundsEnabled: boolean;
@@ -108,6 +110,7 @@ export const useSettings = create<SettingsState>()(
       cameraDeviceId: 'default',
       echoCancellation: true,
       noiseFilter: 'strong',
+      outputVolume: 1,
       autoGainControl: true,
 
       soundsEnabled: true,

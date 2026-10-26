@@ -317,6 +317,11 @@ function VoiceTab() {
         <Row label="Output device">
           <Select value={s.outputDeviceId} options={opts(devices?.outputs)} onChange={(v) => s.set({ outputDeviceId: v })} />
         </Row>
+        <Row label="Call volume" detail={`Everyone in calls, together · ${Math.round(s.outputVolume * 100)}%`}>
+          <div className="w-[240px]">
+            <Slider value={s.outputVolume} min={0} max={2} onChange={(v) => s.set({ outputVolume: v })} />
+          </div>
+        </Row>
       </Group>
       <Group title="Camera">
         <Row label="Camera">

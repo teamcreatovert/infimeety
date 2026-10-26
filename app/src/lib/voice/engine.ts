@@ -7,6 +7,7 @@ import { sounds } from '@/lib/sounds';
 import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
 import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
+import { confirmCallSwitch } from './callSwitch';
 import { denoise, resumeDenoise, type Denoised } from './denoise';
 import { Peer, VOICE_BITRATE, type Signal } from './peer';
 import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
@@ -118,10 +119,11 @@ class VoiceEngine {
 
   // ─── Session ─────────────────────────────────────────────────────────────────
 
-  async join(channelId: string, roomId: string) {
-    const current = useVoice.getState();
-    if (current.roomId === roomId) return;
-    if (current.roomId) this.leave({ silent: true });
+  /** `confirmed`: the caller already asked about leaving a call elsewhere (confirmCallSwitch). */
+  async join(channelId: string, roomId: string, { confirmed = false } = {}) {
+    if (useVoice.getState().roomId === roomId) return;
+    if (!confirmed && !(await confirmCallSwitch(channelId, undefined, roomId))) return;
+    if (useVoice.getState().roomId) this.leave({ silent: true });
 
     const hub = getHub(channelId);
     if (!hub) return toast({ kind: 'error', title: 'Not connected yet', body: 'Give it a second and try again.' });
@@ -144,7 +146,7 @@ class VoiceEngine {
     this.startMeter();
 
     this.unsubSettings = useSettings.subscribe((s, prev) => {
-      if (s.userVolumes !== prev.userVolumes || s.localMutes !== prev.localMutes || s.streamVolumes !== prev.streamVolumes) this.applyGains();
+      if (s.userVolumes !== prev.userVolumes || s.localMutes !== prev.localMutes || s.streamVolumes !== prev.streamVolumes || s.outputVolume !== prev.outputVolume) this.applyGains();
       if (s.outputDeviceId !== prev.outputDeviceId) this.applyOutput();
       if (
         s.inputDeviceId !== prev.inputDeviceId ||
@@ -674,7 +676,7 @@ class VoiceEngine {
     const { deafened } = useVoice.getState();
     const s = useSettings.getState();
     const now = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(deafened ? 0 : 1, now, 0.015);
+    this.master.gain.setTargetAtTime(deafened ? 0 : s.outputVolume, now, 0.015);
     for (const c of this.chains.values()) {
       const p = this.participants.get(c.peerId);
       const v =
@@ -734,14 +736,18 @@ import.meta.hot?.accept(() => location.reload());
 
 /** Grouped media devices for the settings screen. */
 export async function listDevices() {
-  try {
-    // Labels are only exposed after a permission grant.
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
-    probe?.getTracks().forEach((t) => t.stop());
-  } catch {
-    /* ignore */
+  let all = await navigator.mediaDevices.enumerateDevices();
+  // Names only show after the mic is allowed; ask just then, so opening a device list
+  // doesn't switch the mic on every time.
+  if (all.some((d) => d.kind === 'audioinput' && !d.label)) {
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+      probe?.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* ignore */
+    }
+    all = await navigator.mediaDevices.enumerateDevices();
   }
-  const all = await navigator.mediaDevices.enumerateDevices();
   const named = (kind: MediaDeviceKind) =>
     all.filter((d) => d.kind === kind && d.deviceId !== 'communications').map((d, i) => ({ id: d.deviceId, label: d.label || `Device ${i + 1}` }));
   return { inputs: named('audioinput'), outputs: named('audiooutput'), cameras: named('videoinput') };

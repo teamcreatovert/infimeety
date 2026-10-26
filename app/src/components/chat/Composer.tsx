@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Popcorn, Reply, Smile, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { Attachment, Channel, Room } from '../../../../shared/protocol';
+import { MAX_FILE_SIZE, type Attachment, type Channel, type Room } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
 import { IconButton } from '../ui/primitives';
@@ -91,7 +91,17 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     ta.current?.focus();
   }, [room.id, replyTo]);
 
-  const stage = async (files: SharedFile[]) => {
+  const stage = async (picked: SharedFile[]) => {
+    // Past 4 GB a file can't go in a message; say so rather than dropping it quietly.
+    const tooBig = picked.filter((f) => f.size > MAX_FILE_SIZE);
+    if (tooBig.length)
+      toast({
+        kind: 'error',
+        title: tooBig.length === 1 ? `${tooBig[0].name} is too big to send` : `${tooBig.length} files are too big to send`,
+        body: 'Files and folders can be up to 4 GB each.',
+      });
+    const files = picked.filter((f) => f.size <= MAX_FILE_SIZE);
+    if (!files.length) return;
     const next = await Promise.all(
       files.map(async (file) => {
         const preview = localMedia.src(file.path);

@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api';
 import { channelGradient } from '@/lib/format';
 import { loadMeetingPreview, parseMeetingInput } from '@/lib/meeting';
 import { useChannels } from '@/stores/channels';
+import { confirmCallSwitch } from '@/lib/voice/callSwitch';
 import { useMeetings } from '@/stores/meetings';
 import { toast } from '@/stores/ui';
 
@@ -38,13 +39,14 @@ function JoinMeeting({ initial, onClose }: { initial: string; onClose: () => voi
 
   const join = async (camera: boolean) => {
     if (!code) return;
+    if (!(await confirmCallSwitch(existing?.id ?? null, `Joining ${preview?.name ?? 'this meeting'}`))) return;
     setBusy(true);
     try {
       const meetings = useMeetings.getState();
       const channel = existing ?? (await meetings.join(code));
       useChannels.getState().select(channel.id);
       onClose();
-      await meetings.enterCall(channel, { camera });
+      await meetings.enterCall(channel, { camera, confirmed: true });
     } catch (err) {
       const removed = err instanceof ApiError && err.code === 'removed';
       toast({ kind: 'error', title: removed ? 'You were removed from this meeting' : 'This meeting has ended' });

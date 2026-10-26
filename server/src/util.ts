@@ -1,3 +1,4 @@
+import { MAX_FILE_SIZE } from '../../shared/protocol';
 import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, Role, Room } from '../../shared/protocol';
 import type { ChannelHub } from './hub';
 import type { Lobby } from './lobby';
@@ -129,7 +130,7 @@ export function sanitizeAttachments(input: unknown, ownerId: string): Attachment
     if (typeof id !== 'string' || id.length > 64 || !/^[\w-]+$/.test(id)) continue;
     // Any kind of file; the type only decides how the chat shows it.
     if (typeof mime !== 'string' || !/^[\w.+-]{1,40}\/[\w.+-]{1,100}$/.test(mime)) continue;
-    if (typeof size !== 'number' || size < 0 || size > 4 * 1024 ** 3) continue;
+    if (typeof size !== 'number' || size < 0 || size > MAX_FILE_SIZE) continue;
     out.push({
       id,
       ownerId,

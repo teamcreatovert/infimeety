@@ -7,6 +7,7 @@ import { DOWNLOAD_PAGE } from '@/config';
 import { formatBytes } from '@/lib/format';
 import { changeMovie, createParty, OPEN_LIMIT, pickMovie, pickSubtitle, saveSettings, useParty, whenInRoom } from '@/lib/party';
 import { isApp, type SharedFile } from '@/lib/platform';
+import { confirmCallSwitch } from '@/lib/voice/callSwitch';
 import { voice } from '@/lib/voice/engine';
 import { useChannels } from '@/stores/channels';
 import { toast, useUI } from '@/stores/ui';
@@ -78,7 +79,10 @@ export function PartyPlanner() {
     } catch {
       /* private mode */
     }
-    if (useVoice.getState().roomId !== roomId) await voice.join(channel.id, roomId);
+    if (useVoice.getState().roomId !== roomId) {
+      if (!(await confirmCallSwitch(channel.id))) return setBusy(false);
+      await voice.join(channel.id, roomId, { confirmed: true });
+    }
     if (!(await whenInRoom(roomId))) {
       setBusy(false);
       return toast({ kind: 'error', title: 'Couldn’t join the call', body: 'Check your connection and try again.' });

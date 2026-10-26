@@ -4,6 +4,7 @@ import {
   AudioLines,
   AudioWaveform,
   ChevronDown,
+  ChevronUp,
   Ellipsis,
   Hash,
   Headphones,
@@ -29,8 +30,9 @@ import { useState, type ReactNode } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { ChannelIcon } from '../ui/ChannelIcon';
-import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
+import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { IconButton, Switch } from '../ui/primitives';
+import { DeviceMenu } from '../voice/DeviceMenu';
 import { api } from '@/lib/api';
 import { useParty } from '@/lib/party';
 import { spring } from '@/lib/motion';
@@ -435,6 +437,22 @@ export function VoicePanel() {
   );
 }
 
+/** The small arrow beside the mic and headphone buttons that opens their device menu. */
+function MenuChevron({ label, open, onClick }: { label: string; open: boolean; onClick: (el: HTMLElement) => void }) {
+  return (
+    <Tooltip label={label}>
+      <button
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(e) => onClick(e.currentTarget)}
+        className={clsx('grid h-[30px] w-3.5 place-items-center rounded-[6px] transition-colors hover:bg-fill-2 hover:text-fg', open ? 'bg-fill-2 text-fg' : 'text-fg-3')}
+      >
+        <ChevronUp size={12} />
+      </button>
+    </Tooltip>
+  );
+}
+
 /** One click for noise suppression, like Discord's Krisp button: strong when on. */
 function NoiseToggle() {
   const on = useSettings((s) => s.noiseFilter !== 'off');
@@ -474,9 +492,11 @@ export function UserBar() {
   const deafened = useVoice((s) => s.deafened);
   const speaking = useVoice((s) => !!s.speaking.self);
   const ui = useUI((s) => s.set);
+  const [menu, setMenu] = useState<{ kind: 'input' | 'output'; anchor: Anchor } | null>(null);
+  const openMenu = (kind: 'input' | 'output', el: HTMLElement) => setMenu(menu?.kind === kind ? null : { kind, anchor: el.getBoundingClientRect() });
   if (!me) return null;
   return (
-    <div className="hairline-t flex h-[58px] shrink-0 items-center gap-1 px-2">
+    <div className="hairline-t flex h-[58px] shrink-0 items-center gap-0.5 px-2">
       <button onClick={() => ui({ settingsTab: 'account' })} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-fill-2">
         <Avatar user={me} size={32} speaking={speaking} presence="online" />
         <span className="min-w-0">
@@ -484,12 +504,31 @@ export function UserBar() {
           <span className="block truncate text-[11.5px] leading-tight text-fg-3">@{me.username}</span>
         </span>
       </button>
-      <IconButton label={muted || deafened ? 'Unmute' : 'Mute'} tone={muted || deafened ? 'danger' : undefined} onClick={() => void voice.toggleMute()}>
-        {muted || deafened ? <MicOff size={16} /> : <Mic size={16} />}
-      </IconButton>
-      <IconButton label={deafened ? 'Undeafen' : 'Deafen'} tone={deafened ? 'danger' : undefined} onClick={() => voice.toggleDeafen()}>
-        {deafened ? <HeadphoneOff size={16} /> : <Headphones size={16} />}
-      </IconButton>
+      <div className="flex items-center">
+        <IconButton
+          label={muted || deafened ? 'Unmute' : 'Mute'}
+          tone={muted || deafened ? 'danger' : undefined}
+          onClick={() => void voice.toggleMute()}
+          onContextMenu={(e) => (e.preventDefault(), openMenu('input', e.currentTarget))}
+        >
+          {muted || deafened ? <MicOff size={16} /> : <Mic size={16} />}
+        </IconButton>
+        <MenuChevron label="Microphone options" open={menu?.kind === 'input'} onClick={(el) => openMenu('input', el)} />
+      </div>
+      <div className="flex items-center">
+        <IconButton
+          label={deafened ? 'Undeafen' : 'Deafen'}
+          tone={deafened ? 'danger' : undefined}
+          onClick={() => voice.toggleDeafen()}
+          onContextMenu={(e) => (e.preventDefault(), openMenu('output', e.currentTarget))}
+        >
+          {deafened ? <HeadphoneOff size={16} /> : <Headphones size={16} />}
+        </IconButton>
+        <MenuChevron label="Speaker options" open={menu?.kind === 'output'} onClick={(el) => openMenu('output', el)} />
+      </div>
+      <Popover open={!!menu} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[264px] p-1.5">
+        {menu && <DeviceMenu kind={menu.kind} onClose={() => setMenu(null)} />}
+      </Popover>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { spring } from '@/lib/motion';
 import { isApp } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
+import { confirmCallSwitch } from '@/lib/voice/callSwitch';
 import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
@@ -40,10 +41,11 @@ export function HomeSidebar() {
   const [starting, setStarting] = useState(false);
 
   const startMeeting = async () => {
+    if (!(await confirmCallSwitch(null, 'Starting a new meeting'))) return;
     setStarting(true);
     try {
       const meeting = await useMeetings.getState().create();
-      await useMeetings.getState().enterCall(meeting);
+      await useMeetings.getState().enterCall(meeting, { confirmed: true });
     } catch {
       toast({ kind: 'error', title: 'Couldn’t start a meeting', body: 'Check your connection.' });
     } finally {

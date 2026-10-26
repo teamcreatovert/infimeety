@@ -13,6 +13,10 @@ export const canModerateRole = (role: Role | null | undefined) => !!role && ROLE
 /** Whether `me` can act on someone with `target`'s role: only on lower roles. */
 export const outranks = (me: Role | null | undefined, target: Role | null | undefined) => !!me && ROLE_RANK[me] > ROLE_RANK[target ?? 'member'];
 
+/** The biggest file (or folder) a chat message can carry. Files go device to device, so this
+ * isn't storage; it keeps copies within what every browser's storage and FAT32 drives handle. */
+export const MAX_FILE_SIZE = 4 * 1024 ** 3;
+
 export type RoomKind = 'text' | 'voice';
 export type Provider = 'google' | 'discord' | 'dev';
 

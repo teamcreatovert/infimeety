@@ -22,7 +22,7 @@ interface MeetingsState {
   create: () => Promise<Channel>;
   join: (code: string) => Promise<Channel>;
   /** Join (or rejoin) a meeting's call. */
-  enterCall: (channel: Channel, opts?: { camera?: boolean }) => Promise<void>;
+  enterCall: (channel: Channel, opts?: { camera?: boolean; confirmed?: boolean }) => Promise<void>;
   end: (channelId: string) => Promise<void>;
   /** Take a meeting off your list (you can come back with the link while it lasts). */
   leave: (channelId: string) => Promise<void>;
@@ -74,11 +74,11 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
     return channel;
   },
 
-  async enterCall(channel, { camera = false } = {}) {
+  async enterCall(channel, { camera = false, confirmed = false } = {}) {
     const room = channel.rooms.find((r) => r.kind === 'voice');
     if (!room) return;
     await hubFor(channel.id);
-    await voice.join(channel.id, room.id);
+    await voice.join(channel.id, room.id, { confirmed });
     if (camera && useVoice.getState().roomId === room.id && !useVoice.getState().camera) await voice.toggleCamera();
   },
 

@@ -2,6 +2,7 @@ import { Popcorn } from 'lucide-react';
 import type { Channel } from '../../../../shared/protocol';
 import { Button } from '../ui/primitives';
 import { useParty } from '@/lib/party';
+import { confirmCallSwitch } from '@/lib/voice/callSwitch';
 import { voice } from '@/lib/voice/engine';
 import { useChannels } from '@/stores/channels';
 import { useUI } from '@/stores/ui';
@@ -16,7 +17,10 @@ export function PartyBanner({ channel }: { channel: Channel }) {
   if (!live.length) return null;
 
   const open = async (roomId: string) => {
-    if (myRoom !== roomId) await voice.join(channel.id, roomId);
+    if (myRoom !== roomId) {
+      if (!(await confirmCallSwitch(channel.id))) return;
+      await voice.join(channel.id, roomId, { confirmed: true });
+    }
     if (channel.kind === 'space') useChannels.getState().selectRoom(channel.id, roomId);
     else useChannels.getState().select(channel.id);
     useUI.getState().set({ partyView: true, focusedPeer: null });
