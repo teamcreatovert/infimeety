@@ -10,7 +10,7 @@ until then. Researched October 2026.
 | --- | --- | --- | --- |
 | 1 | [Release from GitHub Actions](#1-release-from-github-actions-do-this-now): add one secret | 5 min | ~10–15 min per release build |
 | 2 | [Report false positives](#meanwhile-false-positive-reports) for each new release | 20–30 min per release | Microsoft: a few days. Others: no promise, often 1–5 days |
-| 3 | [Choose a license](#2-choose-a-license-your-decision) | 15 min (deciding takes longer) | — |
+| 3 | [Choose a license](#2-choose-a-license-your-decision): ✅ done, AGPL-3.0 | — | — |
 | 4 | [Write a privacy policy and the code signing policy section](#3-privacy-policy-and-code-signing-policy) | 1–2 h | — |
 | 5 | [Turn on two-factor sign-in on GitHub](#4-two-factor-sign-in) | 5 min | — |
 | 6 | [Get some visibility, then apply to SignPath Foundation](#5-apply-to-signpath-foundation) | 15 min to apply | 1 day to ~2 months. New projects are often declined |
@@ -52,7 +52,7 @@ From [signpath.org/terms](https://signpath.org/terms):
 
 | Rule | Infimeety today |
 | --- | --- |
-| OSI-approved license for every component, no commercial dual-licensing, no proprietary parts | ❌ No `LICENSE` yet ([step 2](#2-choose-a-license-your-decision)) |
+| OSI-approved license for every component, no commercial dual-licensing, no proprietary parts | ✅ AGPL-3.0 (`LICENSE`) |
 | Actively maintained, already released in the form to be signed | ✅ v0.1.0 and v0.1.1 on GitHub Releases |
 | Functionality described on the download page | ✅ README and the landing page |
 | You develop the project and own the repo. Only your own binaries get signed | ✅ |
@@ -101,9 +101,10 @@ the version is already released, or when you try to publish a test-signed build.
 
 ## 2. Choose a license (your decision)
 
-SignPath needs an OSI-approved license covering the whole repo (app, server, shared). Pick one
-of these and add it as `LICENSE` in the repo root. On GitHub: **Add file → Create new file**,
-type `LICENSE`, then **Choose a license template**.
+**Done:** Infimeety uses **AGPL-3.0** (`LICENSE` in the repo root). The options considered are
+below for reference.
+
+SignPath needs an OSI-approved license covering the whole repo (app, server, shared).
 
 | License | What it means for Infimeety |
 | --- | --- |

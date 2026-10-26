@@ -52,3 +52,9 @@ cd app && npm install && npm run desktop
 ```
 
 Full guide (Cloudflare deploy, Google/Discord OAuth, auto-update signing): [docs/SETUP.md](docs/SETUP.md)
+
+## License
+
+Infimeety is free software under the [GNU Affero General Public License v3.0](LICENSE). If you
+run a modified version of it for other people, including the server, you must share your changes
+under the same license.
