@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { webMedia } from './webMedia';
 
 /** True inside the desktop app; false in a plain browser (the web app). */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -46,8 +47,8 @@ export interface SharedFile {
 }
 
 /** Bridge to the Rust media registry. Files stay on this PC; the webview reads them by id. */
-export const localMedia = {
-  available: isTauri,
+const desktopMedia = {
+  available: true,
   pick: () => invoke<SharedFile[]>('media_pick'),
   takeDropped: () => invoke<SharedFile[]>('media_take_dropped'),
   saveBytes: (name: string, bytes: Uint8Array) =>
@@ -58,3 +59,6 @@ export const localMedia = {
   forget: (id: string) => invoke<void>('media_forget', { id }),
   src: (path: string) => convertFileSrc(path),
 };
+
+/** Where your shared files live: on disk in the desktop app, in the browser's storage on the web. */
+export const localMedia: typeof desktopMedia = isTauri ? desktopMedia : webMedia;

@@ -19,6 +19,7 @@ import { IncomingCall } from './components/home/IncomingCall';
 import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
+import { startWebLinks } from './lib/weblinks';
 import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
@@ -65,6 +66,7 @@ export default function App() {
     void useAuth.getState().init();
     startUpdateChecks();
     void startDeepLinks();
+    startWebLinks();
     startDesktop();
 
     // Feels like a native app: no browser context menu outside text.
@@ -113,7 +115,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="relative flex h-full w-full flex-col overflow-hidden">
+      <div className="safe-area relative flex h-full w-full flex-col overflow-hidden">
         <Background />
         <TitleBar />
         <div className="relative min-h-0 flex-1">

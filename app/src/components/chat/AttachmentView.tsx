@@ -76,7 +76,7 @@ export function AttachmentView({ att, channelId }: { att: Attachment; channelId:
       );
     if (kind === 'video')
       return <video src={entry.url} controls playsInline className="rounded-[14px] bg-black shadow-[0_0_0_0.5px_var(--hairline-strong)]" style={{ ...size, maxWidth: 420 }} />;
-    return <audio src={entry.url} controls className="w-[300px]" />;
+    return <audio src={entry.url} controls className="w-[300px] max-w-full" />;
   }
 
   const card = (icon: React.ReactNode, title: string, detail: string, action?: React.ReactNode) => (

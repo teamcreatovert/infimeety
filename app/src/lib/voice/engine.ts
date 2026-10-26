@@ -566,6 +566,8 @@ class VoiceEngine {
         enc.maxBitrate = 1_500_000;
       } else if (track.kind === 'audio') {
         enc.maxBitrate = VOICE_BITRATE;
+        // On a weak connection voices go first: video gives way before anyone becomes hard to hear.
+        enc.priority = enc.networkPriority = 'high';
       } else continue;
       sender.setParameters(params).catch(() => {});
     }

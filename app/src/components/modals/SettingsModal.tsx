@@ -10,6 +10,7 @@ import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION } from '@/config';
 import { api } from '@/lib/api';
+import { isTauri } from '@/lib/platform';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useUpdater } from '@/lib/updater';
@@ -33,14 +34,15 @@ export function SettingsModal() {
   const close = () => useUI.getState().set({ settingsTab: null });
   return (
     <Modal open={!!tab} onClose={close} width={820}>
-      <div className="flex h-[580px]">
-        <nav className="hairline-r flex w-[214px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4">
-          <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em]">Settings</div>
-          {TABS.map((t) => (
+      {/* Phones: the tabs become a scrolling row above the page. */}
+      <div className="flex h-[580px] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
+        <nav className="hairline-r flex w-[214px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
+          <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em] compact:hidden">Settings</div>
+          {TABS.filter((t) => isTauri || (t.id !== 'desktop' && t.id !== 'updates')).map((t) => (
             <button
               key={t.id}
               onClick={() => useUI.getState().set({ settingsTab: t.id })}
-              className={clsx('relative flex h-8 items-center gap-2.5 rounded-[8px] px-2 text-[13px] transition-colors', tab === t.id ? 'text-white' : 'hover:bg-fill-2')}
+              className={clsx('relative flex h-8 shrink-0 items-center gap-2.5 rounded-[8px] px-2 text-[13px] transition-colors compact:h-9', tab === t.id ? 'text-white' : 'hover:bg-fill-2')}
             >
               {tab === t.id && <motion.span layoutId="settings-tab" transition={spring} className="absolute inset-0 rounded-[8px] bg-accent" />}
               <span className="relative grid h-[22px] w-[22px] place-items-center rounded-[6px] text-white" style={{ background: t.tint }}>
@@ -49,13 +51,13 @@ export function SettingsModal() {
               <span className="relative">{t.label}</span>
             </button>
           ))}
-          <div className="mt-auto px-2.5 pb-1 text-[11px] text-fg-3">Infimeety {APP_VERSION}</div>
+          <div className="mt-auto px-2.5 pb-1 text-[11px] text-fg-3 compact:hidden">Infimeety {APP_VERSION}</div>
         </nav>
-        <div className="relative min-w-0 flex-1">
-          <button aria-label="Close" onClick={close} className="absolute right-3.5 top-3.5 z-10 grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg">
+        <div className="relative min-h-0 min-w-0 flex-1 compact:static">
+          <button aria-label="Close" onClick={close} className="absolute right-3.5 top-3.5 z-10 compact:top-3 grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg">
             <X size={14} />
           </button>
-          <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={spring} className="scroll h-full px-7 pb-6 pt-5">
+          <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={spring} className="scroll h-full px-7 pb-6 pt-5 compact:px-4 compact:pt-4">
             <h2 className="mb-5 font-display text-[20px] font-bold tracking-[-0.02em]">{TABS.find((t) => t.id === tab)?.label}</h2>
             {tab === 'account' && <AccountTab />}
             {tab === 'voice' && <VoiceTab />}

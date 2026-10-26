@@ -5,11 +5,13 @@ import { useMemo, useState } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { Popover, Tooltip, type Anchor } from '../ui/overlay';
+import { MobileBack } from '../shell/MobileBack';
 import { Button } from '../ui/primitives';
 import { ChatToggle, VoiceChatPanel, VoiceRoomView } from '../voice/VoiceRoomView';
 import { channelGradient } from '@/lib/format';
 import { meetingUrl, timeLeft } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
+import { useCompact } from '@/lib/responsive';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMeetings } from '@/stores/meetings';
@@ -55,16 +57,27 @@ export function MeetingView({ channel }: { channel: Channel }) {
 /** In the call's header: the link to share, and End for the host. */
 function StageActions({ channel }: { channel: Channel }) {
   const [copied, copy] = useCopy();
+  const compact = useCompact();
   const code = channel.inviteCode ?? '';
+  const link = meetingUrl(code);
+  // Phones hand the link to the share sheet (Messages, WhatsApp…); computers copy it.
+  const share = async () => {
+    if (compact && navigator.share) {
+      await navigator.share({ title: channel.name, text: `Join ${channel.name} on Infimeety`, url: link }).catch(() => {});
+      return;
+    }
+    await copy(link);
+  };
   return (
     <>
       <Tooltip label={copied ? 'Link copied' : 'Copy the meeting link'} side="bottom">
         <button
-          onClick={() => void copy(meetingUrl(code))}
-          className="mr-1 flex h-[30px] items-center gap-1.5 rounded-full bg-fill-2 px-3 font-mono text-[12px] text-fg-2 transition-colors hover:bg-fill-3 hover:text-fg"
+          aria-label="Share the meeting link"
+          onClick={() => void share()}
+          className="mr-1 flex h-[30px] shrink-0 items-center gap-1.5 rounded-full bg-fill-2 px-3 font-mono text-[12px] text-fg-2 transition-colors hover:bg-fill-3 hover:text-fg compact:mr-0 compact:h-9 compact:w-9 compact:justify-center compact:px-0"
         >
-          {copied ? <Check size={13} className="text-success" /> : <Link2 size={13} />}
-          {code}
+          {copied ? <Check size={compact ? 16 : 13} className="text-success" /> : <Link2 size={compact ? 16 : 13} />}
+          <span className="compact:hidden">{code}</span>
         </button>
       </Tooltip>
       {channel.role === 'owner' && <EndMeeting channel={channel} variant="pill" />}
@@ -111,15 +124,16 @@ function MeetingLobby({ channel, callRoom, chatRoom }: { channel: Channel; callR
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5">
-          <Video size={18} className="text-fg-3" />
+        <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5 compact:px-3">
+          <MobileBack />
+          <Video size={18} className="shrink-0 text-fg-3" />
           <h1 data-tauri-drag-region className="truncate font-display text-[15px] font-semibold tracking-[-0.015em]">
             {channel.name}
           </h1>
           <div data-tauri-drag-region className="flex-1 self-stretch" />
           <ChatToggle />
         </header>
-        <div className="grid flex-1 place-items-center overflow-y-auto p-8">
+        <div className="grid flex-1 place-items-center overflow-y-auto p-8 compact:p-5">
           <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex w-full max-w-[400px] flex-col items-center text-center">
             <motion.div
               className="grid h-24 w-24 place-items-center rounded-[30px] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_20px_50px_rgba(0,0,0,0.35)]"
@@ -200,7 +214,7 @@ function ShareCard({ channel }: { channel: Channel }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -8, scale: 0.97, transition: { duration: 0.14 } }}
           transition={spring}
-          className="absolute left-5 top-[64px] z-40 w-[372px] max-w-[calc(100%-40px)] rounded-[20px] p-4 glass-pop"
+          className="absolute left-5 top-[64px] z-40 w-[372px] max-w-[calc(100%-40px)] rounded-[20px] p-4 glass-pop compact:left-2.5 compact:top-[58px] compact:max-w-[calc(100%-20px)]"
         >
           <button aria-label="Close" onClick={close} className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3">
             <X size={14} />
@@ -232,8 +246,9 @@ function EndMeeting({ channel, variant }: { channel: Channel; variant: 'pill' | 
     <>
       {variant === 'pill' ? (
         <button
+          aria-label="End the meeting"
           onClick={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
-          className="mr-1 flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[12px] font-semibold text-danger transition-[filter] hover:brightness-125"
+          className="mr-1 flex h-[30px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] font-semibold text-danger transition-[filter] hover:brightness-125 compact:mr-0 compact:h-9"
           style={{ background: 'color-mix(in srgb, var(--danger) 14%, transparent)' }}
         >
           <PhoneOff size={13} /> End

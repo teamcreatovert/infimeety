@@ -31,7 +31,7 @@ import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useActiveRoom, useChannels } from '@/stores/channels';
 import { useMessages } from '@/stores/messages';
-import { openUserMenu, toast, useUI } from '@/stores/ui';
+import { openUserMenu, showMain, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 export function Sidebar({ channel }: { channel: Channel }) {
@@ -56,7 +56,7 @@ export function Sidebar({ channel }: { channel: Channel }) {
   };
 
   return (
-    <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col">
+    <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col compact:w-auto compact:min-w-0 compact:flex-1">
       <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-2.5">
         <button
           onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
@@ -123,7 +123,7 @@ function Section({ title, onAdd, children }: { title: string; onAdd?: () => void
       <div className="group flex h-7 items-center px-2">
         <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">{title}</span>
         {onAdd && (
-          <button aria-label={`Add ${title}`} onClick={onAdd} className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100">
+          <button aria-label={`Add ${title}`} onClick={onAdd} className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100 touch:opacity-100 compact:h-7 compact:w-7">
             <Plus size={14} />
           </button>
         )}
@@ -169,7 +169,7 @@ function RoomButton({ active, onClick, children, onContextMenu }: { active: bool
     <button
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={clsx('relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
+      className={clsx('relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors compact:h-11 compact:text-[15px]', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
     >
       {active && <motion.span layoutId="room-selection" transition={spring} className="absolute inset-0 rounded-[8px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
       {children}
@@ -181,7 +181,7 @@ function TextRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   const active = useActiveRoom()?.id === room.id;
   const unread = useMessages((s) => s.unread[room.id] ?? 0);
   return (
-    <RoomButton active={active} onClick={() => useChannels.getState().selectRoom(channel.id, room.id)}>
+    <RoomButton active={active} onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())}>
       <Hash size={15} className="relative shrink-0 text-fg-3" />
       <span className={clsx('relative flex-1 truncate text-left', unread > 0 && !active && 'font-semibold text-fg')}>{room.name}</span>
       {unread > 0 && !active && (
@@ -203,6 +203,7 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
 
   const open = () => {
     useChannels.getState().selectRoom(channel.id, room.id);
+    showMain();
     if (!connected) void voice.join(channel.id, room.id);
   };
 
@@ -280,7 +281,7 @@ export function VoicePanel() {
                 <div className="text-[12.5px] font-semibold" style={{ color: trouble ? 'var(--danger)' : connecting ? 'var(--warning)' : 'var(--success)' }}>
                   {trouble ? 'Connection trouble' : connecting ? 'Connecting…' : 'Voice connected'}
                 </div>
-                <button onClick={() => useChannels.getState().selectRoom(channel.id, room.id)} className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline">
+                <button onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())} className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline">
                   {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : channel.kind === 'meeting' ? channel.name : `${room.name} · ${channel.name}`}
                 </button>
               </div>

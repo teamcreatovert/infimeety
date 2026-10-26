@@ -68,14 +68,14 @@ export function Onboarding() {
     availability === 'invalid' ? '3–24 characters: letters, numbers, dots and underscores' : availability === 'taken' ? 'That username is taken' : 'This is how friends find and mention you';
 
   return (
-    <div className="relative grid h-full place-items-center">
+    <div className="relative grid h-full place-items-center overflow-y-auto px-4 py-6">
       <motion.form
         onSubmit={submit}
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, scale: 0.98 }}
         transition={softSpring}
-        className="w-[440px] rounded-[32px] px-9 pb-8 pt-9 glass-pop"
+        className="w-full max-w-[440px] rounded-[32px] px-9 pb-8 pt-9 glass-pop compact:px-6"
       >
         <div className="text-center">
           <h1 className="font-display text-[26px] font-bold tracking-[-0.03em]">Make it yours</h1>

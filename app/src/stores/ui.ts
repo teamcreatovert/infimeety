@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isCompactNow } from '@/lib/responsive';
 
 export interface Toast {
   id: number;
@@ -42,6 +43,10 @@ interface UIState {
   profileCard: { userId: string; x: number; y: number; focusNote?: boolean } | null;
   /** Text for the visible message box to insert, e.g. an @mention picked from a menu. */
   composerInsert: { text: string; at: number } | null;
+  /** Phones show one pane at a time: the channel list (true) or what's open in it (false). */
+  mobileNav: boolean;
+  /** Touch screens: the message whose actions (react, reply…) are showing after a tap. */
+  touchedMessage: string | null;
   toasts: Toast[];
 
   set: (patch: Partial<UIState>) => void;
@@ -59,7 +64,7 @@ export const useUI = create<UIState>()((set) => ({
   inviteTo: null,
   pendingInvite: null,
   lightbox: null,
-  memberList: true,
+  memberList: !isCompactNow(),
   voiceChat: false,
   focusedPeer: null,
   immersive: false,
@@ -68,6 +73,8 @@ export const useUI = create<UIState>()((set) => ({
   userMenu: null,
   profileCard: null,
   composerInsert: null,
+  mobileNav: true,
+  touchedMessage: null,
   toasts: [],
 
   set: (patch) => set(patch),
@@ -82,6 +89,9 @@ export const useUI = create<UIState>()((set) => ({
 }));
 
 export const toast = (t: Omit<Toast, 'id'>) => useUI.getState().toast(t);
+
+/** Phones: switch from the channel list to what was just opened. */
+export const showMain = () => useUI.getState().set({ mobileNav: false });
 
 /** Right-click on a person anywhere: avatar rows, voice tiles, DMs, chat. */
 export function openUserMenu(e: React.MouseEvent, userId: string | undefined, context: UserMenuContext) {

@@ -2,6 +2,7 @@ import { motion } from 'motion/react';
 import { Phone, Video } from 'lucide-react';
 import type { Channel } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
+import { MobileBack } from '../shell/MobileBack';
 import { Avatar } from '../ui/Avatar';
 import { IconButton } from '../ui/primitives';
 import { VoiceRoomView } from '../voice/VoiceRoomView';
@@ -29,8 +30,9 @@ export function DmView({ channel }: { channel: Channel }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2.5 px-5">
-        <Avatar user={peer} size={28} presence={online ? 'online' : 'offline'} />
+      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2.5 px-5 compact:gap-2 compact:px-3">
+        <MobileBack />
+        <Avatar user={peer} size={28} presence={online ? 'online' : 'offline'} className="shrink-0" />
         <div data-tauri-drag-region className="min-w-0">
           <div className="truncate font-display text-[15px] font-semibold leading-tight tracking-[-0.015em]">{peer?.name ?? 'Direct message'}</div>
           <div className="truncate text-[11.5px] leading-tight text-fg-3">{online ? 'Online' : `@${peer?.username}`}</div>

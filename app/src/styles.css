@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter/opsz.css';
 
+/* Phones (and phones held sideways): one pane at a time, bigger touch targets. Keep in sync with lib/responsive.ts. */
+@custom-variant compact (@media (max-width: 767.98px), (max-height: 499.98px));
+/* Touch screens have no hover, so anything revealed on hover is shown outright. */
+@custom-variant touch (@media (hover: none));
+
 /* ─── Design tokens ─────────────────────────────────────────────────────────── */
 
 :root {
@@ -104,6 +109,20 @@ body,
   margin: 0;
   overflow: hidden;
 }
+/* Mobile browsers' toolbars come and go; dvh follows them where 100% doesn't. */
+#root {
+  height: 100dvh;
+}
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Notches and home indicators (the viewport is viewport-fit=cover). */
+.safe-area {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
 
 body {
   background: var(--bg);
@@ -123,9 +142,12 @@ body {
   background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
-button {
+button,
+a,
+[role='button'] {
   cursor: default;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 input,

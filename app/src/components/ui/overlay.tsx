@@ -16,6 +16,9 @@ import { spring } from '@/lib/motion';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
 
+/** Touch screens fake a hover on tap, which would leave tooltips stuck open. */
+const noHover = typeof window !== 'undefined' && window.matchMedia('(hover: none)').matches;
+
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
 
 export function Tooltip({ label, side = 'top', children }: { label: ReactNode; side?: Side; children: ReactElement }) {
@@ -28,6 +31,7 @@ export function Tooltip({ label, side = 'top', children }: { label: ReactNode; s
   const child = cloneElement(children as ReactElement<Record<string, unknown>>, {
     onMouseEnter: (e: ReactMouseEvent<HTMLElement>) => {
       props.onMouseEnter?.(e);
+      if (noHover) return;
       const el = e.currentTarget;
       clearTimeout(timer.current);
       timer.current = setTimeout(() => setRect(el.getBoundingClientRect()), 420);
@@ -283,12 +287,12 @@ export function Modal({
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div className="fixed inset-0 z-[80] grid place-items-center p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+        <motion.div className="safe-area fixed inset-0 z-[80] grid grid-cols-[minmax(0,1fr)] place-items-center p-6 compact:p-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
           <div className="absolute inset-0 bg-black/45 backdrop-blur-[3px]" onPointerDown={onClose} />
           <motion.div
             role="dialog"
             aria-modal
-            className={clsx('relative max-h-full overflow-hidden rounded-[22px] glass-pop', className)}
+            className={clsx('relative max-h-full overflow-y-auto overflow-x-hidden rounded-[22px] glass-pop', className)}
             style={{ width, maxWidth: '100%' }}
             initial={{ opacity: 0, scale: 0.93, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
