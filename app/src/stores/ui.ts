@@ -33,6 +33,10 @@ interface UIState {
   watchLayout: 'theater' | 'mini';
   /** Showing the room's watch party (rather than the call grid) while one runs. */
   partyView: boolean;
+  /** Watch mode folds the channel list away (desktop); a button brings it back. */
+  navCollapsed: boolean;
+  /** The watch party planner: for a new party in a channel (optionally a given voice room), or `edit` the room's party. */
+  partyPlanner: { channelId: string; roomId?: string; edit?: boolean } | null;
   userMenu: { userId: string; x: number; y: number; context: UserMenuContext } | null;
   profileCard: { userId: string; x: number; y: number; focusNote?: boolean } | null;
   /** Text for the visible message box to insert, e.g. an @mention picked from a menu. */
@@ -63,6 +67,8 @@ export const useUI = create<UIState>()((set) => ({
   immersive: false,
   watchLayout: 'theater',
   partyView: true,
+  navCollapsed: false,
+  partyPlanner: null,
   userMenu: null,
   profileCard: null,
   composerInsert: null,

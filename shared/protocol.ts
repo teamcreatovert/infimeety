@@ -40,6 +40,8 @@ export interface Channel {
   name: string;
   emoji: string;
   color: string;
+  /** A picture the admins uploaded; shown instead of the emoji. */
+  iconUrl?: string | null;
   ownerId: string;
   /** Any member can share it (null for DMs). For meetings: the meeting code, e.g. "gyus-768g-hsf". */
   inviteCode: string | null;
@@ -160,11 +162,26 @@ export interface PartyFile {
   size: number;
 }
 
+/** How a watch party runs, chosen by its host. */
+export interface PartySettings {
+  /**
+   * Who plays, pauses and seeks: everyone; only the host and co-hosts; or 'auto', everyone
+   * until more than three people are watching, then only the host and co-hosts.
+   */
+  control: 'everyone' | 'auto' | 'hosts';
+  /** Can the others ask the host to play, pause or jump to a time? */
+  requests: boolean;
+  /** Start by itself once everyone in the room is ready. */
+  autoStart: boolean;
+}
+
+export const DEFAULT_PARTY_SETTINGS: PartySettings = { control: 'auto', requests: true, autoStart: false };
+
 /**
  * A watch party in a voice room: everyone plays their own copy of one file, in sync.
+ * It opens as a lobby (people get the movie and say they're ready), then goes live.
  * Playback is "at server time `at`, the movie was at `position` seconds, and was (not)
  * playing"; a play is scheduled a moment ahead so everyone starts on the same frame.
- * With more than three people in the room, only the host and co-hosts control it.
  */
 export interface PartyState {
   id: string;
@@ -172,6 +189,10 @@ export interface PartyState {
   cohosts: string[];
   file: PartyFile;
   subtitle: PartyFile | null;
+  phase: 'lobby' | 'live';
+  settings: PartySettings;
+  /** People who said they're ready to start. */
+  ready: string[];
   playing: boolean;
   position: number;
   at: number;
@@ -226,8 +247,19 @@ export type ClientMsg =
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
-  /** Start, update or (null) end the room's watch party. `resolves`: the request this answers. */
-  | { t: 'party.set'; roomId: string; party: Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at'> | null; resolves?: string }
+  /** Create (as a lobby), update or (null) end the room's watch party. `resolves`: the request this answers. */
+  | {
+      t: 'party.set';
+      roomId: string;
+      party: (Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at'> & { settings?: PartySettings }) | null;
+      resolves?: string;
+    }
+  /** The lobby goes live: everyone starts together after a short countdown. */
+  | { t: 'party.start'; roomId: string }
+  /** "I'm ready" (or not anymore). */
+  | { t: 'party.ready'; roomId: string; ready: boolean }
+  /** The host changes how the party runs. */
+  | { t: 'party.settings'; roomId: string; settings: PartySettings }
   | { t: 'party.request'; roomId: string; action: PartyAction }
   /** The host makes someone a co-host (or not). */
   | { t: 'party.cohost'; roomId: string; userId: string; on: boolean }

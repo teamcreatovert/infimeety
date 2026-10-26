@@ -98,6 +98,7 @@ export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => 
   inviteCode: r.kind === 'dm' ? null : r.invite_code,
   role: r.role,
   rooms,
+  iconUrl: r.icon_url ?? null,
   ...(r.kind === 'meeting' ? { expiresAt: r.expires_at } : {}),
 });
 

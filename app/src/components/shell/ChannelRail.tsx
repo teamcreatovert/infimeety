@@ -2,9 +2,9 @@ import { motion } from 'motion/react';
 import { Download, Plus, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Channel } from '../../../../shared/protocol';
+import { ChannelIcon } from '../ui/ChannelIcon';
 import { Tooltip } from '../ui/overlay';
 import { DOWNLOAD_PAGE } from '@/config';
-import { channelGradient } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { isTauri } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
@@ -137,15 +137,16 @@ function RailItem({ channel, active, onSelect }: { channel: Channel; active: boo
           whileHover={{ scale: 1.06, borderRadius: 16 }}
           whileTap={{ scale: 0.93 }}
           transition={snappy}
-          className="emoji relative grid h-11 w-11 place-items-center rounded-[14px] text-[21px]"
+          className="relative grid h-11 w-11 place-items-center rounded-[14px] text-[21px]"
           style={{
-            background: channelGradient(channel.color),
             boxShadow: active
               ? '0 0 0 2px var(--ring-bg), 0 0 0 3.5px var(--fg), 0 4px 14px rgba(0,0,0,0.3)'
               : 'inset 0 0.5px 0 rgba(255,255,255,0.4), 0 2px 8px rgba(0,0,0,0.22)',
           }}
         >
-          {channel.emoji}
+          <span className="absolute inset-0 overflow-hidden rounded-[inherit]">
+            <ChannelIcon channel={channel} />
+          </span>
           {unread > 0 && (
             <span className="absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 font-sans text-[10.5px] font-bold text-white shadow-[0_0_0_2.5px_var(--ring-bg)]">
               {unread > 99 ? '99+' : unread}

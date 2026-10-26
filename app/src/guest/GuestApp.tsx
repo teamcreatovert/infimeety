@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
+import { PartyPlanner } from '../components/voice/PartyPlanner';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Channel, GuestStatus, Me, MeetingPreview } from '../../../shared/protocol';
@@ -245,6 +246,7 @@ export function GuestApp({ code }: { code: string }) {
         <Toasts />
         <UserMenu />
         <Lightbox />
+        <PartyPlanner />
       </div>
     </MotionConfig>
   );

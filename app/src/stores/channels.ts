@@ -40,6 +40,10 @@ interface ChannelsState {
   removeLocal: (channelId: string) => void;
   loadMembers: (channelId: string) => Promise<void>;
   addRoom: (channelId: string, kind: Room['kind'], name: string) => Promise<Room>;
+  renameRoom: (channelId: string, roomId: string, name: string) => Promise<void>;
+  deleteRoom: (channelId: string, roomId: string) => Promise<void>;
+  /** Uploads a channel picture (a prepared image), or removes it with null. */
+  setIcon: (channelId: string, image: { body: Blob; type: string } | null) => Promise<void>;
   upsertUser: (user: PublicUser) => void;
   setTyping: (roomId: string, userId: string) => void;
   set: (patch: Partial<ChannelsState>) => void;
@@ -142,6 +146,31 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
       for (const m of members) users[m.id] = { id: m.id, name: m.name, username: m.username, avatarUrl: m.avatarUrl, ...(m.guest ? { guest: true } : {}) };
       return { members: { ...s.members, [channelId]: members }, users };
     });
+  },
+
+  async renameRoom(channelId, roomId, name) {
+    await api(`/channels/${channelId}/rooms/${roomId}`, { method: 'PATCH', json: { name } });
+    // Text rooms come back lower-cased with dashes; reload to show exactly what was saved.
+    const [channel] = (await api<Channel[]>('/channels')).filter((c) => c.id === channelId);
+    if (channel) set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
+  },
+
+  async deleteRoom(channelId, roomId) {
+    await api(`/channels/${channelId}/rooms/${roomId}`, { method: 'DELETE' });
+    set((s) => {
+      const channels = s.channels.map((c) => (c.id === channelId ? { ...c, rooms: c.rooms.filter((r) => r.id !== roomId) } : c));
+      const activeRoom = { ...s.activeRoom };
+      if (activeRoom[channelId] === roomId) delete activeRoom[channelId];
+      return { channels, activeRoom };
+    });
+    persistSelection(get());
+  },
+
+  async setIcon(channelId, image) {
+    const channel = image
+      ? await api<Channel>(`/channels/${channelId}/icon`, { method: 'PUT', body: image.body, headers: { 'Content-Type': image.type } })
+      : await api<Channel>(`/channels/${channelId}/icon`, { method: 'DELETE' });
+    set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
   },
 
   async addRoom(channelId, kind, name) {

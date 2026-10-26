@@ -318,7 +318,11 @@ class VoiceEngine {
     const options = (audio: boolean) =>
       ({
         video: { width: { ideal: preset.width }, height: { ideal: preset.height }, frameRate: { ideal: preset.fps, max: preset.fps } },
-        audio: audio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, sampleRate: 48000 } : false,
+        // restrictOwnAudio: the shared sound leaves out this page's own audio (friends' voices),
+        // which would otherwise go straight back to them as a clear echo.
+        audio: audio
+          ? ({ echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, sampleRate: 48000, restrictOwnAudio: true } as MediaTrackConstraints)
+          : false,
         // Chromium hints: offer system audio, allow switching surfaces mid-share.
         systemAudio: 'include',
         surfaceSwitching: 'include',
@@ -345,6 +349,14 @@ class VoiceEngine {
     }
     const video = stream.getVideoTracks()[0];
     video.contentHint = s.screenMode === 'motion' ? 'motion' : 'detail';
+    // A browser too old to leave the call out of a whole-screen share would echo everyone.
+    const sound = stream.getAudioTracks()[0];
+    const settings = sound?.getSettings() as (MediaTrackSettings & { restrictOwnAudio?: boolean; displaySurface?: string }) | undefined;
+    if (sound && settings?.restrictOwnAudio !== true && (video.getSettings() as { displaySurface?: string }).displaySurface === 'monitor') {
+      stream.removeTrack(sound);
+      sound.stop();
+      toast({ kind: 'info', title: 'Sharing without sound', body: 'This browser would send friends their own voices back. Update it, share a tab’s sound instead, or use the Infimeety app.' });
+    }
     video.onended = () => this.stopScreen();
     if (nativeAudio && this.ctx) {
       try {

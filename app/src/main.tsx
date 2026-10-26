@@ -10,6 +10,14 @@ import './styles.css';
 // Browsers get the whole app at infimeety.pages.dev/web/. A meeting link (/web/?meet=CODE)
 // opens the guest flow, unless you're signed in here: then you join as yourself.
 const meeting = isTauri ? null : meetingInLocation();
+// The website's home page opens the web app directly for people who use it here.
+if (!isTauri) {
+  try {
+    localStorage.setItem('infimeety.web', '1');
+  } catch {
+    /* private mode */
+  }
+}
 const asGuest = !!meeting && (!getToken() || new URLSearchParams(location.search).has('guest'));
 
 // No StrictMode: its double-mounted effects would open duplicate WebSocket/WebRTC sessions in dev.

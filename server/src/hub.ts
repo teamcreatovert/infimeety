@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { ClientMsg, Message, PartyFile, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS } from '../../shared/protocol';
+import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
@@ -24,8 +25,10 @@ interface MeetingState {
 }
 
 const MAX_FRAME = 64 * 1024;
-/** Above this many people in the room, only the host and co-hosts control a watch party. */
+/** With 'auto' control: above this many people in the room, only the host and co-hosts control a watch party. */
 const PARTY_OPEN_LIMIT = 3;
+/** A watch party starts this long after "Start", so everyone sees the countdown and starts together. */
+const PARTY_COUNTDOWN = 3000;
 /** A live meeting's hub re-checks its expiry at least this often (in case a disconnect went unnoticed). */
 const MEETING_CHECK = 15 * 60_000;
 
@@ -49,7 +52,11 @@ export class ChannelHub extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
-      this.parties = new Map(Object.entries((await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {}));
+      // Parties saved before lobbies and settings existed are already live, with the defaults.
+      const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
+      this.parties = new Map(
+        Object.entries(saved).map(([roomId, p]) => [roomId, { ...p, phase: p.phase ?? 'live', settings: p.settings ?? DEFAULT_PARTY_SETTINGS, ready: p.ready ?? [] }]),
+      );
     });
   }
 
@@ -290,9 +297,30 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'party.set':
         return this.partySet(ws, me, msg);
+      case 'party.start': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || me.voice?.roomId !== msg.roomId || party.phase !== 'lobby') return;
+        if (!this.canControl(party, me.userId)) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can start the watch party' });
+        return this.startParty(msg.roomId, party, me.userId);
+      }
+      case 'party.ready': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || me.voice?.roomId !== msg.roomId) return;
+        const ready = party.ready.filter((u) => u !== me.userId);
+        if (msg.ready) ready.push(me.userId);
+        await this.savePartyState(msg.roomId, { ...party, ready, seq: party.seq + 1 });
+        return this.maybeAutoStart(msg.roomId);
+      }
+      case 'party.settings': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || !this.isHost(party, me.userId)) return;
+        await this.savePartyState(msg.roomId, { ...party, settings: cleanSettings(msg.settings), by: me.userId, seq: party.seq + 1 });
+        return this.maybeAutoStart(msg.roomId);
+      }
       case 'party.request': {
         const party = this.parties.get(String(msg.roomId));
         if (!party || me.voice?.roomId !== msg.roomId) return;
+        if (!party.settings.requests) return this.send(ws, { t: 'error', message: 'The host has turned off requests' });
         // One request every two seconds per person is plenty.
         const last = this.lastRequest.get(me.userId) ?? 0;
         if (Date.now() - last < 2000) return;
@@ -445,8 +473,28 @@ export class ChannelHub extends DurableObject<Env> {
       .filter((u, i, all) => all.indexOf(u) === i);
   }
 
+  private isHost(party: PartyState, userId: string) {
+    return party.hostId === userId || party.cohosts.includes(userId);
+  }
+
   private canControl(party: PartyState, userId: string) {
-    return party.hostId === userId || party.cohosts.includes(userId) || this.inRoom(this.roomOf(party)).length <= PARTY_OPEN_LIMIT;
+    if (this.isHost(party, userId)) return true;
+    const { control } = party.settings;
+    return control === 'everyone' || (control === 'auto' && this.inRoom(this.roomOf(party)).length <= PARTY_OPEN_LIMIT);
+  }
+
+  /** The lobby goes live: playing from where it is, after the countdown. */
+  private async startParty(roomId: string, party: PartyState, by: string) {
+    const at = Date.now() + PARTY_COUNTDOWN;
+    await this.savePartyState(roomId, { ...party, phase: 'live', playing: true, at, by, seq: party.seq + 1 });
+  }
+
+  /** With auto-start on, a lobby starts once everyone in the room is ready. */
+  private async maybeAutoStart(roomId: string, except?: WebSocket) {
+    const party = this.parties.get(roomId);
+    if (!party || party.phase !== 'lobby' || !party.settings.autoStart) return;
+    const present = this.inRoom(roomId, except);
+    if (present.length && present.every((u) => party.ready.includes(u))) await this.startParty(roomId, party, party.hostId);
   }
 
   private roomOf(party: PartyState) {
@@ -474,22 +522,41 @@ export class ChannelHub extends DurableObject<Env> {
     const file = cleanFile(p.file);
     if (!file) return;
     if (current && !this.canControl(current, me.userId)) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can control the watch party' });
-    // A new movie is the host's call (or anyone's, in a small room).
-    if (current && current.file.id !== file.id && current.hostId !== me.userId && this.inRoom(roomId).length > PARTY_OPEN_LIMIT) return;
+    // A new movie is the host's call (or a co-host's).
+    if (current && current.file.id !== file.id && !this.isHost(current, me.userId)) return;
+    const resolves = typeof msg.resolves === 'string' ? msg.resolves.slice(0, 32) : undefined;
+    // A new party, or a new movie, opens as a lobby: everyone gets the movie and says they're ready.
+    if (!current || current.file.id !== file.id) {
+      const next: PartyState = {
+        id: newId(),
+        hostId: current?.hostId ?? me.userId,
+        cohosts: current?.cohosts ?? [],
+        file,
+        subtitle: p.subtitle ? cleanFile(p.subtitle) : null,
+        phase: 'lobby',
+        settings: current?.settings ?? cleanSettings(p.settings),
+        ready: [],
+        playing: false,
+        position: 0,
+        at: now,
+        by: me.userId,
+        seq: (current?.seq ?? 0) + 1,
+      };
+      return this.savePartyState(roomId, next, resolves);
+    }
     const next: PartyState = {
-      id: current && current.file.id === file.id ? current.id : newId(),
-      hostId: current?.hostId ?? me.userId,
-      cohosts: current?.cohosts ?? [],
-      file,
+      ...current,
       subtitle: p.subtitle ? cleanFile(p.subtitle) : null,
       playing: !!p.playing,
       position: Math.max(0, Number(p.position) || 0),
       // A play is scheduled a little ahead; never trust a time far from ours.
       at: Math.min(now + 5000, Math.max(now - 60_000, Number(p.at) || now)),
       by: me.userId,
-      seq: (current?.seq ?? 0) + 1,
+      seq: current.seq + 1,
     };
-    await this.savePartyState(roomId, next, typeof msg.resolves === 'string' ? msg.resolves.slice(0, 32) : undefined);
+    // Pressing play in the lobby (older apps have no Start button) starts the party.
+    if (current.phase === 'lobby' && next.playing) next.phase = 'live';
+    await this.savePartyState(roomId, next, resolves);
   }
 
   /** After the room changes: an empty room ends its party; a host who left hands it on. */
@@ -500,9 +567,12 @@ export class ChannelHub extends DurableObject<Env> {
         await this.savePartyState(roomId, null);
         continue;
       }
-      if (present.includes(party.hostId)) continue;
-      const hostId = party.cohosts.find((u) => present.includes(u)) ?? present[0];
-      await this.savePartyState(roomId, { ...party, hostId, cohosts: party.cohosts.filter((u) => u !== hostId), seq: party.seq + 1 });
+      // People who left aren't ready anymore.
+      const ready = party.ready.filter((u) => present.includes(u));
+      const hostId = present.includes(party.hostId) ? party.hostId : (party.cohosts.find((u) => present.includes(u)) ?? present[0]);
+      if (hostId === party.hostId && ready.length === party.ready.length) continue;
+      await this.savePartyState(roomId, { ...party, hostId, cohosts: party.cohosts.filter((u) => u !== hostId), ready, seq: party.seq + 1 });
+      await this.maybeAutoStart(roomId, except);
     }
   }
 
@@ -605,6 +675,9 @@ function rateOf(t: unknown): SocketRate {
     case 'media.revoked':
       return 'media';
     case 'party.set':
+    case 'party.start':
+    case 'party.ready':
+    case 'party.settings':
     case 'party.request':
     case 'party.cohost':
     case 'party.status':
@@ -613,6 +686,16 @@ function rateOf(t: unknown): SocketRate {
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }
+}
+
+/** A watch party's settings, as the host sent them. */
+function cleanSettings(input: unknown): PartySettings {
+  const s = (input && typeof input === 'object' ? input : {}) as Partial<PartySettings>;
+  return {
+    control: s.control === 'everyone' || s.control === 'hosts' ? s.control : 'auto',
+    requests: s.requests === undefined ? DEFAULT_PARTY_SETTINGS.requests : !!s.requests,
+    autoStart: !!s.autoStart,
+  };
 }
 
 /** A participant's announced stream ids: short strings only. */

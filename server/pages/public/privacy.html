@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Privacy Policy · Infimeety</title>
+    <meta name="description" content="What Infimeety collects, what it never sees, and how long anything is kept." />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <style>
+      :root { --bg: #08080c; --fg: rgba(255, 255, 255, 0.94); --fg2: rgba(235, 235, 245, 0.7); --fg3: rgba(235, 235, 245, 0.45); --card: rgba(30, 30, 40, 0.55); --hair: rgba(255, 255, 255, 0.12); --accent: #0a84ff; color-scheme: dark; }
+      @media (prefers-color-scheme: light) { :root { --bg: #e9ebf1; --fg: rgba(0, 0, 0, 0.88); --fg2: rgba(60, 60, 67, 0.8); --fg3: rgba(60, 60, 67, 0.5); --card: rgba(255, 255, 255, 0.7); --hair: rgba(0, 0, 0, 0.08); color-scheme: light; } }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI Variable Text', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.6;
+        padding: 48px 16px 64px;
+      }
+      .wall { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+      .wall span { position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.35; }
+      .wall span:nth-child(1) { width: 60vw; height: 60vw; left: -20vw; top: -30vw; background: #3a5bff; }
+      .wall span:nth-child(2) { width: 50vw; height: 50vw; right: -20vw; bottom: -25vw; background: #8f3dff; }
+      main { max-width: 760px; margin: 0 auto; padding: 40px 44px; border-radius: 28px; background: var(--card); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); box-shadow: 0 0 0 0.5px var(--hair), 0 30px 80px rgba(0, 0, 0, 0.3); }
+      @media (max-width: 600px) { main { padding: 28px 20px; border-radius: 22px; } body { padding-top: 24px; } }
+      .top { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+      .top img { width: 40px; height: 40px; }
+      .top span { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
+      h1 { margin: 28px 0 4px; font-size: 34px; letter-spacing: -0.03em; line-height: 1.15; }
+      .updated { color: var(--fg3); font-size: 14px; margin: 0 0 24px; }
+      .lead { font-size: 17px; color: var(--fg2); }
+      h2 { margin: 36px 0 8px; font-size: 20px; letter-spacing: -0.02em; }
+      p, li { color: var(--fg2); font-size: 15.5px; }
+      ul { padding-left: 22px; }
+      li { margin: 6px 0; }
+      strong { color: var(--fg); font-weight: 600; }
+      a { color: var(--accent); }
+      .summary { margin: 24px 0 8px; padding: 18px 22px; border-radius: 18px; background: rgba(10, 132, 255, 0.1); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .summary p { margin: 6px 0; }
+      .foot { margin-top: 40px; font-size: 13px; color: var(--fg3); }
+      .foot a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <div class="wall" aria-hidden="true"><span></span><span></span></div>
+    <main>
+      <a class="top" href="/"><img src="/icon.png" alt="" /><span>Infimeety</span></a>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: October 26, 2026</p>
+
+      <p class="lead">
+        Infimeety is a place to talk, hang out, share files and watch movies with your friends. We built it so that as little as possible ever passes through or stays on our
+        servers. This page explains, in plain words, what we keep, what we never see, and how long anything stays.
+      </p>
+
+      <div class="summary">
+        <p><strong>The short version</strong></p>
+        <p>Your calls, screen shares, files and movies go straight from your device to your friends' devices. They are not uploaded to us and we can't see them.</p>
+        <p>We keep what the app needs to work: your account, your channels, and your text messages.</p>
+        <p>No ads. No selling or sharing your data. No tracking cookies or analytics.</p>
+      </div>
+
+      <h2>What we keep</h2>
+      <ul>
+        <li><strong>Your account.</strong> When you sign in with Google or Discord, we receive your name, email address, profile photo and that service's account ID. We also keep the username you choose and any profile photo you upload. We never see or store your Google or Discord password.</li>
+        <li><strong>Channels and friends.</strong> The channels you create or join, their rooms, names, emoji and pictures, who is a member and their role, and your friend list and friend requests.</li>
+        <li><strong>Text messages.</strong> Messages and reactions you send in chats are stored so they are there on all your devices and for everyone in the conversation.</li>
+        <li><strong>File details, not files.</strong> When you share a file or folder in chat, we store only its name, type and size so others can see what it is. The file itself stays on your device.</li>
+        <li><strong>Watch parties.</strong> The movie's name and size, who is hosting, who is ready, and the playback position, so everyone stays in sync. The movie itself is never uploaded.</li>
+        <li><strong>Sign-in sessions.</strong> A random key that keeps you signed in. We store only a scrambled (hashed) version of it, so even we can't use it. A session you haven't used for 90 days is signed out automatically.</li>
+      </ul>
+
+      <h2>What we never see</h2>
+      <ul>
+        <li><strong>Your voice, video and screen.</strong> Calls and screen shares travel directly between devices and are encrypted end to end in transit. When a direct connection isn't possible, an encrypted relay passes the data along without being able to read it. Nothing is recorded.</li>
+        <li><strong>Your files and movies.</strong> Copies go from the sender's device straight to yours over an encrypted connection and are saved in the folder you choose.</li>
+        <li><strong>Your device's contents.</strong> The app only reads files you pick yourself, and only writes copies into the save folder you chose.</li>
+      </ul>
+
+      <h2>Meetings and guests</h2>
+      <p>
+        Quick meetings last at most a day, or end sooner once nobody has been in the call for an hour. When a meeting ends, its chat, its guest names and the guests' accounts
+        are deleted. If you join a meeting as a guest from your browser, we only keep the name you type, for as long as the meeting exists.
+      </p>
+
+      <h2>What the service sees while you use it</h2>
+      <ul>
+        <li><strong>Who is online</strong> and who is in which voice room, so your friends can see it. This lives in memory while you are connected and is not stored afterwards.</li>
+        <li><strong>Your IP address</strong>, as with any website. Our hosting provider uses it to deliver the service and to protect it from abuse, for example by limiting how many requests one address can make in a minute.</li>
+      </ul>
+
+      <h2>On your own device</h2>
+      <p>
+        The app keeps your settings (like your microphone choice and theme), your sign-in key and the location of your save folder on your device. Copies of files and movies
+        you receive are saved in the folder you picked. You can delete them like any other file.
+      </p>
+
+      <h2>Services we rely on</h2>
+      <ul>
+        <li><strong>Cloudflare</strong> hosts our servers and database and provides the relay for calls that can't connect directly.</li>
+        <li><strong>Google and Discord</strong> handle sign-in when you choose them. Their own privacy policies apply to your accounts with them.</li>
+        <li><strong>GitHub</strong> hosts our downloads. The desktop app checks GitHub for updates, and the download page asks GitHub for the latest version number.</li>
+      </ul>
+      <p>We don't sell, rent or share your information with anyone else, and we don't use it for advertising.</p>
+
+      <h2>How long we keep things</h2>
+      <ul>
+        <li>Messages stay until their author or a channel admin deletes them, or the channel is deleted.</li>
+        <li>Deleting a channel deletes its rooms and all of its messages.</li>
+        <li>Meeting chats and guest accounts are deleted when the meeting ends.</li>
+        <li>Unused sign-in sessions are removed after 90 days.</li>
+      </ul>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Edit or delete your messages, change or remove your profile photo, and change your name and username at any time.</li>
+        <li>Leave any channel, remove friends, and sign out on any of your devices.</li>
+        <li>Disconnect Google or Discord from your account in Settings (one sign-in method has to stay).</li>
+        <li>To have your whole account and everything linked to it deleted, ask us through our <a href="https://github.com/teamcreatovert/infimeety/issues">GitHub page</a> and we will take care of it.</li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>Infimeety is not meant for children under 13, and we don't knowingly collect information from them.</p>
+
+      <h2>Open source</h2>
+      <p>Infimeety's code is public, so anyone can check that it does what this page says: <a href="https://github.com/teamcreatovert/infimeety">github.com/teamcreatovert/infimeety</a>.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If we change how Infimeety handles your information, we will update this page and the date at the top.</p>
+
+      <p class="foot"><a href="/">Home</a> · <a href="/download">Download</a> · <a href="/web/">Open Infimeety</a></p>
+    </main>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartyState } from '../../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
+import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettings, PartyState } from '../../../shared/protocol';
 import { rememberCopy, savedCopies } from './copies';
 import { localMedia, type SharedFile } from './platform';
 import { getHub } from './realtime';
@@ -9,10 +10,16 @@ import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { toast } from '@/stores/ui';
+import { voice } from './voice/engine';
 import { useVoice } from '@/stores/voice';
 
 /**
  * Watch parties: everyone in a voice room plays their own copy of one file, in sync.
+ *
+ * A party opens as a lobby: the host has planned it (movie, subtitles, who controls it),
+ * everyone gets the movie and says they're ready, and the host (or co-hosts) start it, all
+ * together after a short countdown. Whoever arrives later, or wasn't ready, joins in at the
+ * point everyone has reached with "Join them".
  *
  * Sync works on the hub's clock. Each client measures its offset to the hub (a few
  * round trips, keeping the fastest), so "the hub's time" means the same instant everywhere.
@@ -22,7 +29,7 @@ import { useVoice } from '@/stores/voice';
  * player nudges its speed (or jumps, if far off) to stay on the shared timeline.
  */
 
-/** Above this many people in the room, only the host and co-hosts control playback. */
+/** With 'auto' control: above this many people in the room, only the host and co-hosts control playback. */
 export const OPEN_LIMIT = 3;
 /** How far ahead a play is scheduled, so it reaches everyone before it starts. */
 const LEAD_MS = 400;
@@ -52,9 +59,11 @@ interface PartyStore {
   subtitles: Record<string, string>;
   /** Hub clock minus ours, in ms. */
   offset: number;
+  /** Party ids this device is watching along with (rather than waiting to join in). */
+  joined: Record<string, boolean>;
 }
 
-export const useParty = create<PartyStore>()(() => ({ parties: {}, statuses: {}, requests: [], copies: {}, subtitles: {}, offset: 0 }));
+export const useParty = create<PartyStore>()(() => ({ parties: {}, statuses: {}, requests: [], copies: {}, subtitles: {}, offset: 0, joined: {} }));
 
 /** A steady clock (unaffected by the computer's clock being changed), in ms since 1970. */
 const clientNow = () => performance.timeOrigin + performance.now();
@@ -72,11 +81,20 @@ export function roomPeople(roomId: string) {
   return [...new Set((snap?.participants ?? []).filter((p) => p.roomId === roomId).map((p) => p.userId))];
 }
 
+export const isHost = (party: PartyState, userId: string | undefined) => !!userId && (party.hostId === userId || party.cohosts.includes(userId));
+
+/** Plays, pauses and seeks directly (everyone else asks). */
 export function canControl(roomId: string, userId: string | undefined) {
   const party = useParty.getState().parties[roomId];
   if (!party || !userId) return false;
-  return party.hostId === userId || party.cohosts.includes(userId) || roomPeople(roomId).length <= OPEN_LIMIT;
+  if (isHost(party, userId)) return true;
+  const control = (party.settings ?? DEFAULT_PARTY_SETTINGS).control;
+  return control === 'everyone' || (control === 'auto' && roomPeople(roomId).length <= OPEN_LIMIT);
 }
+
+/** Watching along now (a late arrival first chooses to join in). */
+const markJoined = (partyId: string) => useParty.setState((s) => ({ joined: { ...s.joined, [partyId]: true } }));
+export const joinIn = (party: PartyState) => markJoined(party.id);
 
 const hubFor = () => {
   const id = useVoice.getState().channelId;
@@ -112,9 +130,13 @@ export function onClock(c: number, s: number) {
 
 // ─── From the hub ────────────────────────────────────────────────────────────
 
-export function onParties(parties: Record<string, PartyState> | undefined) {
-  if (!parties) return;
-  useParty.setState((s) => ({ parties: { ...s.parties, ...parties } }));
+/** A channel's parties on (re)connecting; `roomIds` are its rooms, whose old parties this replaces. */
+export function onParties(parties: Record<string, PartyState> | undefined, roomIds: string[]) {
+  useParty.setState((s) => {
+    const next = { ...s.parties };
+    for (const id of roomIds) if (!parties?.[id]) delete next[id];
+    return { parties: { ...next, ...parties } };
+  });
 }
 
 export function onParty(roomId: string, party: PartyState | null, resolved?: string) {
@@ -128,15 +150,22 @@ export function onParty(roomId: string, party: PartyState | null, resolved?: str
     return { parties, requests };
   });
   const me = useAuth.getState().me?.id;
+  const here = useVoice.getState().roomId === roomId;
   if (!party) {
-    if (before && useVoice.getState().roomId === roomId) toast({ kind: 'info', title: 'The watch party ended' });
+    if (before && here) toast({ kind: 'info', title: 'The watch party ended' });
     return;
   }
-  if (!before && useVoice.getState().roomId === roomId) {
+  const fresh = !before || before.id !== party.id;
+  if (fresh && here) {
     syncClock();
-    if (party.hostId !== me) toast({ kind: 'info', title: `${nameOf(party.hostId)} started a watch party`, body: party.file.name });
+    if (party.hostId !== me) toast({ kind: 'info', title: `${nameOf(party.hostId)} planned a watch party`, body: `${party.file.name}. Get the movie, then tap “I’m ready”.` });
   }
-  if (before && party.by !== me && before.playing !== party.playing && useVoice.getState().roomId === roomId) {
+  // The party went live: whoever was ready (and whoever started it) watches along from the start.
+  if (party.phase === 'live' && (fresh ? party.hostId === me : before.phase === 'lobby')) {
+    if (party.ready.includes(me ?? '') || party.by === me || party.hostId === me) markJoined(party.id);
+    if (here && !fresh && party.by !== me) toast({ kind: 'info', title: 'The watch party is starting' });
+  }
+  if (!fresh && party.phase === 'live' && before.phase === 'live' && party.by !== me && before.playing !== party.playing && here) {
     toast({ kind: 'info', title: `${nameOf(party.by)} ${party.playing ? 'pressed play' : 'paused'}` });
   }
   if (before?.hostId !== party.hostId && party.hostId === me && before) toast({ kind: 'info', title: 'You’re now the watch party’s host' });
@@ -292,23 +321,71 @@ function set(roomId: string, patch: Partial<Pick<PartyState, 'file' | 'subtitle'
   const party = useParty.getState().parties[roomId];
   if (!hub) return;
   if (patch === null) return hub.send({ t: 'party.set', roomId, party: null });
-  const base = party ?? { file: patch.file!, subtitle: null, playing: false, position: 0, at: serverNow() };
-  const next = { file: base.file, subtitle: base.subtitle, playing: base.playing, position: base.position, at: base.at, ...patch };
+  if (!party) return;
+  const next = { file: party.file, subtitle: party.subtitle, playing: party.playing, position: party.position, at: party.at, ...patch };
   hub.send({ t: 'party.set', roomId, party: next, resolves });
   // Show it here at once; the hub's copy follows.
-  if (party) useParty.setState((s) => ({ parties: { ...s.parties, [roomId]: { ...party, ...next } } }));
+  useParty.setState((s) => ({ parties: { ...s.parties, [roomId]: { ...party, ...next } } }));
 }
 
-/** Starts a watch party with a movie from this device. */
-export async function startParty(roomId: string) {
-  const me = useAuth.getState().me?.id;
-  if (!me) return;
-  syncClock();
+/** Picks a movie (and maybe its subtitles) from this device, for planning a party. */
+export async function pickMovie() {
   const files = await localMedia.pick().catch(() => [] as SharedFile[]);
   const movie = files.find((f) => f.mime.startsWith('video/') || /\.(mkv|mp4|m4v|webm|mov|avi)$/i.test(f.name)) ?? files.find((f) => !isSubtitle(f.name));
-  if (!movie) return;
-  const subtitle = files.find((f) => isSubtitle(f.name));
-  set(roomId, { file: fileOf(movie, me), subtitle: subtitle ? fileOf(subtitle, me) : null, playing: false, position: 0, at: serverNow() });
+  return { movie: movie ?? null, subtitle: files.find((f) => isSubtitle(f.name)) ?? null };
+}
+
+/** Picks a subtitle file from this device. */
+export async function pickSubtitle() {
+  const [file] = await localMedia.pick().catch(() => [] as SharedFile[]);
+  if (file && !isSubtitle(file.name)) {
+    toast({ kind: 'info', title: 'Pick a subtitle file', body: '.srt, .vtt, .ass or .ssa' });
+    return null;
+  }
+  return file ?? null;
+}
+
+/** Resolves once the hub lists this device in `roomId`'s call (false if that takes too long). */
+export function whenInRoom(roomId: string, timeout = 8000) {
+  const inRoom = () => {
+    const vs = useVoice.getState();
+    const snap = vs.channelId ? useChannels.getState().voice[vs.channelId] : undefined;
+    return vs.roomId === roomId && !!snap?.participants.some((p) => p.roomId === roomId && p.peerId === voice.peerId);
+  };
+  return new Promise<boolean>((resolve) => {
+    if (inRoom()) return resolve(true);
+    const done = (ok: boolean) => (offA(), offB(), clearTimeout(timer), resolve(ok));
+    const check = () => inRoom() && done(true);
+    const offA = useChannels.subscribe(check);
+    const offB = useVoice.subscribe(check);
+    const timer = setTimeout(() => done(false), timeout);
+  });
+}
+
+/** Opens a planned party as a lobby in `roomId` (this device must be in that room's call). */
+export function createParty(roomId: string, movie: SharedFile, subtitle: SharedFile | null, settings: PartySettings) {
+  const me = useAuth.getState().me?.id;
+  const hub = hubFor();
+  if (!me || !hub) return;
+  syncClock();
+  hub.send({
+    t: 'party.set',
+    roomId,
+    party: { file: fileOf(movie, me), subtitle: subtitle ? fileOf(subtitle, me) : null, playing: false, position: 0, at: serverNow(), settings },
+  });
+}
+
+/** The host (or a co-host) starts the lobby for everyone. */
+export const startNow = (roomId: string) => hubFor()?.send({ t: 'party.start', roomId });
+
+export const setReady = (roomId: string, ready: boolean) => hubFor()?.send({ t: 'party.ready', roomId, ready });
+
+export const saveSettings = (roomId: string, settings: PartySettings) => hubFor()?.send({ t: 'party.settings', roomId, settings });
+
+/** Changes the movie: back to the lobby so everyone gets the new one. */
+export function changeMovie(roomId: string, movie: SharedFile, subtitle: SharedFile | null) {
+  const me = useAuth.getState().me?.id;
+  if (me) set(roomId, { file: fileOf(movie, me), subtitle: subtitle ? fileOf(subtitle, me) : null, playing: false, position: 0, at: serverNow() });
 }
 
 export async function addSubtitles(roomId: string) {
@@ -338,6 +415,7 @@ export function act(roomId: string, action: PartyAction) {
   const me = useAuth.getState().me?.id;
   if (!party) return;
   if (canControl(roomId, me)) return apply(roomId, action);
+  if (!(party.settings ?? DEFAULT_PARTY_SETTINGS).requests) return toast({ kind: 'info', title: 'Only the host controls playback', body: 'The host has turned off requests.' });
   hubFor()?.send({ t: 'party.request', roomId, action });
   toast({ kind: 'info', title: 'Asked the host', body: describe(action) });
 }

@@ -9,7 +9,7 @@ import { useAuth } from '@/stores/auth';
 import { toast } from '@/stores/ui';
 
 /** Square-crops and shrinks still images; GIFs upload as-is so they stay animated. */
-async function prepareAvatar(file: File): Promise<{ body: Blob; type: string }> {
+export async function prepareAvatar(file: File): Promise<{ body: Blob; type: string }> {
   if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error('Use a PNG, JPG, GIF or WebP image.');
   if (file.type === 'image/gif') {
     if (file.size > 4 * 1024 * 1024) throw new Error('GIFs need to be under 4 MB.');
