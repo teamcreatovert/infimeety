@@ -54,6 +54,8 @@ export interface SettingsState {
   soundboardVolume: number;
   /** Live captions: the language you speak (helps Whisper), or detect it. */
   captionLanguage: 'auto' | 'bn' | 'en';
+  /** Music in calls: your own volume for it. */
+  musicVolume: number;
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -119,6 +121,7 @@ export const useSettings = create<SettingsState>()(
       soundboard: true,
       soundboardVolume: 0.7,
       captionLanguage: 'auto',
+      musicVolume: 0.6,
 
       screenQuality: '1080p30',
       screenMode: 'motion',

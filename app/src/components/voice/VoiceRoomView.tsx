@@ -12,6 +12,7 @@ import {
   MessageSquareText,
   Mic,
   MicOff,
+  Music,
   MonitorPlay,
   Phone,
   PhoneOff,
@@ -35,6 +36,7 @@ import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CaptionsMenu, CaptionsOverlay } from './Captions';
+import { MusicPanel, MusicPlayer } from './Music';
 import { SoundboardPanel, SoundBursts } from './Soundboard';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
@@ -42,6 +44,7 @@ import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty } from '@/lib/party';
 import { setCaptions, useCaptionsOn } from '@/lib/captions';
+import { useRoomMusic } from '@/lib/music';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -379,6 +382,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           overlay={
             <>
               {soundPrompt}
+              <MusicPlayer />
               {watchingParty && <PartyRequests roomId={room.id} />}
             </>
           }
@@ -416,6 +420,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
         {soundPrompt}
 
         <div className="relative min-h-0 flex-1">
+          <MusicPlayer />
           {status === 'connecting' && participants.length === 0 ? (
             <div className="grid h-full place-items-center text-fg-2">
               <div className="flex flex-col items-center gap-3">
@@ -638,6 +643,9 @@ function Dock({
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
   const [soundboard, setSoundboard] = useState<Anchor | null>(null);
   const [captionsMenu, setCaptionsMenu] = useState<Anchor | null>(null);
+  const [musicMenu, setMusicMenu] = useState<Anchor | null>(null);
+  const music = useRoomMusic();
+  const musicOn = !!music && music.index < music.queue.length;
   const captionsOn = useCaptionsOn();
   const toggleCaptions = (anchor: Anchor) => (captionsOn ? setCaptionsMenu(anchor) : setCaptions(true));
   const isAdmin = channel.role !== 'member';
@@ -696,6 +704,9 @@ function Dock({
           <MenuItem icon={<Captions size={15} />} onClick={() => (setMoreMenu(null), moreMenu && toggleCaptions(moreMenu))}>
             {captionsOn ? 'Live captions…' : 'Turn on live captions'}
           </MenuItem>
+          <MenuItem icon={<Music size={15} />} onClick={() => (setMoreMenu(null), setMusicMenu(moreMenu))}>
+            Music
+          </MenuItem>
           <MenuItem icon={<PartyPopper size={15} />} onClick={() => (setMoreMenu(null), setSoundboard(moreMenu))}>
             Soundboard
           </MenuItem>
@@ -723,6 +734,9 @@ function Dock({
         </Popover>
       <Popover open={!!captionsMenu} anchor={captionsMenu} onClose={() => setCaptionsMenu(null)} side="top" align="center" offset={14}>
         <CaptionsMenu onClose={() => setCaptionsMenu(null)} />
+      </Popover>
+      <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="center" offset={14}>
+        <MusicPanel onClose={() => setMusicMenu(null)} />
       </Popover>
       </motion.div>
     );
@@ -759,6 +773,9 @@ function Dock({
           </button>
         </Tooltip>
       </div>
+      <DockButton label={musicOn ? 'Music is playing' : 'Play music'} state={musicOn ? 'on' : 'normal'} onClick={(el) => setMusicMenu(el.getBoundingClientRect())}>
+        <Music size={19} />
+      </DockButton>
       <DockButton label="Soundboard" state={soundboard ? 'on' : 'normal'} onClick={(el) => setSoundboard(el.getBoundingClientRect())}>
         <PartyPopper size={19} />
       </DockButton>
@@ -821,6 +838,9 @@ function Dock({
       </Popover>
       <Popover open={!!captionsMenu} anchor={captionsMenu} onClose={() => setCaptionsMenu(null)} side="top" align="center" offset={14}>
         <CaptionsMenu onClose={() => setCaptionsMenu(null)} />
+      </Popover>
+      <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="center" offset={14}>
+        <MusicPanel onClose={() => setMusicMenu(null)} />
       </Popover>
       <span className="sr-only">{me?.name}</span>
     </motion.div>

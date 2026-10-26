@@ -37,6 +37,8 @@ interface UIState {
   navCollapsed: boolean;
   /** The call's side panel tab. */
   sideTab: 'chat' | 'people' | 'party';
+  /** You closed the music player for yourself (the music goes on for the others). */
+  musicHidden: boolean;
   /** The watch party planner: for a new party in a channel (optionally a given voice room), or `edit` the room's party. */
   partyPlanner: { channelId: string; roomId?: string; edit?: boolean } | null;
   userMenu: { userId: string; x: number; y: number; context: UserMenuContext } | null;
@@ -71,6 +73,7 @@ export const useUI = create<UIState>()((set) => ({
   partyView: true,
   navCollapsed: false,
   sideTab: 'chat',
+  musicHidden: false,
   partyPlanner: null,
   userMenu: null,
   profileCard: null,

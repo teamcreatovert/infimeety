@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_PARTY_SETTINGS, SOUND_CLIP_MAX, canModerateRole, outranks } from '../../shared/protocol';
-import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { ClientMsg, Message, MusicAction, MusicState, MusicTrack, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
@@ -40,6 +40,8 @@ export class ChannelHub extends DurableObject<Env> {
   private mutedRooms = new Set<string>();
   /** Voice rooms with live captions on; turned off once a room empties. */
   private captionRooms = new Set<string>();
+  /** Music by voice room (a shared queue everyone's player follows). */
+  private music = new Map<string, MusicState>();
   private roomKinds = new Map<string, string>();
   private meeting: MeetingState | null = null;
   private promoting = false;
@@ -54,6 +56,7 @@ export class ChannelHub extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
       this.captionRooms = new Set((await ctx.storage.get<string[]>('captionRooms')) ?? []);
+      this.music = new Map(Object.entries((await ctx.storage.get<Record<string, MusicState>>('music')) ?? {}));
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
       // Parties saved before lobbies and settings existed are already live, with the defaults.
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
@@ -286,6 +289,10 @@ export class ChannelHub extends DurableObject<Env> {
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
       }
+      case 'music.add':
+        return this.musicAdd(ws, me, msg.videoId);
+      case 'music.control':
+        return this.musicControl(me, msg);
       case 'captions.set': {
         // Anyone in the room turns captions on or off; everyone is told who did.
         const roomId = String(msg.roomId);
@@ -660,11 +667,94 @@ export class ChannelHub extends DurableObject<Env> {
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted });
     }
-    return { participants, mutedRooms: [...this.mutedRooms], captionRooms: [...this.captionRooms] };
+    return { participants, mutedRooms: [...this.mutedRooms], captionRooms: [...this.captionRooms], music: Object.fromEntries(this.music) };
+  }
+
+  // ─── Music ───────────────────────────────────────────────────────────────────
+
+  private async saveMusic(roomId: string, state: MusicState | null) {
+    if (state) {
+      // Keep a little history for "previous", not the whole evening.
+      const drop = Math.max(0, state.index - 30);
+      this.music.set(roomId, drop ? { ...state, queue: state.queue.slice(drop), index: state.index - drop } : state);
+    } else this.music.delete(roomId);
+    await this.ctx.storage.put('music', Object.fromEntries(this.music));
+    this.broadcastVoice();
+  }
+
+  /** Adds a YouTube video to your room's queue, after asking YouTube that it exists and can be embedded. */
+  private async musicAdd(ws: WebSocket, me: Peer, videoId: unknown) {
+    const roomId = me.voice?.roomId;
+    if (!roomId || typeof videoId !== 'string' || !/^[\w-]{11}$/.test(videoId)) return;
+    const waiting = this.music.get(roomId);
+    if (waiting && waiting.queue.length - waiting.index >= 50) return this.send(ws, { t: 'error', message: 'The queue is full (50 songs).' });
+    const watch = `https://www.youtube.com/watch?v=${videoId}`;
+    const res = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watch)}`).catch(() => null);
+    if (!res?.ok) return this.send(ws, { t: 'error', message: 'That video can’t be played here: it may be private, removed, or not allowed in other apps.' });
+    const info = await res.json<{ title?: string }>().catch(() => ({ title: undefined }));
+    const track: MusicTrack = { id: newId(), videoId, title: String(info.title ?? 'YouTube video').slice(0, 120), by: me.userId };
+    const now = Date.now();
+    const state = this.music.get(roomId);
+    // Nothing playing, or the queue ran out: this one starts now.
+    if (!state || state.index >= state.queue.length) {
+      const queue = [...(state?.queue ?? []), track];
+      return this.saveMusic(roomId, { queue, index: queue.length - 1, playing: true, position: 0, at: now + 800, seq: (state?.seq ?? 0) + 1 });
+    }
+    return this.saveMusic(roomId, { ...state, queue: [...state.queue, track], seq: state.seq + 1 });
+  }
+
+  /** Anyone in the room plays, pauses, skips or edits the queue; everyone follows. */
+  private async musicControl(me: Peer, msg: MusicAction) {
+    const roomId = me.voice?.roomId;
+    const s = roomId ? this.music.get(roomId) : undefined;
+    if (!roomId || !s) return;
+    const now = Date.now();
+    const position = s.playing ? s.position + Math.max(0, now - s.at) / 1000 : s.position;
+    const seq = s.seq + 1;
+    const current = s.queue[s.index];
+    const goTo = (index: number) => this.saveMusic(roomId, { ...s, index, playing: index < s.queue.length, position: 0, at: now + 800, seq });
+    switch (msg.action) {
+      case 'play':
+        return this.saveMusic(roomId, { ...s, playing: s.index < s.queue.length, position, at: now + 400, seq });
+      case 'pause':
+        return this.saveMusic(roomId, { ...s, playing: false, position, at: now, seq });
+      case 'seek':
+        return this.saveMusic(roomId, { ...s, position: Math.max(0, Number(msg.position) || 0), at: now + 400, seq });
+      case 'ended':
+        // Every player reports the end; only the first report for the playing song moves on.
+        if (msg.trackId !== current?.id) return;
+        return goTo(s.index + 1);
+      case 'next':
+        return goTo(Math.min(s.index + 1, s.queue.length));
+      case 'previous':
+        // Back to the start of this song, or to the one before if it only just began.
+        return goTo(position > 4 || s.index === 0 ? Math.min(s.index, s.queue.length - 1) : s.index - 1);
+      case 'skipTo': {
+        const i = s.queue.findIndex((t) => t.id === msg.trackId);
+        return i < 0 ? undefined : goTo(i);
+      }
+      case 'remove': {
+        const i = s.queue.findIndex((t) => t.id === msg.trackId);
+        if (i < 0) return;
+        const queue = s.queue.filter((t) => t.id !== msg.trackId);
+        if (i > s.index) return this.saveMusic(roomId, { ...s, queue, seq });
+        if (i < s.index) return this.saveMusic(roomId, { ...s, queue, index: s.index - 1, seq });
+        // The playing song: the next one starts.
+        return this.saveMusic(roomId, { ...s, queue, playing: s.index < queue.length, position: 0, at: now + 800, seq });
+      }
+      case 'stop':
+        return this.saveMusic(roomId, null);
+    }
   }
 
   private broadcastVoice(exceptSocket?: WebSocket) {
-    // Captions stop once nobody is left in the room.
+    // Captions and music stop once nobody is left in the room.
+    if (this.music.size) {
+      const occupied = new Set(this.sockets().map((s) => this.peer(s).voice?.roomId).filter(Boolean));
+      let changed = false;
+      for (const roomId of [...this.music.keys()]) if (!occupied.has(roomId)) changed = this.music.delete(roomId) || changed;
+      if (changed) this.ctx.storage.put('music', Object.fromEntries(this.music)).catch(() => {});
+    }
     if (this.captionRooms.size) {
       const occupied = new Set(this.sockets().map((s) => this.peer(s).voice?.roomId).filter(Boolean));
       const before = this.captionRooms.size;
@@ -733,6 +823,9 @@ function rateOf(t: unknown): SocketRate {
       return 'sound';
     case 'caption.line':
       return 'caption';
+    case 'music.add':
+    case 'music.control':
+      return 'party';
     case 'captions.set':
       return 'voice';
     default:

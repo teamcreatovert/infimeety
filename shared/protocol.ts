@@ -170,7 +170,43 @@ export interface VoiceSnapshot {
   mutedRooms: string[];
   /** Voice rooms with live captions on. */
   captionRooms?: string[];
+  /** Music playing in voice rooms, by room. */
+  music?: Record<string, MusicState>;
 }
+
+/** A song in a voice room's queue: a YouTube video, played in YouTube's own player. */
+export interface MusicTrack {
+  id: string;
+  videoId: string;
+  title: string;
+  /** Who added it. */
+  by: string;
+}
+
+/**
+ * A voice room's music, kept by the hub like a watch party: everyone's player follows it.
+ * `position` is where the song was at hub time `at`; while `playing`, it moves on from there.
+ */
+export interface MusicState {
+  queue: MusicTrack[];
+  index: number;
+  playing: boolean;
+  position: number;
+  at: number;
+  seq: number;
+}
+
+export type MusicAction =
+  | { action: 'play' }
+  | { action: 'pause' }
+  | { action: 'next' }
+  | { action: 'previous' }
+  | { action: 'seek'; position: number }
+  | { action: 'skipTo'; trackId: string }
+  | { action: 'remove'; trackId: string }
+  /** The song ended in someone's player; only the first report for that song counts. */
+  | { action: 'ended'; trackId: string }
+  | { action: 'stop' };
 
 /** A file in a watch party: like an attachment, streamed from its owner when someone copies it. */
 export interface PartyFile {
@@ -268,6 +304,9 @@ export type ClientMsg =
   | { t: 'captions.set'; roomId: string; on: boolean }
   /** A line of your own speech, transcribed, for the others in your room. */
   | { t: 'caption.line'; text: string }
+  /** Music in your voice room: add a YouTube video, or control what's playing. */
+  | { t: 'music.add'; videoId: string }
+  | ({ t: 'music.control' } & MusicAction)
   | { t: 'rtc'; to: string; data: RtcPayload }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
