@@ -1,22 +1,87 @@
 name: Release
 
-# Push a tag like v0.2.0 to build a signed Windows installer and publish the
-# GitHub release + latest.json that installed apps auto-update from.
+# Builds the Windows installer, code-signs it through SignPath once that is set up
+# (docs/CODE-SIGNING.md), signs it for the updater and publishes the GitHub release +
+# latest.json that installed apps auto-update from.
+#
+# Start it by pushing a version tag (git tag v0.2.0 && git push origin v0.2.0), or from
+# Actions → Release → Run workflow, which also takes release notes and a dry-run switch.
+#
+# Order matters: infimeety.exe is signed before it's packed into the installer, the
+# installer is signed next, and the updater signature (.sig) is made last, over the final
+# bytes. Changing a file after its .sig is made breaks updates for everyone.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes (shown in the in-app update card)
+        required: false
+        default: ''
+      dry-run:
+        description: Build and sign only. Keep the installer as a workflow artifact, publish nothing.
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: write # create the release
+  actions: read # SignPath reads this run's artifacts
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   windows:
     runs-on: windows-latest
+    # A signing request waits for you to approve it in SignPath, up to two hours each.
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ inputs.dry-run || false }}
+      # Signing turns on once the SignPath organization id is saved as a repository variable.
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNING_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+      # The .sig is made by hand after code signing, so the bundler must not make a stale one.
+      NO_UPDATER_ARTIFACTS: '{"bundle":{"createUpdaterArtifacts":false}}'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - name: Check version
+        id: version
+        run: |
+          version=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the app version $version in tauri.conf.json."
+            exit 1
+          fi
+          if [[ "$DRY_RUN" != true ]]; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "::error::$tag is already released. Bump the version first."
+              exit 1
+            fi
+            if [[ "$SIGN" == true && "$SIGNING_POLICY" == test-signing ]]; then
+              echo "::error::Test-signed builds can't be published. Use a dry run, or switch SIGNPATH_SIGNING_POLICY_SLUG to release-signing."
+              exit 1
+            fi
+          fi
+          if [[ "$HAS_UPDATER_KEY" != true ]]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (contents of ~/.tauri/infimeety.key). See docs/SETUP.md §7."
+            exit 1
+          fi
+          if [[ "$SIGN" != true ]]; then
+            echo "::warning::SignPath isn't set up, so this installer is NOT code-signed. See docs/CODE-SIGNING.md."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "installer=src-tauri/target/release/bundle/nsis/Infimeety_${version}_x64-setup.exe" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -32,16 +97,112 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
+      # Compiles infimeety.exe and stamps it with its bundle type (nsis). The installer this
+      # makes is only a by-product when signing is on: it's rebuilt around the signed exe.
+      - name: Build
+        working-directory: app
+        run: npx tauri build --bundles nsis --ci --config "$NO_UPDATER_ARTIFACTS"
+
+      - name: Upload infimeety.exe for signing
+        id: unsigned-exe
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-exe
+          path: app/src-tauri/target/release/infimeety.exe
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+      - name: Sign infimeety.exe
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'infimeety' }}
+          signing-policy-slug: ${{ env.SIGNING_POLICY }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed/exe
+
+      # --no-binary-patching: the exe was already stamped by the first build, and patching it
+      # again would rewrite it and break its signature.
+      - name: Rebuild the installer around the signed exe
+        if: env.SIGN == 'true'
+        working-directory: app
+        run: |
+          cp ../signed/exe/infimeety.exe src-tauri/target/release/infimeety.exe
+          npx tauri bundle --bundles nsis --ci --no-binary-patching --config "$NO_UPDATER_ARTIFACTS"
+
+      - name: Upload the installer for signing
+        id: unsigned-installer
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          path: app/${{ steps.version.outputs.installer }}
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'infimeety' }}
+          signing-policy-slug: ${{ env.SIGNING_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signed/installer
+
+      - name: Check the signatures
+        if: env.SIGN == 'true'
+        working-directory: app
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALLER: ${{ steps.version.outputs.installer }}
+        run: |
+          Copy-Item "../signed/installer/$(Split-Path $env:INSTALLER -Leaf)" $env:INSTALLER -Force
+          # The test-signing certificate isn't trusted by Windows, so only release builds must be Valid.
+          $allowed = if ($env:SIGNING_POLICY -eq 'test-signing') { 'Valid', 'UnknownError', 'NotTrusted' } else { 'Valid' }
+          foreach ($file in 'src-tauri/target/release/infimeety.exe', $env:INSTALLER) {
+            $sig = Get-AuthenticodeSignature $file
+            "{0}: {1} ({2})" -f $file, $sig.Status, $sig.SignerCertificate.Subject
+            if ($sig.Status -notin $allowed) { throw "$file is not properly signed: $($sig.StatusMessage)" }
+          }
+
+      - name: Sign for the updater
+        working-directory: app
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri signer sign --app-version "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.installer }}"
+
+      - name: Publish the release
+        if: env.DRY_RUN != 'true'
+        working-directory: app
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: node scripts/publish-release.mjs "${NOTES:-A fresh update for Infimeety. Open the app and click \"Update & restart\".}"
+
+      - name: Keep the dry-run installer
+        if: env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v7
         with:
-          projectPath: app
-          tagName: ${{ github.ref_name }}
-          releaseName: Infimeety ${{ github.ref_name }}
-          releaseBody: A fresh update for Infimeety. Open the app and click "Update & restart".
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          name: Infimeety-${{ steps.version.outputs.version }}-dry-run
+          path: |
+            app/${{ steps.version.outputs.installer }}
+            app/${{ steps.version.outputs.installer }}.sig
+          if-no-files-found: error
+          retention-days: 7
