@@ -61,13 +61,14 @@ async function setImmersive(on: boolean) {
   await appWindow.setFullscreen(on);
 }
 
-/** `chatRoom` overrides the side chat (DM calls show the DM conversation). */
-export function VoiceRoomView({ channel, room, chatRoom }: { channel: Channel; room: Room; chatRoom?: Room }) {
+/** `chatRoom` overrides the side chat (DM calls show the DM conversation); `extras` sit in the stage header. */
+export function VoiceRoomView({ channel, room, chatRoom, extras }: { channel: Channel; room: Room; chatRoom?: Room; extras?: ReactNode }) {
   const here = useVoice((s) => s.roomId === room.id);
-  return here ? <Stage channel={channel} room={room} chatRoom={chatRoom ?? room} /> : <Lobby channel={channel} room={room} />;
+  return here ? <Stage channel={channel} room={room} chatRoom={chatRoom ?? room} extras={extras} /> : <Lobby channel={channel} room={room} />;
 }
 
-const stageTitle = (channel: Channel, room: Room) => (channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : room.name);
+const stageTitle = (channel: Channel, room: Room) =>
+  channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : channel.kind === 'meeting' ? channel.name : room.name;
 
 // ─── Lobby ───────────────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ function Lobby({ channel, room }: { channel: Channel; room: Room }) {
   );
 }
 
-function ChatToggle() {
+export function ChatToggle() {
   const open = useUI((s) => s.voiceChat);
   return (
     <Tooltip label={open ? 'Hide chat' : 'Show chat'} side="bottom">
@@ -141,7 +142,7 @@ function ChatToggle() {
   );
 }
 
-function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean; channel: Channel; room: Room; overlay?: boolean }) {
+export function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean; channel: Channel; room: Room; overlay?: boolean }) {
   return (
     <AnimatePresence initial={false}>
       {open && (
@@ -173,7 +174,7 @@ function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean; chann
 
 // ─── Stage ───────────────────────────────────────────────────────────────────
 
-function Stage({ channel, room, chatRoom }: { channel: Channel; room: Room; chatRoom: Room }) {
+function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Room; chatRoom: Room; extras?: ReactNode }) {
   const participants = useRoomParticipants(channel.id, room.id);
   const users = useChannels((s) => s.users);
   const remote = useVoice((s) => s.remote);
@@ -251,6 +252,7 @@ function Stage({ channel, room, chatRoom }: { channel: Channel; room: Room; chat
               {participants.length} {participants.length === 1 ? 'person' : 'people'}
             </span>
             <div data-tauri-drag-region className="flex-1 self-stretch" />
+            {extras}
             <ChatToggle />
           </header>
         )}
@@ -260,7 +262,9 @@ function Stage({ channel, room, chatRoom }: { channel: Channel; room: Room; chat
             <div className="grid h-full place-items-center text-fg-2">
               <div className="flex flex-col items-center gap-3">
                 <Spinner size={22} />
-                <span className="text-[13px]">{channel.kind === 'dm' ? `Calling ${channel.peer?.name ?? 'your friend'}…` : `Joining ${room.name}…`}</span>
+                <span className="text-[13px]">
+                  {channel.kind === 'dm' ? `Calling ${channel.peer?.name ?? 'your friend'}…` : channel.kind === 'meeting' ? 'Joining the meeting…' : `Joining ${room.name}…`}
+                </span>
               </div>
             </div>
           ) : focused ? (
@@ -673,7 +677,7 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
         </DockButton>
       )}
       <Divider />
-      <Tooltip label="Leave voice">
+      <Tooltip label={channel.kind === 'meeting' ? 'Leave the call' : 'Leave voice'}>
         <motion.button
           whileTap={{ scale: 0.9 }}
           transition={snappy}

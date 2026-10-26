@@ -281,7 +281,7 @@ export function VoicePanel() {
                   {trouble ? 'Connection trouble' : connecting ? 'Connecting…' : 'Voice connected'}
                 </div>
                 <button onClick={() => useChannels.getState().selectRoom(channel.id, room.id)} className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline">
-                  {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : `${room.name} · ${channel.name}`}
+                  {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : channel.kind === 'meeting' ? channel.name : `${room.name} · ${channel.name}`}
                 </button>
               </div>
               <IconButton label="Disconnect" tone="danger" onClick={() => voice.leave()}>

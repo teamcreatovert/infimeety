@@ -10,6 +10,8 @@ export interface PublicUser {
   name: string;
   username: string | null;
   avatarUrl: string | null;
+  /** A browser guest: no account, exists only inside one meeting. */
+  guest?: boolean;
 }
 
 export interface Me extends PublicUser {
@@ -30,19 +32,37 @@ export interface Room {
 
 export interface Channel {
   id: string;
-  /** 'space' = a server-like channel; 'dm' = a private two-person conversation. */
-  kind: 'space' | 'dm';
+  /**
+   * 'space' = a server-like channel; 'dm' = a private two-person conversation;
+   * 'meeting' = a short-lived call people join from a link (owner = host, admins = co-hosts).
+   */
+  kind: 'space' | 'dm' | 'meeting';
   name: string;
   emoji: string;
   color: string;
   ownerId: string;
-  /** Any member can share it (null for DMs). */
+  /** Any member can share it (null for DMs). For meetings: the meeting code, e.g. "gyus-768g-hsf". */
   inviteCode: string | null;
   role: Role;
   rooms: Room[];
   /** For DMs: the other person. */
   peer?: PublicUser;
+  /** For meetings: when the link stops working at the latest. */
+  expiresAt?: number;
 }
+
+/** Public preview of a meeting link (no sign-in needed). */
+export interface MeetingPreview {
+  code: string;
+  name: string;
+  host: PublicUser;
+  /** People in the call right now. */
+  inCall: number;
+  expiresAt: number;
+}
+
+/** Where a browser guest stands: waiting in the lobby, let in, turned away, or removed by the host. */
+export type GuestStatus = 'waiting' | 'admitted' | 'denied' | 'removed';
 
 /** Public preview of an invite link (no sign-in needed). */
 export interface InvitePreview {
@@ -188,5 +208,11 @@ export type ServerMsg =
   | { t: 'channel.changed' }
   | { t: 'channel.removed' }
   | { t: 'member.updated'; user: PublicUser }
+  /** Meetings: the guests waiting to be let in (sent to the host and co-hosts). */
+  | { t: 'meeting.waiting'; users: PublicUser[] }
+  /** Meetings: nobody was left to run the meeting, so this person became a co-host. */
+  | { t: 'meeting.cohost'; userId: string }
+  /** Meetings: the host ended it or it expired; `channel.removed` follows. */
+  | { t: 'meeting.ended' }
   | { t: 'error'; message: string }
   | { t: 'pong' };

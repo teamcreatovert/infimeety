@@ -2,6 +2,7 @@ import { ChatView } from '../chat/ChatView';
 import { DmView } from '../home/DmView';
 import { FriendsPage } from '../home/FriendsPage';
 import { HomeSidebar } from '../home/HomeSidebar';
+import { MeetingView } from '../meeting/MeetingView';
 import { Spinner } from '../ui/primitives';
 import { VoiceRoomView } from '../voice/VoiceRoomView';
 import { ChannelRail } from './ChannelRail';
@@ -27,6 +28,8 @@ export function Shell() {
           </div>
         ) : channel?.kind === 'dm' ? (
           <DmView key={channel.id} channel={channel} />
+        ) : channel?.kind === 'meeting' ? (
+          <MeetingView key={channel.id} channel={channel} />
         ) : space && room ? (
           room.kind === 'text' ? (
             <ChatView key={room.id} channel={space} room={room} />

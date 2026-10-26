@@ -139,7 +139,7 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
     const members = await api<Member[]>(`/channels/${channelId}/members`);
     set((s) => {
       const users = { ...s.users };
-      for (const m of members) users[m.id] = { id: m.id, name: m.name, username: m.username, avatarUrl: m.avatarUrl };
+      for (const m of members) users[m.id] = { id: m.id, name: m.name, username: m.username, avatarUrl: m.avatarUrl, ...(m.guest ? { guest: true } : {}) };
       return { members: { ...s.members, [channelId]: members }, users };
     });
   },

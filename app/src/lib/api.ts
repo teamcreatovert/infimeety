@@ -7,8 +7,10 @@ let onUnauthorized: (() => void) | null = null;
 
 export const getToken = () => token;
 
-export function setToken(next: string | null) {
+/** `persist: false` keeps the token in memory only (a meeting guest's, which is stored per meeting). */
+export function setToken(next: string | null, { persist = true } = {}) {
   token = next;
+  if (!persist) return;
   if (next) localStorage.setItem(TOKEN_KEY, next);
   else localStorage.removeItem(TOKEN_KEY);
 }

@@ -30,6 +30,8 @@ export interface UserRow {
   provider_avatar_url: string | null;
   onboarded: number;
   created_at: number;
+  /** Set for browser guests: the meeting (channel id) they belong to. */
+  guest_of: string | null;
 }
 
 export function b64url(input: ArrayBuffer | Uint8Array): string {
@@ -59,11 +61,12 @@ export function inviteCode(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => alphabet[b % alphabet.length]).join('');
 }
 
-export const toPublicUser = (r: Pick<UserRow, 'id' | 'name' | 'username' | 'avatar_url'>): PublicUser => ({
+export const toPublicUser = (r: Pick<UserRow, 'id' | 'name' | 'username' | 'avatar_url'> & { guest_of?: string | null }): PublicUser => ({
   id: r.id,
   name: r.name,
   username: r.username,
   avatarUrl: r.avatar_url,
+  ...(r.guest_of ? { guest: true } : {}),
 });
 
 export const toMe = (r: UserRow, providers: Provider[]): Me => ({
@@ -85,7 +88,7 @@ export const toRoom = (r: any): Room => ({
 
 export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => ({
   id: r.id,
-  kind: r.kind === 'dm' ? 'dm' : 'space',
+  kind: r.kind === 'dm' || r.kind === 'meeting' ? r.kind : 'space',
   peer,
   name: r.name,
   emoji: r.emoji,
@@ -95,6 +98,7 @@ export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => 
   inviteCode: r.kind === 'dm' ? null : r.invite_code,
   role: r.role,
   rooms,
+  ...(r.kind === 'meeting' ? { expiresAt: r.expires_at } : {}),
 });
 
 export const toMember = (r: any): Member => ({ ...toPublicUser(r), role: r.role, joinedAt: r.joined_at });

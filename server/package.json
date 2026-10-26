@@ -8,7 +8,8 @@
     "db:migrate:local": "wrangler d1 migrations apply infimeety --local",
     "db:migrate:remote": "wrangler d1 migrations apply infimeety --remote",
     "typecheck": "tsc --noEmit",
-    "pages:deploy": "cd pages && wrangler pages deploy --branch main --commit-dirty=true",
+    "pages:build": "npm --prefix ../app run build:web",
+    "pages:deploy": "npm run pages:build && cd pages && wrangler pages deploy --branch main --commit-dirty=true",
     "deploy:all": "wrangler deploy && npm run pages:deploy"
   },
   "dependencies": {

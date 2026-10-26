@@ -14,6 +14,7 @@ import {
   Send,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   StickyNote,
   UserCheck,
   UserMinus,
@@ -33,6 +34,7 @@ import { getHub, moveVoice, sendChat } from '@/lib/realtime';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
+import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
 import { toast, useUI, type UserMenuContext } from '@/stores/ui';
@@ -54,7 +56,14 @@ export function UserMenu() {
 function MenuBody({ userId, context, at, close }: { userId: string; context: UserMenuContext; at: { x: number; y: number }; close: Close }) {
   const user = usePerson(userId);
   const self = useAuth((s) => s.me?.id === userId);
+  // A meeting's browser guest only gets the call controls; friends, DMs and profiles need an account.
+  const guestViewer = useAuth((s) => !!s.me?.guest);
   const hasNote = useSettings((s) => !!s.notes[userId]);
+  const meetingRole = useChannels((s) => {
+    if (context.kind !== 'voice' || s.channels.find((c) => c.id === context.channelId)?.kind !== 'meeting') return undefined;
+    const role = s.members[context.channelId]?.find((m) => m.id === userId)?.role;
+    return role === 'owner' ? 'Host' : role === 'admin' ? 'Co-host' : undefined;
+  });
 
   const profile = (focusNote = false) => useUI.getState().set({ userMenu: null, profileCard: { userId, ...at, focusNote } });
   const mention = () => {
@@ -63,12 +72,12 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
     useUI.getState().set({ composerInsert: { text: `@${user?.username}`, at: Date.now() } });
   };
 
-  const people = (
+  const people = guestViewer ? null : (
     <>
       <MenuItem icon={<UserRound size={14} />} onClick={() => profile()}>
         Profile
       </MenuItem>
-      {!self && context.kind !== 'dm' && (
+      {!self && context.kind !== 'dm' && !user?.guest && (
         <MenuItem icon={<MessageCircle size={14} />} onClick={() => (close(), void messageFriend(userId))}>
           Message
         </MenuItem>
@@ -88,20 +97,20 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
 
   return (
     <>
-      <Header user={user} />
+      <Header user={user} role={meetingRole} />
       {context.kind === 'voice' && self && (
         <>
           <SelfVoice channelId={context.channelId} close={close} />
-          <MenuSeparator />
+          {people && <MenuSeparator />}
           {people}
         </>
       )}
       {context.kind === 'voice' && !self && (
         <>
           <PeerVoice channelId={context.channelId} peerId={context.peerId} userId={userId} />
-          <MenuSeparator />
+          {people && <MenuSeparator />}
           {people}
-          {user && <FriendItems user={user} close={close} />}
+          {user && !guestViewer && <FriendItems user={user} close={close} />}
           <Moderation channelId={context.channelId} peerId={context.peerId} userId={userId} close={close} />
         </>
       )}
@@ -115,20 +124,22 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
       {context.kind === 'member' && (
         <>
           {people}
-          {!self && user && <FriendItems user={user} close={close} />}
+          {!self && user && !guestViewer && <FriendItems user={user} close={close} />}
         </>
       )}
     </>
   );
 }
 
-function Header({ user }: { user?: PublicUser }) {
+function Header({ user, role }: { user?: PublicUser; role?: string }) {
+  const handle = user?.guest ? 'Guest' : user?.username ? `@${user.username}` : '';
+  const line = [handle, role].filter(Boolean).join(' · ');
   return (
     <div className="flex items-center gap-2.5 px-2 pb-2 pt-1.5">
       <Avatar user={user} size={36} />
       <div className="min-w-0">
         <div className="truncate text-[13.5px] font-semibold">{user?.name ?? 'Someone'}</div>
-        {user?.username && <div className="truncate text-[11.5px] text-fg-3">@{user.username}</div>}
+        {line && <div className="truncate text-[11.5px] text-fg-3">{line}</div>}
       </div>
     </div>
   );
@@ -178,15 +189,18 @@ function SelfVoice({ channelId, close }: { channelId: string; close: Close }) {
   const serverMuted = useVoice((s) => s.serverMuted);
   const inThisCall = useVoice((s) => s.channelId === channelId);
   const roomId = useVoice((s) => s.roomId);
+  const guest = useAuth((s) => !!s.me?.guest);
   if (!inThisCall) return null;
   return (
     <>
       <Toggle icon={<MicOff size={14} />} label={serverMuted ? 'Muted by an admin' : 'Mute'} checked={muted || serverMuted} disabled={serverMuted} onChange={() => void voice.toggleMute()} />
       <Toggle icon={<HeadphoneOff size={14} />} label="Deafen" checked={deafened} onChange={() => voice.toggleDeafen()} />
       <MoveTo channelId={channelId} fromRoomId={roomId} onPick={(id) => (close(), void moveVoice(channelId, id))} />
-      <MenuItem icon={<Settings size={14} />} onClick={() => (close(), useUI.getState().set({ settingsTab: 'voice' }))}>
-        Voice settings
-      </MenuItem>
+      {!guest && (
+        <MenuItem icon={<Settings size={14} />} onClick={() => (close(), useUI.getState().set({ settingsTab: 'voice' }))}>
+          Voice settings
+        </MenuItem>
+      )}
     </>
   );
 }
@@ -208,20 +222,41 @@ function PeerVoice({ channelId, peerId, userId }: { channelId: string; peerId: s
 
 function Moderation({ channelId, peerId, userId, close }: { channelId: string; peerId: string; userId: string; close: Close }) {
   const myRole = useChannels((s) => s.channels.find((c) => c.id === channelId)?.role);
-  const targetRole = useChannels((s) => s.members[channelId]?.find((m) => m.id === userId)?.role);
+  const meeting = useChannels((s) => s.channels.find((c) => c.id === channelId)?.kind === 'meeting');
+  const target = useChannels((s) => s.members[channelId]?.find((m) => m.id === userId));
+  const targetRole = target?.role;
   const participant = useChannels((s) => s.voice[channelId]?.participants.find((p) => p.peerId === peerId));
   // Mirrors the hub's rule: owners moderate anyone but themselves, admins moderate members.
   const canModerate = !!participant && (myRole === 'owner' || (myRole === 'admin' && targetRole === 'member'));
   if (!canModerate) return null;
   const send = (msg: Parameters<NonNullable<ReturnType<typeof getHub>>['send']>[0]) => getHub(channelId)?.send(msg);
+  const meetingAction = (run: () => Promise<void>, failed: string) => {
+    close();
+    run().catch(() => toast({ kind: 'error', title: failed }));
+  };
   return (
     <>
       <MenuSeparator />
       <Toggle icon={<ShieldAlert size={14} className="text-danger" />} label="Server mute" checked={participant.serverMuted} onChange={(v) => send({ t: 'voice.serverMute', peerId, muted: v })} />
       <MoveTo channelId={channelId} fromRoomId={participant.roomId} onPick={(roomId) => (close(), send({ t: 'voice.move', peerId, roomId }))} />
-      <MenuItem danger icon={<PhoneOff size={14} />} onClick={() => (close(), send({ t: 'voice.disconnect', peerId }))}>
-        Disconnect from voice
-      </MenuItem>
+      {/* Meetings: the host picks co-hosts (people with an account only). */}
+      {meeting && myRole === 'owner' && !target?.guest && targetRole && targetRole !== 'owner' && (
+        <MenuItem
+          icon={<ShieldCheck size={14} />}
+          onClick={() => meetingAction(() => useMeetings.getState().setCohost(channelId, userId, targetRole !== 'admin'), 'Couldn’t change co-hosts')}
+        >
+          {targetRole === 'admin' ? 'Remove as co-host' : 'Make co-host'}
+        </MenuItem>
+      )}
+      {meeting ? (
+        <MenuItem danger icon={<UserMinus size={14} />} onClick={() => meetingAction(() => useMeetings.getState().remove(channelId, userId), 'Couldn’t remove them')}>
+          Remove from meeting
+        </MenuItem>
+      ) : (
+        <MenuItem danger icon={<PhoneOff size={14} />} onClick={() => (close(), send({ t: 'voice.disconnect', peerId }))}>
+          Disconnect from voice
+        </MenuItem>
+      )}
     </>
   );
 }

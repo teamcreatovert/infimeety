@@ -5,6 +5,7 @@ import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal }
 import { voice } from './voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
+import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useMedia } from '@/stores/media';
 import { useSettings } from '@/stores/settings';
@@ -75,6 +76,7 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
       channels.set({ online: { ...channels.online, [cid]: msg.online }, voice: { ...channels.voice, [cid]: msg.voice } });
       voice.onWelcome(hub);
       announceRevocations(hub);
+      if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
     case 'presence':
       return channels.set({ online: { ...channels.online, [cid]: msg.online } });
@@ -128,16 +130,24 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     case 'channel.changed':
       return void channels.refresh(cid).catch(() => {});
     case 'channel.removed': {
-      const name = channels.channels.find((c) => c.id === cid)?.name;
+      const channel = channels.channels.find((c) => c.id === cid);
       if (useVoice.getState().channelId === cid) voice.leave({ silent: true });
       channels.removeLocal(cid);
       hubs.get(cid)?.close();
       hubs.delete(cid);
-      if (name) toast({ kind: 'info', title: `You're no longer in ${name}` });
+      if (channel?.kind === 'meeting') useMeetings.getState().onRemoved(cid);
+      else if (channel) toast({ kind: 'info', title: `You're no longer in ${channel.name}` });
       return;
     }
     case 'member.updated':
       return channels.upsertUser(msg.user);
+
+    case 'meeting.waiting':
+      return useMeetings.getState().setWaiting(cid, msg.users);
+    case 'meeting.cohost':
+      return useMeetings.getState().onCohost(cid, msg.userId);
+    case 'meeting.ended':
+      return useMeetings.getState().onEnded(cid);
     case 'error':
       return toast({ kind: 'error', title: msg.message });
   }

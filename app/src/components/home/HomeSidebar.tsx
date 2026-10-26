@@ -1,18 +1,22 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AudioLines, BellOff, Pin, Users } from 'lucide-react';
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { AudioLines, BellOff, Link2, Pin, Users, Video } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { UserBar, VoicePanel } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
+import { Spinner } from '../ui/primitives';
+import { channelGradient } from '@/lib/format';
+import { timeLeft } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
+import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
-import { openUserMenu } from '@/stores/ui';
+import { openUserMenu, toast } from '@/stores/ui';
 
-/** Home: Friends plus the list of direct messages. */
+/** Home: Friends, quick meetings, and the list of direct messages. */
 export function HomeSidebar() {
   const active = useChannels((s) => s.activeChannelId);
   const channels = useChannels((s) => s.channels);
@@ -30,6 +34,21 @@ export function HomeSidebar() {
     if (active && closed[active]) useSettings.getState().setDmClosed(active, false);
   }, [active, closed]);
 
+  const meetings = useMemo(() => channels.filter((c) => c.kind === 'meeting'), [channels]);
+  const [starting, setStarting] = useState(false);
+
+  const startMeeting = async () => {
+    setStarting(true);
+    try {
+      const meeting = await useMeetings.getState().create();
+      await useMeetings.getState().enterCall(meeting);
+    } catch {
+      toast({ kind: 'error', title: 'Couldn’t start a meeting', body: 'Check your connection.' });
+    } finally {
+      setStarting(false);
+    }
+  };
+
   return (
     <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col">
       <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-4">
@@ -44,6 +63,23 @@ export function HomeSidebar() {
           <span className="relative flex-1 text-left">Friends</span>
           {incoming > 0 && <Badge>{incoming}</Badge>}
         </NavButton>
+        <NavButton active={false} onClick={() => !starting && void startMeeting()}>
+          {starting ? <Spinner size={16} className="relative shrink-0 text-accent" /> : <Video size={16} className="relative shrink-0 text-accent" />}
+          <span className="relative flex-1 text-left">New meeting</span>
+        </NavButton>
+        <NavButton active={false} onClick={() => useMeetings.getState().set({ joining: '' })}>
+          <Link2 size={16} className="relative shrink-0 text-fg-2" />
+          <span className="relative flex-1 text-left">Join a meeting</span>
+        </NavButton>
+
+        {meetings.length > 0 && (
+          <>
+            <div className="mt-4 flex h-7 items-center px-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">Meetings</div>
+            {meetings.map((m) => (
+              <MeetingRow key={m.id} meeting={m} active={active === m.id} />
+            ))}
+          </>
+        )}
 
         <div className="mt-4 flex h-7 items-center px-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">Direct messages</div>
         {dms.length === 0 ? (
@@ -77,6 +113,31 @@ const Badge = ({ children, quiet }: { children: ReactNode; quiet?: boolean }) =>
     {children}
   </span>
 );
+
+function MeetingRow({ meeting, active }: { meeting: Channel; active: boolean }) {
+  const callRoom = meeting.rooms.find((r) => r.kind === 'voice');
+  const inCall = useChannels((s) => s.voice[meeting.id]?.participants.filter((p) => p.roomId === callRoom?.id).length ?? 0);
+  const waiting = useMeetings((s) => (meeting.role !== 'member' ? (s.waiting[meeting.id]?.length ?? 0) : 0));
+
+  return (
+    <NavButton active={active} onClick={() => useChannels.getState().select(meeting.id)}>
+      <span className="relative grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[10px] text-white" style={{ background: channelGradient(meeting.color) }}>
+        <Video size={15} strokeWidth={2} />
+      </span>
+      <span className="relative min-w-0 flex-1 text-left">
+        <span className="block truncate text-[13px] leading-tight">{meeting.name}</span>
+        {inCall > 0 ? (
+          <span className="flex items-center gap-1 text-[11px] leading-tight text-success">
+            <AudioLines size={11} /> {inCall} in the call
+          </span>
+        ) : (
+          <span className="block truncate text-[11px] leading-tight text-fg-3">{meeting.expiresAt ? `Ends in ${timeLeft(meeting.expiresAt)}` : meeting.inviteCode}</span>
+        )}
+      </span>
+      {waiting > 0 && <Badge>{waiting}</Badge>}
+    </NavButton>
+  );
+}
 
 function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
   const peer = dm.peer;

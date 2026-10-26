@@ -6,9 +6,11 @@ import { Button, Segmented, TextField } from '../ui/primitives';
 import { ApiError } from '@/lib/api';
 import { CHANNEL_COLORS, channelGradient } from '@/lib/format';
 import { parseJoinInput } from '@/lib/invite';
+import { parseMeetingInput } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useChannels } from '@/stores/channels';
+import { useMeetings } from '@/stores/meetings';
 import { toast, useUI } from '@/stores/ui';
 
 export function CreateChannelModal() {
@@ -76,8 +78,16 @@ export function CreateChannelModal() {
                 inputClassName="text-center font-mono text-[20px]! tracking-[0.3em] uppercase"
                 placeholder="ABCD2345"
                 value={code}
-                onChange={(e) => setCode(parseJoinInput(e.target.value))}
+                onChange={(e) => {
+                  // A meeting link pasted here opens the "Join meeting?" sheet instead.
+                  const meeting = parseMeetingInput(e.target.value);
+                  if (meeting) {
+                    close();
+                    useMeetings.getState().set({ joining: meeting });
+                  } else setCode(parseJoinInput(e.target.value));
+                }}
               />
+              <p className="mt-2.5 text-[11.5px] text-fg-3">Got a meeting link? Paste it here too.</p>
             </motion.div>
           ) : (
             <motion.div key="create" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }} transition={spring} className="pt-7 text-center">

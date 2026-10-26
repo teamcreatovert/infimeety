@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { ClientMsg, Message, Role, ServerMsg, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
 
 /** Per-socket state. Survives hibernation via serializeAttachment. */
@@ -8,11 +9,22 @@ interface Peer {
   userId: string;
   role: Role;
   channelId: string;
+  /** A meeting's browser guest (never auto-promoted to co-host). */
+  guest?: boolean;
   /** Voice state while in a voice room; `forceMuted` is the admin's per-person mute. */
   voice: (Omit<VoiceParticipant, 'serverMuted'> & { forceMuted: boolean }) | null;
 }
 
+/** Only for meeting hubs. `emptySince` is when the call last became empty (null while people are in it). */
+interface MeetingState {
+  channelId: string;
+  expiresAt: number;
+  emptySince: number | null;
+}
+
 const MAX_FRAME = 64 * 1024;
+/** A live meeting's hub re-checks its expiry at least this often (in case a disconnect went unnoticed). */
+const MEETING_CHECK = 15 * 60_000;
 
 /**
  * One hub per channel: realtime chat fan-out, presence, voice-room state and
@@ -21,17 +33,20 @@ const MAX_FRAME = 64 * 1024;
 export class ChannelHub extends DurableObject<Env> {
   private mutedRooms = new Set<string>();
   private roomKinds = new Map<string, string>();
+  private meeting: MeetingState | null = null;
+  private promoting = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
+      this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
     });
   }
 
   async fetch(req: Request): Promise<Response> {
-    const info = JSON.parse(req.headers.get('X-Infimeety-Peer') ?? 'null') as Pick<Peer, 'userId' | 'role' | 'channelId'> | null;
+    const info = JSON.parse(req.headers.get('X-Infimeety-Peer') ?? 'null') as Pick<Peer, 'userId' | 'role' | 'channelId' | 'guest'> | null;
     if (!info) return new Response('Bad request', { status: 400 });
 
     const [client, server] = Object.values(new WebSocketPair());
@@ -71,6 +86,88 @@ export class ChannelHub extends DurableObject<Env> {
     for (const s of this.ctx.getWebSockets(userId)) this.save(s, { ...this.peer(s), role });
     this.broadcast({ t: 'channel.changed' });
     this.broadcastVoice();
+  }
+
+  /** Send only to the host and co-hosts (a meeting's waiting room). */
+  async notifyAdmins(msg: ServerMsg) {
+    for (const s of this.sockets()) if (isAdmin(this.peer(s).role)) this.send(s, msg);
+  }
+
+  // ─── Meetings ────────────────────────────────────────────────────────────────
+
+  /** Makes this a meeting hub: it ends the meeting at `expiresAt`, or after an hour with nobody in the call. */
+  async startMeeting(channelId: string, expiresAt: number) {
+    // Counts as empty until the host's call connects, so an unused meeting ends too.
+    this.meeting = { channelId, expiresAt, emptySince: Date.now() };
+    await this.ctx.storage.put('meeting', this.meeting);
+    await this.scheduleCheck();
+  }
+
+  /** People in the call right now. */
+  async callSize() {
+    return this.voiceSnapshot().participants.length;
+  }
+
+  /** The meeting is over (already deleted from D1): tell everyone and close their sockets. */
+  async meetingEnded() {
+    this.broadcast({ t: 'meeting.ended' });
+    await this.notify({ t: 'channel.removed' });
+    this.meeting = null;
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
+  async alarm() {
+    const m = this.meeting;
+    if (!m) return;
+    const now = Date.now();
+    await this.trackEmpty(this.voiceSnapshot().participants.length === 0);
+    if (now >= m.expiresAt || (m.emptySince !== null && now - m.emptySince >= MEETING_IDLE)) {
+      await deleteMeetingData(this.env, m.channelId);
+      return this.meetingEnded();
+    }
+    await this.scheduleCheck();
+  }
+
+  private async scheduleCheck() {
+    const m = this.meeting;
+    if (!m) return;
+    const now = Date.now();
+    let at = Math.min(m.expiresAt, now + MEETING_CHECK);
+    if (m.emptySince !== null) at = Math.min(at, m.emptySince + MEETING_IDLE);
+    await this.ctx.storage.setAlarm(Math.max(at, now + 1000));
+  }
+
+  private async trackEmpty(empty: boolean) {
+    const m = this.meeting;
+    if (!m || empty === (m.emptySince !== null)) return;
+    m.emptySince = empty ? Date.now() : null;
+    await this.ctx.storage.put('meeting', m);
+    await this.scheduleCheck();
+  }
+
+  /**
+   * After anyone joins or leaves the call: track emptiness, and if nobody left in the call
+   * can run the meeting, the signed-in person who has been in it longest becomes a co-host.
+   */
+  private async meetingCallChanged(except?: WebSocket) {
+    const inCall = this.sockets(except)
+      .map((s) => this.peer(s))
+      .filter((p) => p.voice);
+    await this.trackEmpty(inCall.length === 0);
+    if (this.promoting || !inCall.length || inCall.some((p) => isAdmin(p.role))) return;
+    const next = inCall.filter((p) => !p.guest).sort((a, b) => a.voice!.joinedAt - b.voice!.joinedAt)[0];
+    if (!next) return;
+    this.promoting = true;
+    try {
+      await this.env.DB.prepare("UPDATE channel_members SET role = 'admin' WHERE channel_id = ? AND user_id = ? AND role = 'member'")
+        .bind(next.channelId, next.userId)
+        .run();
+      await this.setRole(next.userId, 'admin');
+      this.broadcast({ t: 'meeting.cohost', userId: next.userId });
+    } finally {
+      this.promoting = false;
+    }
   }
 
   // ─── WebSocket events ────────────────────────────────────────────────────────
@@ -332,6 +429,7 @@ export class ChannelHub extends DurableObject<Env> {
 
   private broadcastVoice(exceptSocket?: WebSocket) {
     this.broadcast({ t: 'voice', voice: this.voiceSnapshot(undefined, exceptSocket) }, exceptSocket);
+    if (this.meeting) this.meetingCallChanged(exceptSocket).catch((err) => console.error('meeting check failed', err));
   }
 
   private dropped(ws: WebSocket) {

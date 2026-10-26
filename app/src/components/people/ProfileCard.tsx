@@ -50,7 +50,11 @@ function Card({ userId, focusNote, close }: { userId: string; focusNote: boolean
             </span>
           )}
         </div>
-        {user?.username && <div className="selectable text-[13px] text-fg-2">@{user.username}</div>}
+        {user?.guest ? (
+          <div className="text-[13px] text-fg-2">Guest in a meeting</div>
+        ) : (
+          user?.username && <div className="selectable text-[13px] text-fg-2">@{user.username}</div>
+        )}
         <div className="mt-1 text-[12px] text-fg-3">{self ? 'This is you' : online ? 'Online' : 'Offline'}</div>
 
         {!self && (
@@ -78,9 +82,11 @@ function Card({ userId, focusNote, close }: { userId: string; focusNote: boolean
             </Button>
           ) : (
             <>
-              <Button variant="primary" size="sm" icon={<MessageCircle size={13} />} onClick={act(() => messageFriend(userId))}>
-                Message
-              </Button>
+              {!user?.guest && (
+                <Button variant="primary" size="sm" icon={<MessageCircle size={13} />} onClick={act(() => messageFriend(userId))}>
+                  Message
+                </Button>
+              )}
               {status === 'accepted' && (
                 <Button size="sm" icon={<Phone size={13} />} onClick={act(() => callFriend(userId))}>
                   Call

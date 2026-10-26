@@ -16,6 +16,8 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { ProfileCard } from './components/people/ProfileCard';
 import { UserMenu } from './components/people/UserMenu';
 import { IncomingCall } from './components/home/IncomingCall';
+import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
+import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
 import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
@@ -29,7 +31,7 @@ import { useFriends } from './stores/friends';
 import { ACCENTS, useSettings } from './stores/settings';
 import { toast } from './stores/ui';
 
-function useAppearance() {
+export function useAppearance() {
   const theme = useSettings((s) => s.theme);
   const accent = useSettings((s) => s.accent);
   const reduce = useSettings((s) => s.reduceTransparency);
@@ -147,6 +149,8 @@ export default function App() {
         <Lightbox />
         <UpdatePrompt />
         {status === 'ready' && <IncomingCall />}
+        {status === 'ready' && <JoinMeetingModal />}
+        {status === 'ready' && <MeetingKnocks />}
       </div>
     </MotionConfig>
   );

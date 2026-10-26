@@ -13,6 +13,17 @@ import {
   upsertUser,
   userFromToken,
 } from './auth';
+import {
+  MAX_WAITING,
+  MEETING_TTL,
+  announceWaiting,
+  endMeeting,
+  findMeeting,
+  meetingCode,
+  meetingPreview,
+  sweepMeetings,
+  waitingGuests,
+} from './meetings';
 import { iceServers, turnStatus } from './turn';
 import {
   type Env,
@@ -60,13 +71,20 @@ app.onError((err, c) => {
   return c.json({ error: 'internal_error' }, 500);
 });
 
-const auth = createMiddleware<App>(async (c, next) => {
-  const header = c.req.header('Authorization');
-  const user = await userFromToken(c.env, header?.startsWith('Bearer ') ? header.slice(7) : null);
-  if (!user) return c.json({ error: 'unauthorized' }, 401);
-  c.set('user', user);
-  await next();
-});
+const signedIn = (allowGuests: boolean) =>
+  createMiddleware<App>(async (c, next) => {
+    const header = c.req.header('Authorization');
+    const user = await userFromToken(c.env, header?.startsWith('Bearer ') ? header.slice(7) : null);
+    if (!user) return c.json({ error: 'unauthorized' }, 401);
+    if (user.guest_of && !allowGuests) return c.json({ error: 'guest' }, 403);
+    c.set('user', user);
+    await next();
+  });
+
+/** An Infimeety account. */
+const auth = signedIn(false);
+/** An account or a meeting's browser guest (who can only ever see that one meeting). */
+const guestOk = signedIn(true);
 
 async function notifyChannels(env: Env, userId: string, msg: ServerMsg) {
   const { results } = await env.DB.prepare('SELECT channel_id FROM channel_members WHERE user_id = ?')
@@ -265,7 +283,7 @@ app.post('/auth/dev', async (c) => {
   return c.json({ token: await createSession(c.env, userId) });
 });
 
-app.post('/auth/logout', auth, async (c) => {
+app.post('/auth/logout', guestOk, async (c) => {
   const token = c.req.header('Authorization')!.slice(7);
   await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(token)).run();
   return c.json({ ok: true });
@@ -273,7 +291,7 @@ app.post('/auth/logout', auth, async (c) => {
 
 // ─── Profile ───────────────────────────────────────────────────────────────────
 
-app.get('/me', auth, async (c) => {
+app.get('/me', guestOk, async (c) => {
   const user = c.get('user');
   return c.json(toMe(user, await providersOf(c.env, user.id)));
 });
@@ -350,7 +368,7 @@ app.get('/avatars/:key', async (c) => {
 });
 
 /** ICE servers for WebRTC: public STUN, plus the TURN relay when one is configured. */
-app.get('/ice', auth, async (c) => c.json({ iceServers: await iceServers(c.env) }));
+app.get('/ice', guestOk, async (c) => c.json({ iceServers: await iceServers(c.env) }));
 
 /** Public health check: is the TURN relay configured and accepting our login? */
 app.get('/ice/status', async (c) => c.json(await turnStatus(c.env)));
@@ -381,7 +399,8 @@ async function loadChannels(env: Env, userId: string, onlyId?: string) {
   )
     .bind(userId)
     .all<any>();
-  return chans.map((ch) => {
+  const now = Date.now();
+  return chans.filter((ch) => !ch.expires_at || ch.expires_at > now).map((ch) => {
     const peer = peers.find((p) => p.channel_id === ch.id);
     return toChannel(
       ch,
@@ -401,7 +420,7 @@ const requireRole = (min: 'member' | 'admin' | 'owner') =>
     await next();
   });
 
-app.get('/channels', auth, async (c) => c.json(await loadChannels(c.env, c.get('user').id)));
+app.get('/channels', guestOk, async (c) => c.json(await loadChannels(c.env, c.get('user').id)));
 
 app.post('/channels', auth, async (c) => {
   const user = c.get('user');
@@ -488,9 +507,9 @@ app.post('/channels/:id/leave', auth, requireRole('member'), async (c) => {
   return c.json({ ok: true });
 });
 
-app.get('/channels/:id/members', auth, requireRole('member'), async (c) => {
+app.get('/channels/:id/members', guestOk, requireRole('member'), async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT u.id, u.name, u.username, u.avatar_url, m.role, m.joined_at
+    `SELECT u.id, u.name, u.username, u.avatar_url, u.guest_of, m.role, m.joined_at
      FROM channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? ORDER BY m.joined_at`,
   )
     .bind(c.req.param('id'))
@@ -504,6 +523,9 @@ app.patch('/channels/:id/members/:userId', auth, requireRole('owner'), async (c)
   const id = c.req.param('id');
   const target = c.req.param('userId');
   if (target === c.get('user').id) return c.json({ error: 'cannot_change_self' }, 400);
+  // Meeting co-hosts must have an account; browser guests can't run a meeting.
+  const guest = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ? AND guest_of IS NOT NULL').bind(target).first();
+  if (guest && role === 'admin') return c.json({ error: 'guest' }, 400);
   await c.env.DB.prepare('UPDATE channel_members SET role = ? WHERE channel_id = ? AND user_id = ?').bind(role, id, target).run();
   c.executionCtx.waitUntil(hub(c.env, id).setRole(target, role));
   return c.json({ ok: true });
@@ -515,7 +537,13 @@ app.delete('/channels/:id/members/:userId', auth, requireRole('admin'), async (c
   const targetRole = await memberRole(c.env, id, target);
   if (!targetRole) return c.json({ error: 'not_found' }, 404);
   if (targetRole === 'owner' || (targetRole === 'admin' && c.get('role') !== 'owner')) return c.json({ error: 'forbidden' }, 403);
-  await c.env.DB.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').bind(id, target).run();
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').bind(id, target),
+    // Someone removed from a meeting can't come back to it.
+    c.env.DB.prepare(
+      "INSERT OR REPLACE INTO meeting_access (channel_id, user_id, status, created_at) SELECT ?1, ?2, 'removed', ?3 FROM channels WHERE id = ?1 AND kind = 'meeting'",
+    ).bind(id, target, Date.now()),
+  ]);
   c.executionCtx.waitUntil(hub(c.env, id).removeUser(target));
   return c.json({ ok: true });
 });
@@ -556,7 +584,7 @@ app.delete('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) 
   return c.json({ ok: true });
 });
 
-app.get('/channels/:id/rooms/:roomId/messages', auth, requireRole('member'), async (c) => {
+app.get('/channels/:id/rooms/:roomId/messages', guestOk, requireRole('member'), async (c) => {
   const before = c.req.query('before') ?? null;
   const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 100);
   const { results } = await c.env.DB.prepare(
@@ -665,6 +693,126 @@ app.post('/dms', auth, async (c) => {
   return c.json(dm);
 });
 
+// ─── Meetings ──────────────────────────────────────────────────────────────────
+
+/** Start a quick meeting: a short-lived channel with one call and one chat, shared by link. */
+app.post('/meetings', auth, async (c) => {
+  const user = c.get('user');
+  const id = newId();
+  const now = Date.now();
+  const expiresAt = now + MEETING_TTL;
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO channels (id, name, emoji, color, owner_id, invite_code, created_at, kind, expires_at) VALUES (?, ?, '📹', 'teal', ?, ?, ?, 'meeting', ?)",
+    ).bind(id, `${user.name}’s meeting`.slice(0, 60), user.id, meetingCode(), now, expiresAt),
+    c.env.DB.prepare("INSERT INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)").bind(id, user.id, now),
+    c.env.DB.prepare("INSERT INTO rooms (id, channel_id, kind, name, position, created_at) VALUES (?, ?, 'text', 'chat', 0, ?)").bind(newId(), id, now),
+    c.env.DB.prepare("INSERT INTO rooms (id, channel_id, kind, name, position, created_at) VALUES (?, ?, 'voice', 'Meeting', 1, ?)").bind(newId(), id, now),
+  ]);
+  await hub(c.env, id).startMeeting(id, expiresAt);
+  c.executionCtx.waitUntil(sweepMeetings(c.env));
+  const [channel] = await loadChannels(c.env, user.id, id);
+  return c.json(channel, 201);
+});
+
+/** Public preview for the meeting link page and the app's "Join?" sheet. */
+app.get('/meetings/:code', async (c) => {
+  const preview = await meetingPreview(c.env, c.req.param('code'));
+  return preview ? c.json(preview) : c.json({ error: 'meeting_ended' }, 404);
+});
+
+/** Infimeety users walk straight in, unless the host removed them earlier. */
+app.post('/meetings/:code/join', auth, async (c) => {
+  const user = c.get('user');
+  const meeting = await findMeeting(c.env, c.req.param('code'));
+  if (!meeting) return c.json({ error: 'meeting_ended' }, 404);
+  const access = await c.env.DB.prepare('SELECT status FROM meeting_access WHERE channel_id = ? AND user_id = ?')
+    .bind(meeting.id, user.id)
+    .first<{ status: string }>();
+  if (access?.status === 'removed') return c.json({ error: 'removed' }, 403);
+  const res = await c.env.DB.prepare("INSERT OR IGNORE INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)")
+    .bind(meeting.id, user.id, Date.now())
+    .run();
+  if (res.meta.changes) c.executionCtx.waitUntil(hub(c.env, meeting.id).notify({ t: 'channel.changed' }));
+  const [channel] = await loadChannels(c.env, user.id, meeting.id);
+  return c.json(channel);
+});
+
+/**
+ * A browser guest asks to join. They get a guest account that only exists inside this
+ * meeting and wait in the lobby until the host or a co-host lets them in.
+ */
+app.post('/meetings/:code/guests', async (c) => {
+  const meeting = await findMeeting(c.env, c.req.param('code'));
+  if (!meeting) return c.json({ error: 'meeting_ended' }, 404);
+  const { name } = await c.req.json<{ name?: string }>();
+  const clean = (name ?? '').trim().replace(/\s+/g, ' ').slice(0, 32);
+  if (!clean) return c.json({ error: 'name_required' }, 400);
+  const waiting = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM meeting_access WHERE channel_id = ? AND status = 'waiting'")
+    .bind(meeting.id)
+    .first<{ n: number }>();
+  if ((waiting?.n ?? 0) >= MAX_WAITING) return c.json({ error: 'lobby_full' }, 429);
+
+  const id = newId();
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO users (id, name, onboarded, created_at, guest_of) VALUES (?, ?, 1, ?, ?)').bind(id, clean, now, meeting.id),
+    c.env.DB.prepare("INSERT INTO meeting_access (channel_id, user_id, status, created_at) VALUES (?, ?, 'waiting', ?)").bind(meeting.id, id, now),
+  ]);
+  const token = await createSession(c.env, id);
+  c.executionCtx.waitUntil(announceWaiting(c.env, meeting.id));
+  return c.json({ token, status: 'waiting' }, 201);
+});
+
+/** The guest's waiting screen polls this until they're let in (then it carries the meeting). */
+app.get('/meetings/:code/guest', guestOk, async (c) => {
+  const user = c.get('user');
+  const meeting = await findMeeting(c.env, c.req.param('code'));
+  if (!meeting || user.guest_of !== meeting.id) return c.json({ error: 'meeting_ended' }, 404);
+  if (await memberRole(c.env, meeting.id, user.id)) {
+    const [channel] = await loadChannels(c.env, user.id, meeting.id);
+    return c.json({ status: 'admitted', channel });
+  }
+  const access = await c.env.DB.prepare('SELECT status FROM meeting_access WHERE channel_id = ? AND user_id = ?')
+    .bind(meeting.id, user.id)
+    .first<{ status: string }>();
+  return c.json({ status: access?.status ?? 'denied' });
+});
+
+const requireMeeting = createMiddleware<App>(async (c, next) => {
+  const row = await c.env.DB.prepare("SELECT 1 FROM channels WHERE id = ? AND kind = 'meeting'").bind(c.req.param('id')).first();
+  if (!row) return c.json({ error: 'not_found' }, 404);
+  await next();
+});
+
+app.get('/channels/:id/guests', auth, requireRole('admin'), requireMeeting, async (c) => c.json(await waitingGuests(c.env, c.req.param('id'))));
+
+/** Let a waiting guest in, or turn them away. */
+app.post('/channels/:id/guests/:userId', auth, requireRole('admin'), requireMeeting, async (c) => {
+  const id = c.req.param('id');
+  const target = c.req.param('userId');
+  const { admit } = await c.req.json<{ admit?: boolean }>();
+  const access = await c.env.DB.prepare('SELECT status FROM meeting_access WHERE channel_id = ? AND user_id = ?').bind(id, target).first<{ status: string }>();
+  if (access?.status !== 'waiting') return c.json({ error: 'not_waiting' }, 404);
+  if (admit) {
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM meeting_access WHERE channel_id = ? AND user_id = ?').bind(id, target),
+      c.env.DB.prepare("INSERT OR IGNORE INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)").bind(id, target, Date.now()),
+    ]);
+    c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  } else {
+    await c.env.DB.prepare("UPDATE meeting_access SET status = 'denied' WHERE channel_id = ? AND user_id = ?").bind(id, target).run();
+  }
+  c.executionCtx.waitUntil(announceWaiting(c.env, id));
+  return c.json({ ok: true });
+});
+
+/** The host ends the meeting for everyone; its chat and guests are deleted. */
+app.post('/channels/:id/end', auth, requireRole('owner'), requireMeeting, async (c) => {
+  await endMeeting(c.env, c.req.param('id'));
+  return c.json({ ok: true });
+});
+
 // ─── Realtime ──────────────────────────────────────────────────────────────────
 
 /** Browsers can't set headers on WebSockets, so the session token rides in the subprotocol list. */
@@ -677,7 +825,7 @@ const socketUser = (c: { env: Env; req: { header: (n: string) => string | undefi
 app.get('/me/ws', async (c) => {
   if (c.req.header('Upgrade') !== 'websocket') return c.text('Expected a WebSocket upgrade', 426);
   const user = await socketUser(c);
-  if (!user) return c.text('Unauthorized', 401);
+  if (!user || user.guest_of) return c.text('Unauthorized', 401);
   const req = new Request(c.req.raw);
   req.headers.set('X-Infimeety-User', user.id);
   return lobby(c.env).fetch(req);
@@ -692,7 +840,7 @@ app.get('/channels/:id/ws', async (c) => {
   if (!role) return c.text('Forbidden', 403);
 
   const req = new Request(c.req.raw);
-  req.headers.set('X-Infimeety-Peer', JSON.stringify({ userId: user.id, role, channelId }));
+  req.headers.set('X-Infimeety-Peer', JSON.stringify({ userId: user.id, role, channelId, guest: !!user.guest_of }));
   return hub(c.env, channelId).fetch(req);
 });
 
