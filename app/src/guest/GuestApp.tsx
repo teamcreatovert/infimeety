@@ -14,6 +14,7 @@ import { api, ApiError, handleUnauthorized, setToken } from '@/lib/api';
 import { channelGradient } from '@/lib/format';
 import { loadMeetingPreview } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
+import { isMobile } from '@/lib/platform';
 import { syncHubs } from '@/lib/realtime';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
@@ -151,7 +152,7 @@ export function GuestApp({ code }: { code: string }) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="relative flex h-full w-full flex-col overflow-hidden">
+      <div className="safe-area relative flex h-full w-full flex-col overflow-hidden">
         <Background />
         {phase.k === 'in' ? (
           <main className="glass-main relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -168,7 +169,7 @@ export function GuestApp({ code }: { code: string }) {
                 exit={{ opacity: 0, y: -8, transition: { duration: 0.14 } }}
                 transition={spring}
                 style={{ gridArea: '1 / 1' }}
-                className="w-full max-w-[400px] rounded-[30px] px-7 pb-7 pt-8 text-center glass-pop"
+                className="w-full max-w-[400px] rounded-[30px] px-7 pb-7 pt-8 text-center glass-pop compact:rounded-[26px] compact:px-5 compact:pb-6 compact:pt-7"
               >
                 {phase.k === 'loading' && (
                   <div className="grid h-[220px] place-items-center text-fg-3">
@@ -202,9 +203,11 @@ export function GuestApp({ code }: { code: string }) {
                       Ask to join
                     </Button>
                     <p className="mt-3 text-[11.5px] leading-snug text-fg-3">Someone in the meeting lets you in. You join as a guest, no account needed.</p>
-                    <a href={`infimeety://meet/${code}`} className="mt-4 inline-block text-[12.5px] font-medium text-accent hover:underline">
-                      Have Infimeety? Open in the app
-                    </a>
+                    {!isMobile && (
+                      <a href={`infimeety://meet/${code}`} className="mt-4 inline-block text-[12.5px] font-medium text-accent hover:underline">
+                        Have Infimeety? Open in the app
+                      </a>
+                    )}
                   </form>
                 )}
 
@@ -280,8 +283,8 @@ function Notice({ title, body, children }: { title: string; body: string; childr
       <h1 className="mt-5 font-display text-[21px] font-bold tracking-[-0.025em]">{title}</h1>
       <p className="mt-1.5 text-[13px] leading-snug text-fg-2">{body}</p>
       {children ?? (
-        <a href="/" className="mt-6 inline-block text-[12.5px] font-medium text-accent hover:underline">
-          Get Infimeety for Windows
+        <a href="/download" className="mt-6 inline-block text-[12.5px] font-medium text-accent hover:underline">
+          Get Infimeety
         </a>
       )}
     </>

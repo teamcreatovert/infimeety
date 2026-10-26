@@ -21,11 +21,12 @@ export const WALLPAPERS = {
 } as const;
 export type Wallpaper = keyof typeof WALLPAPERS;
 
+/** Bitrates are ceilings: the connection's bandwidth estimate decides what's actually sent. */
 export const SCREEN_PRESETS = {
-  '720p30': { label: '720p · 30 fps', width: 1280, height: 720, fps: 30, bitrate: 2_500_000 },
-  '1080p30': { label: '1080p · 30 fps', width: 1920, height: 1080, fps: 30, bitrate: 4_500_000 },
-  '1080p60': { label: '1080p · 60 fps', width: 1920, height: 1080, fps: 60, bitrate: 7_000_000 },
-  '1440p60': { label: '1440p · 60 fps', width: 2560, height: 1440, fps: 60, bitrate: 10_000_000 },
+  '720p30': { label: '720p · 30 fps', width: 1280, height: 720, fps: 30, bitrate: 4_000_000 },
+  '1080p30': { label: '1080p · 30 fps', width: 1920, height: 1080, fps: 30, bitrate: 8_000_000 },
+  '1080p60': { label: '1080p · 60 fps', width: 1920, height: 1080, fps: 60, bitrate: 12_000_000 },
+  '1440p60': { label: '1440p · 60 fps', width: 2560, height: 1440, fps: 60, bitrate: 18_000_000 },
 } as const;
 export type ScreenQuality = keyof typeof SCREEN_PRESETS;
 

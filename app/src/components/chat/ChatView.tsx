@@ -2,10 +2,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Hash, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { Channel, PublicUser, Room } from '../../../../shared/protocol';
+import { MobileBack } from '../shell/MobileBack';
 import { IconButton } from '../ui/primitives';
 import { Composer, TypingIndicator } from './Composer';
 import { MemberList } from './MemberList';
 import { MessageList } from './MessageList';
+import { useCompact } from '@/lib/responsive';
 import { useChannels } from '@/stores/channels';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { useUI } from '@/stores/ui';
@@ -16,6 +18,7 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
   const memberList = useUI((s) => s.memberList);
   const onlineCount = useChannels((s) => s.online[channel.id]?.length ?? 0);
   const memberCount = useChannels((s) => s.members[channel.id]?.length ?? 0);
+  const phone = useCompact();
 
   useEffect(() => {
     void useMessages.getState().load(channel.id, room.id);
@@ -35,12 +38,13 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         {!compact && (
-          <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5">
-            <Hash size={18} className="text-fg-3" />
-            <h1 data-tauri-drag-region className="font-display text-[15px] font-semibold tracking-[-0.015em]">
+          <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5 compact:px-3">
+            <MobileBack />
+            <Hash size={18} className="shrink-0 text-fg-3" />
+            <h1 data-tauri-drag-region className="truncate font-display text-[15px] font-semibold tracking-[-0.015em]">
               {room.name}
             </h1>
-            <span data-tauri-drag-region className="ml-1 flex items-center gap-1.5 text-[12px] text-fg-3">
+            <span data-tauri-drag-region className="ml-1 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] text-fg-3 compact:hidden">
               <span className="h-1.5 w-1.5 rounded-full bg-success" />
               {onlineCount} online · {memberCount} members
             </span>
@@ -54,8 +58,24 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
         <TypingIndicator roomId={room.id} />
         <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
       </div>
+      {/* Phones: the member list slides over the chat instead of squeezing it. */}
       <AnimatePresence initial={false}>
-        {!compact && memberList && (
+        {!compact && memberList && phone && (
+          <motion.div key="scrim" className="fixed inset-0 z-[60] bg-black/40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => useUI.getState().set({ memberList: false })} />
+        )}
+        {!compact && memberList && phone && (
+          <motion.div
+            key="members-sheet"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', stiffness: 420, damping: 42 }}
+            className="safe-area hairline-l fixed bottom-0 right-0 top-0 z-[61] w-[min(300px,85vw)] bg-[var(--bg)] shadow-2xl"
+          >
+            <MemberList channel={channel} />
+          </motion.div>
+        )}
+        {!compact && memberList && !phone && (
           <motion.div
             key="members"
             initial={{ width: 0, opacity: 0 }}

@@ -201,7 +201,7 @@ export function Group({ title, footer, children }: { title?: ReactNode; footer?:
 
 export function Row({ label, detail, children, className }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; className?: string }) {
   return (
-    <div className={clsx('flex min-h-[44px] items-center gap-4 px-3.5 py-2', className)}>
+    <div className={clsx('flex min-h-[44px] items-center gap-4 px-3.5 py-2 compact:flex-wrap compact:gap-y-2', className)}>
       <div className="min-w-0 flex-1">
         <div className="text-[13px]">{label}</div>
         {detail && <div className="mt-0.5 text-[11.5px] leading-snug text-fg-3">{detail}</div>}

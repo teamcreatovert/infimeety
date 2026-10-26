@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Button, Spinner, TextField } from '../ui/primitives';
 import { API_URL } from '@/config';
+import { isTauri } from '@/lib/platform';
+import { pendingLink } from '@/lib/weblinks';
 import { softSpring, spring } from '@/lib/motion';
 import { useAuth } from '@/stores/auth';
 
@@ -29,13 +31,13 @@ export function SignIn() {
   const auth = useAuth.getState();
 
   return (
-    <div className="relative grid h-full place-items-center">
+    <div className="relative grid h-full place-items-center overflow-y-auto px-4 py-6">
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, scale: 0.98 }}
         transition={softSpring}
-        className="w-[404px] rounded-[32px] px-9 pb-8 pt-10 text-center glass-pop"
+        className="w-full max-w-[404px] rounded-[32px] px-9 pb-8 pt-10 text-center glass-pop compact:px-6"
       >
         <motion.img
           src="/icon.png"
@@ -56,8 +58,14 @@ export function SignIn() {
           {pending ? (
             <motion.div key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring} className="mt-8 flex flex-col items-center gap-3">
               <Spinner size={24} className="text-fg-2" />
-              <div className="text-[14px] font-medium">Continue in your browser</div>
-              <div className="text-[12.5px] text-fg-2">Sign in with {pending === 'google' ? 'Google' : 'Discord'}, then come back here. We’ll take it from there.</div>
+              {isTauri ? (
+                <>
+                  <div className="text-[14px] font-medium">Continue in your browser</div>
+                  <div className="text-[12.5px] text-fg-2">Sign in with {pending === 'google' ? 'Google' : 'Discord'}, then come back here. We’ll take it from there.</div>
+                </>
+              ) : (
+                <div className="text-[14px] font-medium">Signing you in with {pending === 'google' ? 'Google' : 'Discord'}…</div>
+              )}
               <Button variant="ghost" size="sm" onClick={auth.cancelSignIn}>
                 Cancel
               </Button>
@@ -106,11 +114,28 @@ export function SignIn() {
           )}
         </AnimatePresence>
 
+        {/* Opened from a meeting link: no account needed to join it. */}
+        {!isTauri && pendingLink?.kind === 'meet' && !pending && (
+          <a href={`?meet=${pendingLink.code}&guest`} className="mt-5 inline-block text-[13px] font-medium text-accent hover:underline">
+            Join the meeting as a guest instead
+          </a>
+        )}
+
         {error && <p className="mt-4 text-[12.5px] text-danger">{error === 'offline' ? 'You’re offline. Retrying…' : error}</p>}
         {!providers && !pending && <p className="mt-4 text-[12px] text-fg-3">Can’t reach the server at {API_URL}</p>}
       </motion.div>
 
-      <p className="absolute bottom-5 text-[11.5px] text-fg-3">Your media never leaves your PC. Only messages are stored.</p>
+      <p className="absolute bottom-5 px-4 text-center text-[11.5px] text-fg-3 compact:hidden">
+        Your media never leaves your device. Only messages are stored.
+        {!isTauri && (
+          <>
+            {' '}
+            <a href="/download" className="font-medium text-accent hover:underline">
+              Get the desktop app
+            </a>
+          </>
+        )}
+      </p>
     </div>
   );
 }

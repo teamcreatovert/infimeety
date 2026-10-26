@@ -19,7 +19,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     if (!this.state.error) return this.props.children;
     return (
       <div className="grid h-full place-items-center p-6">
-        <div className="w-[380px] rounded-[24px] p-7 text-center glass-pop">
+        <div className="w-full max-w-[380px] rounded-[24px] p-7 text-center glass-pop">
           <div className="emoji text-[40px]">🫧</div>
           <h1 className="mt-3 font-display text-[19px] font-semibold tracking-[-0.02em]">Something went wrong</h1>
           <p className="mt-1.5 text-[13px] leading-relaxed text-fg-2">Infimeety hit a snag drawing this screen. Reloading fixes it, and you’ll stay signed in.</p>

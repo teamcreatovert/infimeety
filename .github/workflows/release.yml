@@ -1,15 +1,18 @@
 name: Release
 
-# Builds the Windows installer, code-signs it through SignPath once that is set up
-# (docs/CODE-SIGNING.md), signs it for the updater and publishes the GitHub release +
-# latest.json that installed apps auto-update from.
+# Builds the Windows installer and the Mac app, code-signs the Windows one through SignPath
+# once that is set up (docs/CODE-SIGNING.md), signs both for the updater and publishes one
+# GitHub release + the latest.json that installed apps auto-update from.
 #
 # Start it by pushing a version tag (git tag v0.2.0 && git push origin v0.2.0), or from
 # Actions → Release → Run workflow, which also takes release notes and a dry-run switch.
 #
-# Order matters: infimeety.exe is signed before it's packed into the installer, the
+# Windows order matters: infimeety.exe is signed before it's packed into the installer, the
 # installer is signed next, and the updater signature (.sig) is made last, over the final
-# bytes. Changing a file after its .sig is made breaks updates for everyone.
+# bytes. Changing a file after its .sig is made breaks updates for everyone. The Mac build
+# does all of that itself (tauri build signs the app, then makes and signs the update).
+#
+# A failed Mac build doesn't hold back Windows: the release goes out with what was built.
 on:
   push:
     tags: ['v*']
@@ -20,7 +23,7 @@ on:
         required: false
         default: ''
       dry-run:
-        description: Build and sign only. Keep the installer as a workflow artifact, publish nothing.
+        description: Build and sign only. Keep the builds as workflow artifacts, publish nothing.
         type: boolean
         default: false
 
@@ -32,23 +35,19 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+env:
+  DRY_RUN: ${{ inputs.dry-run || false }}
+
 jobs:
-  windows:
-    runs-on: windows-latest
-    # A signing request waits for you to approve it in SignPath, up to two hours each.
-    timeout-minutes: 300
-    defaults:
-      run:
-        shell: bash
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
-      DRY_RUN: ${{ inputs.dry-run || false }}
-      # Signing turns on once the SignPath organization id is saved as a repository variable.
       SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
       SIGNING_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-      # The .sig is made by hand after code signing, so the bundler must not make a stale one.
-      NO_UPDATER_ARTIFACTS: '{"bundle":{"createUpdaterArtifacts":false}}'
     steps:
       - uses: actions/checkout@v7
 
@@ -76,10 +75,30 @@ jobs:
             exit 1
           fi
           if [[ "$SIGN" != true ]]; then
-            echo "::warning::SignPath isn't set up, so this installer is NOT code-signed. See docs/CODE-SIGNING.md."
+            echo "::warning::SignPath isn't set up, so the Windows installer is NOT code-signed. See docs/CODE-SIGNING.md."
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "installer=src-tauri/target/release/bundle/nsis/Infimeety_${version}_x64-setup.exe" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: check
+    runs-on: windows-latest
+    # A signing request waits for you to approve it in SignPath, up to two hours each.
+    timeout-minutes: 300
+    outputs:
+      signed: ${{ steps.authenticode.outputs.signed }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      INSTALLER: src-tauri/target/release/bundle/nsis/Infimeety_${{ needs.check.outputs.version }}_x64-setup.exe
+      # Signing turns on once the SignPath organization id is saved as a repository variable.
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNING_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+      # The .sig is made by hand after code signing, so the bundler must not make a stale one.
+      NO_UPDATER_ARTIFACTS: '{"bundle":{"createUpdaterArtifacts":false}}'
+    steps:
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
@@ -125,7 +144,7 @@ jobs:
           artifact-configuration-slug: app
           github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
           parameters: |
-            version: "${{ steps.version.outputs.version }}"
+            version: "${{ env.VERSION }}"
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 7200
           output-artifact-directory: signed/exe
@@ -145,7 +164,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-installer
-          path: app/${{ steps.version.outputs.installer }}
+          path: app/${{ env.INSTALLER }}
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -161,7 +180,7 @@ jobs:
           artifact-configuration-slug: installer
           github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
           parameters: |
-            version: "${{ steps.version.outputs.version }}"
+            version: "${{ env.VERSION }}"
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 7200
           output-artifact-directory: signed/installer
@@ -170,8 +189,6 @@ jobs:
         if: env.SIGN == 'true'
         working-directory: app
         shell: pwsh
-        env:
-          INSTALLER: ${{ steps.version.outputs.installer }}
         run: |
           Copy-Item "../signed/installer/$(Split-Path $env:INSTALLER -Leaf)" $env:INSTALLER -Force
           # The test-signing certificate isn't trusted by Windows, so only release builds must be Valid.
@@ -187,22 +204,117 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri signer sign --app-version "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.installer }}"
+        run: npx tauri signer sign --app-version "$VERSION" "$INSTALLER"
 
-      - name: Publish the release
-        if: env.DRY_RUN != 'true'
+      # The release page links the code signing policy only when the installer really is signed.
+      - name: Read the code signature
+        id: authenticode
         working-directory: app
-        env:
-          NOTES: ${{ inputs.notes }}
-        run: node scripts/publish-release.mjs "${NOTES:-A fresh update for Infimeety. Open the app and click \"Update & restart\".}"
+        shell: pwsh
+        run: |
+          $status = (Get-AuthenticodeSignature -LiteralPath $env:INSTALLER).Status
+          "Installer signature: $status"
+          "signed=$(if ($status -eq 'Valid') { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
-      - name: Keep the dry-run installer
-        if: env.DRY_RUN == 'true'
+      - name: Keep the installer
         uses: actions/upload-artifact@v7
         with:
-          name: Infimeety-${{ steps.version.outputs.version }}-dry-run
+          name: Infimeety-${{ env.VERSION }}-windows
           path: |
-            app/${{ steps.version.outputs.installer }}
-            app/${{ steps.version.outputs.installer }}.sig
+            app/${{ env.INSTALLER }}
+            app/${{ env.INSTALLER }}.sig
           if-no-files-found: error
           retention-days: 7
+
+  macos:
+    needs: check
+    # Apple Silicon runner; the build is universal (Apple Silicon + Intel) in one app.
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      BUNDLE: src-tauri/target/universal-apple-darwin/release/bundle
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'app/src-tauri -> target'
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      # With an Apple Developer ID set up (docs/SETUP.md §8), the app is signed and notarized,
+      # so it opens without warnings. Without one it's ad-hoc signed: it runs, and the first
+      # launch needs System Settings → Privacy & Security → Open Anyway. Either way tauri build
+      # then packs and signs the update (Infimeety.app.tar.gz + .sig) with the updater key.
+      - name: Build
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARY_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$CERTIFICATE" ]]; then
+            export APPLE_CERTIFICATE="$CERTIFICATE" APPLE_CERTIFICATE_PASSWORD="$CERTIFICATE_PASSWORD" APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
+            [[ -n "$NOTARY_ID" ]] && export APPLE_ID="$NOTARY_ID" APPLE_PASSWORD="$NOTARY_PASSWORD" APPLE_TEAM_ID="$NOTARY_TEAM"
+          else
+            echo "::warning::No Apple Developer ID set up, so the Mac app is ad-hoc signed and NOT notarized. See docs/SETUP.md §8."
+          fi
+          npx tauri build --target universal-apple-darwin --bundles app,dmg --ci
+
+      - name: Keep the app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Infimeety-${{ env.VERSION }}-macos
+          path: |
+            app/${{ env.BUNDLE }}/dmg/Infimeety_${{ env.VERSION }}_universal.dmg
+            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz
+            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [check, windows, macos]
+    # Windows must have built; the Mac app joins the release if it built too.
+    if: ${{ !cancelled() && needs.windows.result == 'success' && inputs.dry-run != true }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: Infimeety-${{ needs.check.outputs.version }}-*
+          path: release-assets
+
+      - name: Note a missing Mac build
+        if: needs.macos.result != 'success'
+        run: echo "::warning::The Mac build failed, so this release is Windows-only. Mac users keep their current version."
+
+      - name: Publish the release
+        env:
+          NOTES: ${{ inputs.notes }}
+          WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
+        run: node app/scripts/publish-release.mjs "${NOTES:-A fresh update for Infimeety. Open the app and click \"Update & restart\".}" --assets release-assets

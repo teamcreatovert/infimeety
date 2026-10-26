@@ -1,9 +1,10 @@
 // Cloudflare Pages project: https://infimeety.pages.dev
-//   /       landing page (public/)
+//   /         landing page (public/index.html)
+//   /download Windows and Mac downloads (public/download.html)
 //   /api/*  the shared API (functions/api/[[path]].ts)
 //   /invite/CODE      invite link page (functions/invite/[code].ts)
 //   /xxxx-xxxx-xxx    quick meeting link page (functions/[code].ts)
-//   /web/?meet=CODE   the app for meeting guests in a browser (public/web, from `npm run pages:build`)
+//   /web/             the web app (public/web, from `npm run pages:build`); /web/?meet=CODE joins a meeting
 // Uses the same D1 database, KV namespace and ChannelHub Durable Object as the
 // `infimeety-api` Worker (which hosts the Durable Object class).
 {

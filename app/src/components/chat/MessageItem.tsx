@@ -17,7 +17,7 @@ import { renderRich } from '@/lib/richtext';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import type { LocalMessage } from '@/stores/messages';
-import { openProfile, openUserMenu } from '@/stores/ui';
+import { openProfile, openUserMenu, useUI } from '@/stores/ui';
 
 interface Props {
   msg: LocalMessage;
@@ -33,6 +33,8 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
   const author = useChannels((s) => s.users[msg.userId]);
   const replyAuthor = useChannels((s) => (replyTarget ? s.users[replyTarget.userId] : undefined));
   const me = useAuth((s) => s.me);
+  // Touch screens have no hover: a tap on the message shows its actions.
+  const touched = useUI((s) => s.touchedMessage === msg.id);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(msg.content);
   const [picker, setPicker] = useState<Anchor | null>(null);
@@ -61,7 +63,11 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
       initial={animate ? { opacity: 0, y: 10, scale: 0.99 } : false}
       animate={{ opacity: msg.pending ? 0.55 : 1, y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-      className={clsx('group relative flex gap-3 rounded-[10px] px-5 py-[3px] transition-colors hover:bg-fill-1', grouped ? '' : 'mt-3 pt-1.5')}
+      onPointerUp={(e) => {
+        if (e.pointerType !== 'touch' || (e.target as Element).closest('button, a, input, textarea, video, audio, img')) return;
+        useUI.getState().set({ touchedMessage: touched ? null : msg.id });
+      }}
+      className={clsx('group relative flex gap-3 rounded-[10px] px-5 py-[3px] transition-colors hover:bg-fill-1 compact:px-3', grouped ? '' : 'mt-3 pt-1.5', touched && 'bg-fill-1')}
     >
       <div className="w-9 shrink-0">
         {grouped ? (
@@ -165,7 +171,12 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
       </div>
 
       {!msg.pending && !editing && (
-        <div className="absolute -top-3.5 right-4 z-10 flex items-center gap-px rounded-[10px] p-[3px] opacity-0 glass-pop transition-opacity duration-100 group-hover:opacity-100">
+        <div
+          className={clsx(
+            'absolute -top-3.5 right-4 z-10 flex items-center gap-px rounded-[10px] p-[3px] opacity-0 glass-pop transition-opacity duration-100 group-hover:opacity-100 compact:right-2',
+            touched ? 'opacity-100' : 'touch:pointer-events-none',
+          )}
+        >
           {QUICK_REACTIONS.slice(0, 3).map((e) => {
             const mineHere = !!me && !!msg.reactions[e]?.includes(me.id);
             return (

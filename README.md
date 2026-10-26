@@ -1,19 +1,27 @@
 # Infimeety
 
-Unlimited voice rooms, chat and watch-together for you and your friends. It's a desktop app
-with an Apple-style glass interface, and it runs entirely on free tiers.
+Unlimited voice rooms, chat and watch-together for you and your friends. It's a desktop app for
+Windows and Mac, plus a web app that works on phones too, with an Apple-style glass interface. It
+runs entirely on free tiers.
+
+**Get it:** [infimeety.pages.dev/download](https://infimeety.pages.dev/download) (Windows, Mac) ·
+[infimeety.pages.dev/web](https://infimeety.pages.dev/web/) (any browser, phones included)
 
 - **Channels** (like Discord servers) with any number of **chat rooms** and **voice rooms**
 - **Unlimited calls**: no timers, no minute caps
 - **Voice**: mute, deafen, per-person volume (0–200%), mute-for-me, noise suppression
 - **Admins**: server-mute a person, mute a whole room, disconnect, promote admins
-- **Screen share**: entire screen or a single app, with system sound, quality presets and
-  Movie/Text optimization
+- **Screen share**: entire screen or a single app, with system sound (Windows and Chrome), quality
+  presets up to 1440p60 and Movie/Text optimization (H.264 for motion, AV1 for crisp text)
 - **Watch together**: a shared screen fills the stage, friends float as draggable Loom-style
   bubbles, with a side chat, full screen and auto-hiding controls
 - **Chat**: emoji picker, reactions, replies, edits, markdown, typing indicators
-- **Local-first media**: images, GIFs and videos stream peer-to-peer from the sender's PC. Nothing
-  is uploaded. Delete the file and it's removed from the chat for everyone.
+- **Local-first media**: images, GIFs and videos stream peer-to-peer from the sender's device (their
+  PC's disk, or their browser's storage on the web). Nothing is uploaded. Delete it and it's removed
+  from the chat for everyone.
+- **Quick meetings**: a link anyone can join, from the app or as a guest in a browser
+- **Phones**: the web app adapts to phones (one pane at a time, a phone-sized call dock, chat as a
+  sheet) and can be added to the home screen
 - **Sign in** with Google or Discord. Onboarding covers name, @username and photo (provider photo by
   default; any image or GIF works).
 - **One-click auto-updates** that keep you signed in

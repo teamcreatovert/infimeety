@@ -67,7 +67,7 @@ export function IncomingCall() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -12, scale: 0.96 }}
           transition={spring}
-          className="fixed right-5 top-[46px] z-[115] flex w-[320px] items-center gap-3 rounded-[22px] p-3.5 glass-pop"
+          className="fixed right-5 top-[46px] z-[115] flex w-[320px] items-center gap-3 rounded-[22px] p-3.5 glass-pop compact:left-3 compact:right-3 compact:top-[calc(env(safe-area-inset-top)+10px)] compact:w-auto"
         >
           <motion.div animate={{ scale: [1, 1.06, 1] }} transition={{ duration: 1.3, repeat: Infinity }} className="rounded-full shadow-[0_0_0_3px_color-mix(in_srgb,var(--success)_45%,transparent)]">
             <Avatar user={call.dm.peer} size={46} />

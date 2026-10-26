@@ -211,8 +211,16 @@ export function callbackPage(ok: boolean, detail: string, heading?: string) {
         background:${ok ? 'linear-gradient(135deg,#34c759,#30d158)' : 'linear-gradient(135deg,#ff453a,#ff375f)'}}
   h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px}
   p{margin:0;color:rgba(245,245,247,.6);font-size:15px;line-height:1.45}
-</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${title}</h1><p>${escapeHtml(body)}</p></div></body></html>`;
+</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${title}</h1><p>${escapeHtml(body)}</p></div>
+<script>${WEB_RETURN_SCRIPT}</script></body></html>`;
 }
+
+/**
+ * The web app (same site, /web/) marks a sign-in it started in localStorage, then leaves for
+ * the provider in the same tab. Back here, send that tab home; it collects the session itself.
+ * Sign-ins from the desktop app never set the mark, so they see this page as before.
+ */
+const WEB_RETURN_SCRIPT = `try{var t=+localStorage.getItem('infimeety.webSignInReturn');if(t){localStorage.removeItem('infimeety.webSignInReturn');if(Date.now()-t<9e5)location.replace('/web/')}}catch(e){}`;
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

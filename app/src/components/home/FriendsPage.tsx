@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AtSign, Check, Copy, Ellipsis, MessageSquare, Phone, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { Friend } from '../../../../shared/protocol';
+import { MobileBack } from '../shell/MobileBack';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Spinner } from '../ui/primitives';
@@ -47,9 +48,11 @@ export function FriendsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-1.5 px-5">
-        <Users size={18} className="mr-1 text-fg-3" />
-        <h1 data-tauri-drag-region className="mr-3 font-display text-[15px] font-semibold tracking-[-0.015em]">
+      {/* Phones: the tabs scroll sideways. */}
+      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-1.5 px-5 compact:overflow-x-auto compact:px-3 compact:[scrollbar-width:none]">
+        <MobileBack />
+        <Users size={18} className="mr-1 shrink-0 text-fg-3 compact:hidden" />
+        <h1 data-tauri-drag-region className="mr-3 shrink-0 font-display text-[15px] font-semibold tracking-[-0.015em] compact:mr-1">
           Friends
         </h1>
         <TabButton active={tab === 'online'} onClick={() => setTab('online')}>Online</TabButton>
@@ -61,14 +64,14 @@ export function FriendsPage() {
         <motion.button
           whileTap={{ scale: 0.96 }}
           onClick={() => setTab('add')}
-          className={clsx('ml-2 flex h-7 items-center gap-1.5 rounded-[8px] px-3 text-[12.5px] font-semibold transition-colors', tab === 'add' ? 'bg-success/15 text-success' : 'bg-success text-white hover:brightness-110')}
+          className={clsx('ml-2 flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[8px] px-3 text-[12.5px] font-semibold transition-colors', tab === 'add' ? 'bg-success/15 text-success' : 'bg-success text-white hover:brightness-110')}
         >
-          <UserPlus size={14} /> Add friend
+          <UserPlus size={14} /> <span className="compact:hidden">Add friend</span>
         </motion.button>
         <div data-tauri-drag-region className="flex-1 self-stretch" />
       </header>
 
-      <div className="scroll min-h-0 flex-1 px-5 pb-6 pt-4" style={{ scrollbarGutter: 'auto' }}>
+      <div className="scroll min-h-0 flex-1 px-5 pb-6 pt-4 compact:px-3" style={{ scrollbarGutter: 'auto' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }} transition={spring}>
             {tab === 'add' ? (
@@ -104,7 +107,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={clsx('relative flex h-7 items-center rounded-[8px] px-3 text-[12.5px] font-medium transition-colors', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-2 hover:text-fg')}
+      className={clsx('relative flex h-7 shrink-0 items-center whitespace-nowrap rounded-[8px] px-3 text-[12.5px] font-medium transition-colors', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-2 hover:text-fg')}
     >
       {active && <motion.span layoutId="friends-tab" transition={spring} className="absolute inset-0 rounded-[8px] bg-fill-3" />}
       <span className="relative flex items-center">{children}</span>

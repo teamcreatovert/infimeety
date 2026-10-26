@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Download Infimeety for Windows and Mac</title>
+    <meta name="description" content="Voice rooms, chat, meetings and watch-together. Free for Windows and Mac, or right in your browser." />
+    <meta property="og:title" content="Download Infimeety" />
+    <meta property="og:description" content="Voice rooms, chat, meetings and watch-together. Free for Windows and Mac, or right in your browser." />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <style>
+      :root {
+        --bg: #08080c;
+        --fg: rgba(255, 255, 255, 0.94);
+        --fg2: rgba(235, 235, 245, 0.64);
+        --fg3: rgba(235, 235, 245, 0.42);
+        --glass: rgba(30, 30, 40, 0.55);
+        --hair: rgba(255, 255, 255, 0.12);
+        --fill: rgba(255, 255, 255, 0.08);
+        --accent: #0a84ff;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #e9ebf1;
+          --fg: rgba(0, 0, 0, 0.88);
+          --fg2: rgba(60, 60, 67, 0.72);
+          --fg3: rgba(60, 60, 67, 0.5);
+          --glass: rgba(255, 255, 255, 0.62);
+          --hair: rgba(0, 0, 0, 0.08);
+          --fill: rgba(0, 0, 0, 0.05);
+          color-scheme: light;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: max(28px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+        background: var(--bg);
+        color: var(--fg);
+        font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI Variable Display', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      .wall { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+      .wall span { position: absolute; border-radius: 50%; filter: blur(110px); opacity: 0.5; }
+      .wall span:nth-child(1) { width: 62vw; height: 62vw; left: -14vw; top: -26vw; background: #3a5bff; }
+      .wall span:nth-child(2) { width: 54vw; height: 54vw; right: -16vw; bottom: -24vw; background: #8f3dff; }
+      .card {
+        width: 100%;
+        max-width: 460px;
+        padding: 38px 30px 28px;
+        border-radius: 32px;
+        text-align: center;
+        background: var(--glass);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        box-shadow: 0 0 0 0.5px var(--hair), 0 30px 80px rgba(0, 0, 0, 0.35);
+      }
+      .logo { width: 92px; height: 92px; filter: drop-shadow(0 18px 30px rgba(90, 80, 255, 0.45)); }
+      h1 { margin: 18px 0 6px; font-size: 30px; font-weight: 700; letter-spacing: -0.035em; }
+      .lede { margin: 0; color: var(--fg2); font-size: 15px; line-height: 1.5; }
+      .buttons { display: grid; gap: 10px; margin-top: 26px; }
+      .button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        height: 50px;
+        border-radius: 14px;
+        background: var(--fill);
+        color: var(--fg);
+        font-size: 15.5px;
+        font-weight: 600;
+        text-decoration: none;
+        box-shadow: inset 0 0 0 0.5px var(--hair);
+        transition: filter 0.15s ease, transform 0.15s ease;
+      }
+      .button.primary { background: var(--accent); color: #fff; box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(10, 132, 255, 0.35); }
+      .button:hover { filter: brightness(1.08); }
+      .button:active { transform: scale(0.985); }
+      .button[aria-disabled='true'] { opacity: 0.45; pointer-events: none; }
+      .button small { font-weight: 500; opacity: 0.7; font-size: 12.5px; }
+      .button svg { flex: none; }
+      .meta { margin: 6px 0 0; font-size: 12px; color: var(--fg3); line-height: 1.5; }
+      .divider { display: flex; align-items: center; gap: 12px; margin: 24px 0 14px; color: var(--fg3); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+      .divider::before, .divider::after { content: ''; flex: 1; height: 0.5px; background: var(--hair); }
+      .web { color: var(--accent); font-size: 15px; font-weight: 600; text-decoration: none; }
+      .web:hover { text-decoration: underline; }
+      details { margin-top: 22px; text-align: left; font-size: 13px; color: var(--fg2); line-height: 1.55; border-radius: 14px; background: var(--fill); padding: 12px 14px; }
+      summary { cursor: pointer; color: var(--fg); font-weight: 600; }
+      details ol { margin: 8px 0 0; padding-left: 20px; }
+      .foot { margin-top: 18px; font-size: 12px; color: var(--fg3); }
+      .foot a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <div class="wall" aria-hidden="true"><span></span><span></span></div>
+    <main class="card">
+      <img class="logo" src="/icon.png" alt="" />
+      <h1>Get Infimeety</h1>
+      <p class="lede">Voice rooms, chat, meetings and watch-together with your friends. Free, with no time limits.</p>
+
+      <div class="buttons" id="buttons">
+        <a class="button" id="windows" data-os="windows" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.2H3zm8.3-1.2L21 2.5v8.7h-9.7zM3 12.8h7.4V20L3 18.9zm8.3 0H21v8.7l-9.7-1.4z" /></svg>
+          <span>Download for Windows</span>
+        </a>
+        <a class="button" id="mac" data-os="mac" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.dmg">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.35 1.92-3.48 2-3.54-1.09-1.6-2.79-1.81-3.39-1.84-1.44-.15-2.82.85-3.55.85-.74 0-1.86-.83-3.06-.81-1.57.02-3.02.92-3.83 2.33-1.64 2.84-.42 7.04 1.17 9.35.78 1.13 1.7 2.39 2.91 2.35 1.17-.05 1.61-.76 3.03-.76 1.41 0 1.81.76 3.05.73 1.26-.02 2.06-1.14 2.82-2.28.9-1.31 1.26-2.59 1.28-2.66-.03-.01-2.45-.94-2.48-3.72zM14.06 5.68c.64-.79 1.08-1.87.96-2.96-.93.04-2.07.63-2.73 1.41-.59.69-1.12 1.81-.98 2.87 1.04.08 2.11-.53 2.75-1.32z" /></svg>
+          <span>Download for Mac</span>
+        </a>
+      </div>
+      <p class="meta" id="meta">Windows 10 or 11 · macOS 11 or later, Apple Silicon and Intel</p>
+
+      <div class="divider">or</div>
+      <a class="web" href="/web/">Use Infimeety in your browser →</a>
+      <p class="meta">Works on phones and tablets too. Nothing to install.</p>
+
+      <details id="mac-help">
+        <summary>Opening it on a Mac for the first time</summary>
+        <ol>
+          <li>Open the downloaded file and drag Infimeety into Applications.</li>
+          <li>Open Infimeety from Applications. If macOS says it can’t check the app, open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. (On older macOS, Control-click the app and choose <b>Open</b>.)</li>
+          <li>Allow the microphone and camera when Infimeety asks, so friends can hear and see you.</li>
+        </ol>
+      </details>
+
+      <p class="foot">
+        Free and open source · <a href="https://github.com/teamcreatovert/infimeety/releases">All versions</a>
+      </p>
+    </main>
+
+    <script>
+      // Put this computer's download first, and say which version it is. If the latest release
+      // has no Mac build yet, say so instead of linking to a missing file.
+      (function () {
+        var ua = navigator.userAgent;
+        var touchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+        var phone = /Android|iPhone|iPad|iPod|Mobile/.test(ua) || touchMac;
+        var mac = /Macintosh/.test(ua) && !touchMac;
+        var windows = mac || phone ? null : document.getElementById('windows');
+        var first = mac ? document.getElementById('mac') : windows;
+        if (first) {
+          first.classList.add('primary');
+          first.parentNode.insertBefore(first, first.parentNode.firstChild);
+        }
+        if (phone) {
+          // Phones can't install the desktop app: the web app is the way in.
+          var open = document.createElement('a');
+          open.className = 'button primary';
+          open.href = '/web/';
+          open.textContent = 'Open Infimeety in your browser';
+          var buttons = document.getElementById('buttons');
+          buttons.insertBefore(open, buttons.firstChild);
+          document.getElementById('mac-help').style.display = 'none';
+        }
+        if (mac) document.getElementById('mac-help').setAttribute('open', '');
+
+        fetch('https://api.github.com/repos/teamcreatovert/infimeety/releases/latest')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (release) {
+            if (!release) return;
+            var names = (release.assets || []).map(function (a) { return a.name; });
+            var version = String(release.tag_name || '').replace(/^v/, '');
+            if (names.indexOf('Infimeety.dmg') < 0) {
+              var m = document.getElementById('mac');
+              m.setAttribute('aria-disabled', 'true');
+              m.removeAttribute('href');
+              m.querySelector('span').innerHTML = 'Mac <small>coming with the next update</small>';
+            }
+            if (version) document.getElementById('meta').textContent = 'Version ' + version + ' · Windows 10 or 11 · macOS 11 or later, Apple Silicon and Intel';
+          })
+          .catch(function () {});
+      })();
+    </script>
+  </body>
+</html>

@@ -14,7 +14,7 @@ import { useFriends } from '@/stores/friends';
 import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
-import { openUserMenu, toast } from '@/stores/ui';
+import { openUserMenu, showMain, toast } from '@/stores/ui';
 
 /** Home: Friends, quick meetings, and the list of direct messages. */
 export function HomeSidebar() {
@@ -50,7 +50,7 @@ export function HomeSidebar() {
   };
 
   return (
-    <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col">
+    <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col compact:w-auto compact:min-w-0 compact:flex-1">
       <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-4">
         <span data-tauri-drag-region className="font-display text-[14.5px] font-semibold tracking-[-0.015em]">
           Home
@@ -58,7 +58,7 @@ export function HomeSidebar() {
       </header>
 
       <div className="scroll flex-1 px-2 pb-3 pt-2" style={{ scrollbarGutter: 'auto' }}>
-        <NavButton active={active === null} onClick={() => useChannels.getState().select(null)}>
+        <NavButton active={active === null} onClick={() => (useChannels.getState().select(null), showMain())}>
           <Users size={16} className="relative shrink-0 text-fg-2" />
           <span className="relative flex-1 text-left">Friends</span>
           {incoming > 0 && <Badge>{incoming}</Badge>}
@@ -100,7 +100,7 @@ function NavButton({ active, onClick, onContextMenu, children }: { active: boole
     <button
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={clsx('relative flex h-[38px] w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13.5px] transition-colors', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
+      className={clsx('relative flex h-[38px] w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13.5px] transition-colors compact:h-12 compact:text-[15px]', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
     >
       {active && <motion.span layoutId="home-selection" transition={spring} className="absolute inset-0 rounded-[9px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
       {children}
@@ -120,7 +120,7 @@ function MeetingRow({ meeting, active }: { meeting: Channel; active: boolean }) 
   const waiting = useMeetings((s) => (meeting.role !== 'member' ? (s.waiting[meeting.id]?.length ?? 0) : 0));
 
   return (
-    <NavButton active={active} onClick={() => useChannels.getState().select(meeting.id)}>
+    <NavButton active={active} onClick={() => (useChannels.getState().select(meeting.id), showMain())}>
       <span className="relative grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[10px] text-white" style={{ background: channelGradient(meeting.color) }}>
         <Video size={15} strokeWidth={2} />
       </span>
@@ -150,7 +150,7 @@ function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
   const muted = useSettings((s) => !!s.mutedChats[dm.id]);
 
   return (
-    <NavButton active={active} onClick={() => useChannels.getState().select(dm.id)} onContextMenu={(e) => openUserMenu(e, peer?.id, { kind: 'dm', channelId: dm.id })}>
+    <NavButton active={active} onClick={() => (useChannels.getState().select(dm.id), showMain())} onContextMenu={(e) => openUserMenu(e, peer?.id, { kind: 'dm', channelId: dm.id })}>
       <Avatar user={peer} size={30} presence={online ? 'online' : 'offline'} className="relative" />
       <span className="relative min-w-0 flex-1 text-left">
         <span className={clsx('flex items-center gap-1 text-[13px] leading-tight', unread > 0 && !active && !muted && 'font-semibold text-fg')}>

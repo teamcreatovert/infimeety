@@ -1,8 +1,18 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { webMedia } from './webMedia';
 
-/** True inside the desktop app; false in a plain browser (future web build). */
+/** True inside the desktop app; false in a plain browser (the web app). */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+export const isWindows = /Windows/.test(ua);
+/** A Mac (iPads also report "Macintosh", so check for touch). */
+export const isMac = /Macintosh/.test(ua) && !(typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+/** Phones and tablets: no screen sharing, touch instead of hover, and a smaller screen. */
+export const isMobile = /Android|iPhone|iPad|iPod|Mobile/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+/** Whether this browser can share its screen at all (phones can't). */
+export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices && !isMobile;
 
 export async function openExternal(url: string) {
   if (isTauri) {
@@ -37,8 +47,8 @@ export interface SharedFile {
 }
 
 /** Bridge to the Rust media registry. Files stay on this PC; the webview reads them by id. */
-export const localMedia = {
-  available: isTauri,
+const desktopMedia = {
+  available: true,
   pick: () => invoke<SharedFile[]>('media_pick'),
   takeDropped: () => invoke<SharedFile[]>('media_take_dropped'),
   saveBytes: (name: string, bytes: Uint8Array) =>
@@ -49,3 +59,6 @@ export const localMedia = {
   forget: (id: string) => invoke<void>('media_forget', { id }),
   src: (path: string) => convertFileSrc(path),
 };
+
+/** Where your shared files live: on disk in the desktop app, in the browser's storage on the web. */
+export const localMedia: typeof desktopMedia = isTauri ? desktopMedia : webMedia;

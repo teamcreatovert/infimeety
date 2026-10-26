@@ -1,12 +1,12 @@
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
-import { appWindow, isTauri } from '@/lib/platform';
+import { appWindow, isMac, isTauri } from '@/lib/platform';
 import { useUI } from '@/stores/ui';
 
 // Segoe Fluent Icons (Windows 11) / Segoe MDL2 Assets (Windows 10) caption glyphs.
 const GLYPHS = { minimize: '', maximize: '', restore: '', close: '' };
 
-/** Windows-style title bar for the frameless window. `?titlebar` previews it in a dev browser. */
+/** Title bar for the frameless window (Windows-style; a plain strip on Mac). `?titlebar` previews it in a dev browser. */
 export function TitleBar() {
   const immersive = useUI((s) => s.immersive);
   const [maximized, setMaximized] = useState(false);
@@ -35,6 +35,16 @@ export function TitleBar() {
   }, []);
 
   if (!show || immersive) return null;
+
+  // Mac: the window keeps its own traffic lights (top left); this is just the strip to drag it by.
+  if (isMac)
+    return (
+      <div data-tauri-drag-region className="glass-rail hairline-b relative z-[60] flex h-[28px] shrink-0 items-center justify-center">
+        <span className="pointer-events-none text-[12px] font-medium text-fg-2" style={{ opacity: focused ? 1 : 0.55 }}>
+          Infimeety
+        </span>
+      </div>
+    );
 
   return (
     <div data-tauri-drag-region className="glass-rail hairline-b relative z-[60] flex h-[34px] shrink-0 items-center">

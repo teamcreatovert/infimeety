@@ -7,7 +7,8 @@ project (free) and a Discord developer app (free). A GitHub repo is needed for a
 
 ## 1. Run it locally
 
-Prerequisites: Node 20+, Rust (stable), Windows 10/11 (WebView2 is built in).
+Prerequisites: Node 20+, Rust (stable), and Windows 10/11 (WebView2 is built in) or macOS 11+
+(with Xcode Command Line Tools: `xcode-select --install`).
 
 ```bash
 # Terminal 1 — backend (Workers + Durable Objects + D1, all emulated locally)
@@ -26,8 +27,9 @@ npm run desktop                       # opens the Infimeety window (Vite + Tauri
 `DEV_LOGIN=true` adds a "Local testing" box on the sign-in screen so you can try everything
 before OAuth is configured. **Never set it in production.**
 
-> Tip: the UI also runs in a normal browser at http://localhost:1420 (useful for styling),
-> but local media sharing, drag-and-drop and auto-update only work in the desktop app.
+> Tip: the whole app also runs in a normal browser at http://localhost:1420 (that's the web app).
+> Add `?meet=CODE` to join a meeting as a guest. Auto-update, the tray and the voice overlay are
+> desktop-only; media sharing works in both (the browser keeps shared files in its own storage).
 
 ---
 
@@ -55,7 +57,17 @@ npm run deploy:all        # Worker (hosts the realtime Durable Object) + Pages
 ```
 
 The app talks to **https://infimeety.pages.dev/api** (Pages project `infimeety`, config in
-`server/pages/wrangler.jsonc`). `https://infimeety.pages.dev` itself is the landing page.
+`server/pages/wrangler.jsonc`). The Pages site also serves:
+
+| Path | What |
+| --- | --- |
+| `/` | Landing page (`server/pages/public/index.html`) |
+| `/download` | Windows and Mac downloads (`server/pages/public/download.html`). It links the latest GitHub release, and shows "Mac coming with the next update" until a release has a Mac build. |
+| `/web/` | The web app, built by `npm run pages:build` (part of `deploy:all`) |
+| `/xxxx-xxxx-xxx`, `/invite/CODE` | Meeting and invite link pages |
+
+Sign-in in the web app goes to Google/Discord and back in the same tab, through the same
+callback URLs as the desktop app, so the OAuth setup below covers both.
 The Worker at `infimeety-api.<subdomain>.workers.dev` hosts the Durable Object both share.
 
 Free-plan notes: Durable Objects are free when they use the SQLite backend (already configured
@@ -173,9 +185,14 @@ session lives in the WebView profile, which updates never touch, so users stay s
 
    Or use **Actions → Release → Run workflow**, which also takes release notes and a dry-run
    switch.
-3. The **Release** workflow builds the Windows installer, code-signs it once SignPath is set
-   up ([CODE-SIGNING.md](CODE-SIGNING.md)), signs it for the updater, then publishes the
-   GitHub release and `latest.json`. Everyone running Infimeety sees the update prompt.
+3. The **Release** workflow builds the Windows installer and the Mac app (one universal build
+   for Apple Silicon and Intel) side by side. It code-signs the Windows installer once SignPath is
+   set up ([CODE-SIGNING.md](CODE-SIGNING.md)) and signs both for the updater. Then it publishes
+   one GitHub release with `Infimeety-Setup.exe`, `Infimeety.dmg` and `latest.json`. Everyone
+   running Infimeety, on either system, sees the update prompt. If the Mac build fails, the
+   release still goes out for Windows (with a warning), and Macs keep their current version.
+4. Deploy the website too (`cd server && npm run deploy:all`), so the web app matches the new
+   version.
 
 Building an installer locally (`npm run desktop:build`) also needs the key:
 set `TAURI_SIGNING_PRIVATE_KEY` (and `_PASSWORD`) in your shell first. Local builds are never
@@ -183,7 +200,37 @@ code-signed, so ship releases from the workflow.
 
 ---
 
-## 8. Good to know
+## 8. Mac builds and Apple signing (optional)
+
+The Release workflow builds the Mac app with no extra setup. Without an Apple Developer account
+it's **ad-hoc signed**: it runs fine, but the first time someone opens it macOS says it can't
+check the app. They open **System Settings → Privacy & Security** and click **Open Anyway**
+(the download page explains this). Updates install silently after that.
+
+To make it open without that step, sign and notarize it with an Apple Developer ID
+($99/year at <https://developer.apple.com/programs/>):
+
+1. In Xcode or the developer site, create a **Developer ID Application** certificate and export
+   it from Keychain Access as a `.p12` with a password.
+2. Create an app-specific password for your Apple ID at <https://account.apple.com>.
+3. Add these GitHub secrets (Settings → Secrets and variables → Actions):
+   - `APPLE_CERTIFICATE`: the `.p12` as base64 (`base64 -i cert.p12 | pbcopy`)
+   - `APPLE_CERTIFICATE_PASSWORD`: the `.p12` password
+   - `APPLE_SIGNING_IDENTITY`: e.g. `Developer ID Application: Your Name (TEAMID)`
+   - `APPLE_ID`, `APPLE_PASSWORD` (the app-specific password) and `APPLE_TEAM_ID` for notarization
+
+The next release is then signed and notarized automatically.
+
+Mac specifics: the window keeps the standard traffic-light buttons. Closing it hides Infimeety to
+the menu bar, and clicking the Dock icon brings it back. Screen sharing works, but **without the
+Mac's sound** for now (the Windows app captures system sound natively).
+
+Build one locally on a Mac: `cd app && npx tauri build --target universal-apple-darwin`
+(after `rustup target add aarch64-apple-darwin x86_64-apple-darwin`).
+
+---
+
+## 9. Good to know
 
 - **Voice is peer-to-peer (mesh).** Voices are mono Opus at 40 kbps with DTX, so someone who
   isn't talking sends almost nothing. That makes voice-only calls comfortable up to ~25–30

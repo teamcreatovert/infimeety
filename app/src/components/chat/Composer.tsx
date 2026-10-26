@@ -10,6 +10,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { formatBytes } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { isTauri, localMedia, type SharedFile } from '@/lib/platform';
+import { adopt } from '@/lib/webMedia';
 import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
 import { useAuth } from '@/stores/auth';
@@ -98,6 +99,42 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     ta.current?.focus();
   };
 
+  // Browser drag-and-drop: the files themselves are dropped, and kept in this browser.
+  useEffect(() => {
+    if (isTauri) return;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setDragging(true);
+    };
+    const over = (e: DragEvent) => hasFiles(e) && e.preventDefault();
+    const leave = (e: DragEvent) => {
+      if (hasFiles(e) && --depth <= 0) setDragging(false);
+    };
+    const drop = async (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const files = await adopt(Array.from(e.dataTransfer?.files ?? []));
+      if (files.length) void stage(files);
+      else toast({ kind: 'info', title: 'Only images, GIFs, videos and audio can be shared' });
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragover', over);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', drop);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Native drag-and-drop: Rust records the dropped paths, then we register them by id.
   useEffect(() => {
     if (!isTauri) return;
@@ -128,7 +165,6 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   }, []);
 
   const attach = async () => {
-    if (!localMedia.available) return toast({ kind: 'info', title: 'Sharing media needs the desktop app' });
     try {
       const files = await localMedia.pick();
       if (files.length) await stage(files);
@@ -141,7 +177,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     const files = Array.from(e.clipboardData.files).filter((f) => /^(image|video)\//.test(f.type));
     if (!files.length) return;
     e.preventDefault();
-    if (!localMedia.available) return toast({ kind: 'info', title: 'Sharing media needs the desktop app' });
+    if (!isTauri) return void stage(await adopt(files));
     for (const f of files) {
       const ext = f.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png';
       const saved = await localMedia.saveBytes(f.name && f.name !== 'image.png' ? f.name : `pasted.${ext}`, new Uint8Array(await f.arrayBuffer()));
@@ -182,7 +218,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const canSend = !!text.trim() || staged.length > 0;
 
   return (
-    <div className="shrink-0 px-4 pb-4">
+    <div className="shrink-0 px-4 pb-4 compact:px-2.5 compact:pb-2.5">
       <div className="field rounded-[20px]! bg-[var(--glass-tile)]!">
         <AnimatePresence initial={false}>
           {replyTo && (

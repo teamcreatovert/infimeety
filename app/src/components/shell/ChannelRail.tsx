@@ -20,7 +20,7 @@ export function ChannelRail() {
   const homeActive = !spaces.some((c) => c.id === activeId);
 
   return (
-    <nav className="glass-rail hairline-r relative z-10 flex w-[76px] shrink-0 flex-col items-center">
+    <nav className="glass-rail hairline-r relative z-10 flex w-[76px] shrink-0 flex-col items-center compact:w-[68px]">
       <div className="flex w-full flex-1 flex-col items-center gap-2.5 overflow-y-auto overflow-x-hidden pb-3 pt-[9px] [scrollbar-width:none]">
         <HomeItem active={homeActive} />
         <div className="my-0.5 h-px w-7 shrink-0 bg-[var(--hairline-strong)]" />

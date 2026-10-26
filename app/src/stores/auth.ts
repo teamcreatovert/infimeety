@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import type { Me } from '../../../shared/protocol';
 import { api, ApiError, getToken, handleUnauthorized, randomId, setToken, sha256 } from '@/lib/api';
-import { openExternal } from '@/lib/platform';
+import { isTauri, openExternal } from '@/lib/platform';
+import { pendingLink } from '@/lib/weblinks';
 import { API_URL } from '@/config';
+import { useMeetings } from './meetings';
+import { useUI } from './ui';
 
 type Status = 'loading' | 'signedOut' | 'onboarding' | 'ready';
 type OAuthProvider = 'google' | 'discord';
@@ -28,6 +31,52 @@ interface AuthState {
 
 let pollAbort: AbortController | null = null;
 
+/**
+ * The web app on Infimeety's own site signs in like any website: it leaves for Google or
+ * Discord and comes back. The verifier waits in this tab meanwhile; the sign-in page sends
+ * the browser back here when it sees `WEB_RETURN` (same site, so it can).
+ */
+const WEB_SIGNIN = 'infimeety.webSignIn';
+const WEB_RETURN = 'infimeety.webSignInReturn';
+const redirectSignIn = !isTauri && typeof location !== 'undefined' && new URL(API_URL, location.href).origin === location.origin;
+
+interface WebSignIn {
+  verifier: string;
+  provider: OAuthProvider;
+  at: number;
+  link: typeof pendingLink;
+}
+
+const session = {
+  take(): WebSignIn | null {
+    try {
+      const raw = sessionStorage.getItem(WEB_SIGNIN);
+      sessionStorage.removeItem(WEB_SIGNIN);
+      const s = raw ? (JSON.parse(raw) as WebSignIn) : null;
+      return s && Date.now() - s.at < 15 * 60_000 ? s : null;
+    } catch {
+      return null;
+    }
+  },
+  put(s: WebSignIn) {
+    try {
+      sessionStorage.setItem(WEB_SIGNIN, JSON.stringify(s));
+      localStorage.setItem(WEB_RETURN, String(s.at));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+/** Opened in the click itself, so popup blockers allow it; pointed at the provider once it's known. */
+const blankTab = () => (isTauri ? null : window.open('', '_blank'));
+
+async function openIn(tab: Window | null, url: string) {
+  if (tab && !tab.closed) tab.location.href = url;
+  else await openExternal(url);
+}
+
 export const useAuth = create<AuthState>()((set, get) => {
   async function loadMe() {
     const me = await api<Me>('/me');
@@ -48,6 +97,8 @@ export const useAuth = create<AuthState>()((set, get) => {
 
     async init() {
       void get().loadProviders();
+      const back = redirectSignIn ? session.take() : null;
+      if (back) await finishWebSignIn(back);
       if (!getToken()) return set({ status: 'signedOut' });
       try {
         await loadMe();
@@ -78,9 +129,15 @@ export const useAuth = create<AuthState>()((set, get) => {
       pollAbort?.abort();
       const abort = (pollAbort = new AbortController());
       const verifier = randomId(32);
+      if (redirectSignIn && session.put({ verifier, provider, at: Date.now(), link: pendingLink })) {
+        set({ pending: provider, error: null });
+        location.assign(`${API_URL}/auth/${provider}/start?challenge=${await sha256(verifier)}`);
+        return;
+      }
+      const tab = blankTab();
       const challenge = await sha256(verifier);
       set({ pending: provider, error: null });
-      await openExternal(`${API_URL}/auth/${provider}/start?challenge=${challenge}`);
+      await openIn(tab, `${API_URL}/auth/${provider}/start?challenge=${challenge}`);
 
       const deadline = Date.now() + 5 * 60_000;
       while (!abort.signal.aborted && Date.now() < deadline) {
@@ -112,11 +169,15 @@ export const useAuth = create<AuthState>()((set, get) => {
     linking: null,
 
     async link(provider) {
+      const tab = blankTab();
       const verifier = randomId(32);
       const challenge = await sha256(verifier);
-      const { url } = await api<{ url: string }>(`/auth/${provider}/link`, { method: 'POST', json: { challenge } });
+      const { url } = await api<{ url: string }>(`/auth/${provider}/link`, { method: 'POST', json: { challenge } }).catch((err) => {
+        tab?.close();
+        throw err;
+      });
       set({ linking: provider });
-      await openExternal(url);
+      await openIn(tab, url);
       try {
         const deadline = Date.now() + 5 * 60_000;
         while (Date.now() < deadline && get().linking === provider) {
@@ -163,3 +224,28 @@ export const useAuth = create<AuthState>()((set, get) => {
     },
   };
 });
+
+/** Back from Google or Discord in the web app: collect the session the sign-in page parked for us. */
+async function finishWebSignIn(back: WebSignIn) {
+  useAuth.setState({ pending: back.provider });
+  // Bring back the meeting or invite link the page was opened with.
+  if (back.link?.kind === 'meet') useMeetings.getState().set({ joining: back.link.code });
+  if (back.link?.kind === 'invite') useUI.getState().set({ pendingInvite: back.link.code });
+  try {
+    for (let i = 0; i < 5; i++) {
+      try {
+        const res = await api<{ token?: string }>('/auth/redeem', { method: 'POST', json: { verifier: back.verifier } });
+        if (res.token) return setToken(res.token);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 400) {
+          if (err.code !== 'cancelled') useAuth.setState({ error: 'Sign-in failed. Please try again.' });
+          return;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    useAuth.setState({ error: 'Sign-in timed out. Please try again.' });
+  } finally {
+    useAuth.setState({ pending: null });
+  }
+}
