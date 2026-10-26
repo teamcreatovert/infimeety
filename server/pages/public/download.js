@@ -22,6 +22,7 @@
   var hero = document.getElementById('hero-download');
   var heroLabel = hero && hero.querySelector('span');
   var card = platform && document.getElementById(platform === 'windows' ? 'p-windows' : 'p-web');
+  var downloadIcon = hero && hero.querySelector('svg') ? hero.querySelector('svg').innerHTML : '';
   function signInIcon() {
     var icon = hero.querySelector('svg');
     if (icon) icon.innerHTML = '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" />';
@@ -32,7 +33,7 @@
       hero.href = document.getElementById('dl-windows').href;
       heroLabel.textContent = 'Download for Windows';
     } else if (platform) {
-      // Only Windows has an app; Macs and phones use Infimeety in the browser.
+      // Macs (until a release has the Mac app) and phones use Infimeety in the browser.
       hero.href = '/web/';
       hero.setAttribute('data-web', '');
       heroLabel.textContent = 'Open Infimeety';
@@ -40,7 +41,7 @@
     }
   }
 
-  // The latest version.
+  // The latest version, and whether it has the Mac app.
   fetch('https://api.github.com/repos/teamcreatovert/infimeety/releases/latest')
     .then(function (r) {
       return r.ok ? r.json() : null;
@@ -48,9 +49,30 @@
     .then(function (release) {
       if (!release) return;
       var version = String(release.tag_name || '').replace(/^v/, '');
+      var names = (release.assets || []).map(function (a) {
+        return a.name;
+      });
+      var hasMac = names.indexOf('Infimeety.dmg') >= 0;
+      if (hasMac) {
+        document.getElementById('p-mac').hidden = false;
+        document.querySelector('.platforms').classList.add('three');
+        var webTitle = document.querySelector('#p-web h3');
+        if (webTitle) webTitle.textContent = 'iPhone and Android';
+        if (platform === 'mac') {
+          if (card) card.classList.remove('mine');
+          document.getElementById('p-mac').classList.add('mine');
+          document.getElementById('mac-help').setAttribute('open', '');
+          if (hero && heroLabel) {
+            hero.href = document.getElementById('dl-mac').href;
+            hero.removeAttribute('data-web');
+            heroLabel.textContent = 'Download for Mac';
+            hero.querySelector('svg').innerHTML = downloadIcon;
+          }
+        }
+      }
       if (version) {
         var meta = document.getElementById('meta');
-        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11 · Every modern browser';
+        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11' + (hasMac ? ' · macOS 11 or later' : '') + ' · Every modern browser';
         var v = document.getElementById('version');
         if (v) v.insertBefore(document.createTextNode('Version ' + version + ' · '), v.firstChild);
       }
