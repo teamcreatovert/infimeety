@@ -13,10 +13,6 @@ export const canModerateRole = (role: Role | null | undefined) => !!role && ROLE
 /** Whether `me` can act on someone with `target`'s role: only on lower roles. */
 export const outranks = (me: Role | null | undefined, target: Role | null | undefined) => !!me && ROLE_RANK[me] > ROLE_RANK[target ?? 'member'];
 
-/** A soundboard sound: one of the app's own (made on the device), or a short clip someone added. */
-export type SoundRef = { kind: 'builtin'; id: string } | { kind: 'clip'; name: string; emoji: string; mime: string; data: string };
-/** A clip's base64 data stays under this (about 180 KB of audio). */
-export const SOUND_CLIP_MAX = 250_000;
 export type RoomKind = 'text' | 'voice';
 export type Provider = 'google' | 'discord' | 'dev';
 
@@ -170,45 +166,7 @@ export interface VoiceSnapshot {
   mutedRooms: string[];
   /** Voice rooms with live captions on. */
   captionRooms?: string[];
-  /** Music playing in voice rooms, by room. */
-  music?: Record<string, MusicState>;
-  /** Who's recording each voice room (everyone in it is shown). */
-  recording?: Record<string, string[]>;
 }
-
-/** A song in a voice room's queue: a YouTube video, played in YouTube's own player. */
-export interface MusicTrack {
-  id: string;
-  videoId: string;
-  title: string;
-  /** Who added it. */
-  by: string;
-}
-
-/**
- * A voice room's music, kept by the hub like a watch party: everyone's player follows it.
- * `position` is where the song was at hub time `at`; while `playing`, it moves on from there.
- */
-export interface MusicState {
-  queue: MusicTrack[];
-  index: number;
-  playing: boolean;
-  position: number;
-  at: number;
-  seq: number;
-}
-
-export type MusicAction =
-  | { action: 'play' }
-  | { action: 'pause' }
-  | { action: 'next' }
-  | { action: 'previous' }
-  | { action: 'seek'; position: number }
-  | { action: 'skipTo'; trackId: string }
-  | { action: 'remove'; trackId: string }
-  /** The song ended in someone's player; only the first report for that song counts. */
-  | { action: 'ended'; trackId: string }
-  | { action: 'stop' };
 
 /** A file in a watch party: like an attachment, streamed from its owner when someone copies it. */
 export interface PartyFile {
@@ -300,17 +258,10 @@ export type ClientMsg =
   | { t: 'voice.disconnect'; peerId: string }
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
-  /** Soundboard: everyone else in your voice room plays it. */
-  | { t: 'sound.play'; sound: SoundRef }
   /** Live captions on or off for a voice room (anyone in it). */
   | { t: 'captions.set'; roomId: string; on: boolean }
   /** A line of your own speech, transcribed, for the others in your room. */
   | { t: 'caption.line'; text: string }
-  /** Music in your voice room: add a YouTube video, or control what's playing. */
-  | { t: 'music.add'; videoId: string }
-  /** You started or stopped recording your voice room (on your own device). */
-  | { t: 'recording.set'; roomId: string; on: boolean }
-  | ({ t: 'music.control' } & MusicAction)
   | { t: 'rtc'; to: string; data: RtcPayload }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
@@ -343,9 +294,7 @@ export type ServerMsg =
   | { t: 'voice.kicked' }
   /** An admin moved you; your client rejoins voice in `roomId`. */
   | { t: 'voice.moved'; roomId: string }
-  | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'captions.changed'; roomId: string; on: boolean; by: string }
-  | { t: 'recording.changed'; roomId: string; userId: string; on: boolean }
   | { t: 'caption'; roomId: string; peerId: string; userId: string; text: string; at: number }
   | { t: 'chat.new'; message: Message; nonce?: string }
   | { t: 'chat.edited'; id: string; roomId: string; content: string; editedAt: number }

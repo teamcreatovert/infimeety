@@ -458,7 +458,6 @@ function FilesTab() {
 function SoundsTab() {
   const s = useSettings();
   return (
-    <>
     <Group title="Sound effects" footer="Soft cues for joining, leaving, muting, messages and screen sharing.">
       <Row label="Play sound effects">
         <Switch checked={s.soundsEnabled} onChange={(v) => s.set({ soundsEnabled: v })} />
@@ -475,17 +474,6 @@ function SoundsTab() {
         <Switch checked={s.messageSounds} onChange={(v) => s.set({ messageSounds: v })} />
       </Row>
     </Group>
-    <Group title="Soundboard" footer="Sounds people play in a call (applause, air horn, their own clips). Muting someone for you mutes their sounds too.">
-      <Row label="Hear soundboard sounds">
-        <Switch checked={s.soundboard} onChange={(v) => s.set({ soundboard: v })} />
-      </Row>
-      <Row label="Soundboard volume">
-        <div className="w-[240px]">
-          <Slider value={s.soundboardVolume} onChange={(v) => s.set({ soundboardVolume: v })} />
-        </div>
-      </Row>
-    </Group>
-    </>
   );
 }
 

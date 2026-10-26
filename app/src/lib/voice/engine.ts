@@ -264,44 +264,11 @@ class VoiceEngine {
     this.pushState();
   }
 
-  /**
-   * The call as you hear it (everyone else, the soundboard) plus your own mic, for recording.
-   * `stop` unhooks it. Deafening silences what you hear, so the recording follows.
-   */
-  recordingStream() {
-    if (!this.inCall) return null;
-    this.ensureAudio();
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return null;
-    const dest = ctx.createMediaStreamDestination();
-    master.connect(dest);
-    const mic = this.mic ? ctx.createMediaStreamSource(this.mic) : null;
-    mic?.connect(dest);
-    return {
-      stream: dest.stream,
-      stop: () => {
-        try {
-          master.disconnect(dest);
-        } catch {
-          /* already gone with the call */
-        }
-        mic?.disconnect();
-      },
-    };
-  }
-
   /** Your microphone while in a call (live captions listen to it). */
   get micStream() {
     return this.inCall ? this.mic : null;
   }
 
-  /** Where the soundboard plays: the call's output, so Deafen silences it too. Null outside a call. */
-  soundOutput() {
-    if (!this.inCall) return null;
-    this.ensureAudio();
-    return this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null;
-  }
 
   toggleDeafen() {
     const deafened = !useVoice.getState().deafened;

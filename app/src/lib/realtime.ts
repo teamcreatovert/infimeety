@@ -2,8 +2,6 @@ import type { ServerMsg } from '../../../shared/protocol';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { onCaption, onCaptionsChanged } from './captions';
-import { onRecordingChanged } from './recording';
-import { onSound } from './soundboard';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -94,14 +92,8 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     case 'caption':
       if (useVoice.getState().channelId === cid) onCaption(msg);
       return;
-    case 'recording.changed':
-      if (useVoice.getState().channelId === cid) onRecordingChanged(msg);
-      return;
     case 'captions.changed':
       if (useVoice.getState().channelId === cid) onCaptionsChanged(msg);
-      return;
-    case 'sound':
-      if (useVoice.getState().channelId === cid) onSound(msg);
       return;
     case 'voice.moved': {
       if (useVoice.getState().channelId !== cid) return;

@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "infimeety"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "mime_guess",
  "serde",
