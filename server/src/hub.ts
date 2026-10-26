@@ -42,6 +42,8 @@ export class ChannelHub extends DurableObject<Env> {
   private captionRooms = new Set<string>();
   /** Music by voice room (a shared queue everyone's player follows). */
   private music = new Map<string, MusicState>();
+  /** Who's recording each voice room (on their own device); everyone in the room is told. */
+  private recorders = new Map<string, string[]>();
   private roomKinds = new Map<string, string>();
   private meeting: MeetingState | null = null;
   private promoting = false;
@@ -57,6 +59,7 @@ export class ChannelHub extends DurableObject<Env> {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
       this.captionRooms = new Set((await ctx.storage.get<string[]>('captionRooms')) ?? []);
       this.music = new Map(Object.entries((await ctx.storage.get<Record<string, MusicState>>('music')) ?? {}));
+      this.recorders = new Map(Object.entries((await ctx.storage.get<Record<string, string[]>>('recorders')) ?? {}));
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
       // Parties saved before lobbies and settings existed are already live, with the defaults.
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
@@ -288,6 +291,17 @@ export class ChannelHub extends DurableObject<Env> {
         if (!target || !this.canModerate(me, this.peer(target)) || !this.peer(target).voice) return;
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
+      }
+      case 'recording.set': {
+        const roomId = String(msg.roomId);
+        if (me.voice?.roomId !== roomId) return;
+        const others = (this.recorders.get(roomId) ?? []).filter((id) => id !== me.userId);
+        const next = msg.on ? [...others, me.userId] : others;
+        if (next.length) this.recorders.set(roomId, next);
+        else this.recorders.delete(roomId);
+        await this.ctx.storage.put('recorders', Object.fromEntries(this.recorders));
+        this.broadcast({ t: 'recording.changed', roomId, userId: me.userId, on: !!msg.on });
+        return this.broadcastVoice();
       }
       case 'music.add':
         return this.musicAdd(ws, me, msg.videoId);
@@ -667,7 +681,7 @@ export class ChannelHub extends DurableObject<Env> {
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted });
     }
-    return { participants, mutedRooms: [...this.mutedRooms], captionRooms: [...this.captionRooms], music: Object.fromEntries(this.music) };
+    return { participants, mutedRooms: [...this.mutedRooms], captionRooms: [...this.captionRooms], music: Object.fromEntries(this.music), recording: Object.fromEntries(this.recorders) };
   }
 
   // ─── Music ───────────────────────────────────────────────────────────────────
@@ -748,6 +762,19 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   private broadcastVoice(exceptSocket?: WebSocket) {
+    // A recording ends when its recorder leaves the room.
+    if (this.recorders.size) {
+      const where = new Map(this.sockets().map((s) => [this.peer(s).userId, this.peer(s).voice?.roomId]));
+      let changed = false;
+      for (const [roomId, ids] of [...this.recorders]) {
+        const still = ids.filter((id) => where.get(id) === roomId);
+        if (still.length === ids.length) continue;
+        changed = true;
+        if (still.length) this.recorders.set(roomId, still);
+        else this.recorders.delete(roomId);
+      }
+      if (changed) this.ctx.storage.put('recorders', Object.fromEntries(this.recorders)).catch(() => {});
+    }
     // Captions and music stop once nobody is left in the room.
     if (this.music.size) {
       const occupied = new Set(this.sockets().map((s) => this.peer(s).voice?.roomId).filter(Boolean));
@@ -826,6 +853,8 @@ function rateOf(t: unknown): SocketRate {
     case 'music.add':
     case 'music.control':
       return 'party';
+    case 'recording.set':
+      return 'voice';
     case 'captions.set':
       return 'voice';
     default:

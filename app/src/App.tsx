@@ -22,6 +22,7 @@ import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
 import { startWebLinks } from './lib/weblinks';
 import { startCaptions } from './lib/captions';
+import { startRecordingWatch } from './lib/recording';
 import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
@@ -71,6 +72,7 @@ export default function App() {
     startWebLinks();
     startDesktop();
     startCaptions();
+    startRecordingWatch();
 
     // Feels like a native app: no browser context menu outside text.
     const onContext = (e: MouseEvent) => {

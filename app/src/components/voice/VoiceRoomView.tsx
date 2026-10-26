@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clapperboard,
+  Disc,
   Ellipsis,
   HeadphoneOff,
   Headphones,
@@ -37,6 +38,7 @@ import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtr
 import { StreamVideo } from './StreamVideo';
 import { CaptionsMenu, CaptionsOverlay } from './Captions';
 import { MusicPanel, MusicPlayer } from './Music';
+import { RecordingBadge } from './Recording';
 import { SoundboardPanel, SoundBursts } from './Soundboard';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
@@ -45,6 +47,7 @@ import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty } from '@/lib/party';
 import { setCaptions, useCaptionsOn } from '@/lib/captions';
 import { useRoomMusic } from '@/lib/music';
+import { startRecording, stopRecording, useRecording } from '@/lib/recording';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -383,6 +386,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
             <>
               {soundPrompt}
               <MusicPlayer />
+              <RecordingBadge />
               {watchingParty && <PartyRequests roomId={room.id} />}
             </>
           }
@@ -421,6 +425,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
         <div className="relative min-h-0 flex-1">
           <MusicPlayer />
+          <RecordingBadge />
           {status === 'connecting' && participants.length === 0 ? (
             <div className="grid h-full place-items-center text-fg-2">
               <div className="flex flex-col items-center gap-3">
@@ -646,6 +651,8 @@ function Dock({
   const [musicMenu, setMusicMenu] = useState<Anchor | null>(null);
   const music = useRoomMusic();
   const musicOn = !!music && music.index < music.queue.length;
+  const recording = useRecording((s) => s.recording);
+  const toggleRecording = () => (recording ? stopRecording() : startRecording());
   const captionsOn = useCaptionsOn();
   const toggleCaptions = (anchor: Anchor) => (captionsOn ? setCaptionsMenu(anchor) : setCaptions(true));
   const isAdmin = channel.role !== 'member';
@@ -703,6 +710,9 @@ function Dock({
           </MenuItem>
           <MenuItem icon={<Captions size={15} />} onClick={() => (setMoreMenu(null), moreMenu && toggleCaptions(moreMenu))}>
             {captionsOn ? 'Live captions…' : 'Turn on live captions'}
+          </MenuItem>
+          <MenuItem icon={<Disc size={15} />} onClick={() => (setMoreMenu(null), toggleRecording())}>
+            {recording ? 'Stop recording' : 'Record this call'}
           </MenuItem>
           <MenuItem icon={<Music size={15} />} onClick={() => (setMoreMenu(null), setMusicMenu(moreMenu))}>
             Music
@@ -781,6 +791,9 @@ function Dock({
       </DockButton>
       <DockButton label={captionsOn ? 'Live captions are on' : 'Turn on live captions'} state={captionsOn ? 'on' : 'normal'} onClick={(el) => toggleCaptions(el.getBoundingClientRect())}>
         <Captions size={19} />
+      </DockButton>
+      <DockButton label={recording ? 'Stop recording (saves the file)' : 'Record this call'} state={recording ? 'off' : 'normal'} onClick={toggleRecording}>
+        <Disc size={19} className={recording ? 'animate-pulse' : undefined} />
       </DockButton>
       {sharer && (
         <DockButton label={focusedPeer ? 'Exit watch mode' : 'Watch together'} state={focusedPeer ? 'on' : 'normal'} onClick={toggleWatch}>

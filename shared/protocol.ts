@@ -172,6 +172,8 @@ export interface VoiceSnapshot {
   captionRooms?: string[];
   /** Music playing in voice rooms, by room. */
   music?: Record<string, MusicState>;
+  /** Who's recording each voice room (everyone in it is shown). */
+  recording?: Record<string, string[]>;
 }
 
 /** A song in a voice room's queue: a YouTube video, played in YouTube's own player. */
@@ -306,6 +308,8 @@ export type ClientMsg =
   | { t: 'caption.line'; text: string }
   /** Music in your voice room: add a YouTube video, or control what's playing. */
   | { t: 'music.add'; videoId: string }
+  /** You started or stopped recording your voice room (on your own device). */
+  | { t: 'recording.set'; roomId: string; on: boolean }
   | ({ t: 'music.control' } & MusicAction)
   | { t: 'rtc'; to: string; data: RtcPayload }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
@@ -341,6 +345,7 @@ export type ServerMsg =
   | { t: 'voice.moved'; roomId: string }
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'captions.changed'; roomId: string; on: boolean; by: string }
+  | { t: 'recording.changed'; roomId: string; userId: string; on: boolean }
   | { t: 'caption'; roomId: string; peerId: string; userId: string; text: string; at: number }
   | { t: 'chat.new'; message: Message; nonce?: string }
   | { t: 'chat.edited'; id: string; roomId: string; content: string; editedAt: number }
