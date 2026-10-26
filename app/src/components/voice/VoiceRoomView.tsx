@@ -708,7 +708,7 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
         animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
         transition={spring}
         style={{ pointerEvents: hidden ? 'none' : 'auto' }}
-        className="absolute inset-x-2.5 bottom-2.5 z-30 flex items-center justify-between gap-1 rounded-[22px] p-1.5 glass-pop"
+        className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[22px] p-1.5 glass-pop"
       >
         <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
           {micOff ? <MicOff size={20} /> : <Mic size={20} />}
@@ -732,7 +732,7 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
           whileTap={{ scale: 0.9 }}
           transition={snappy}
           onClick={() => voice.leave()}
-          className="grid h-12 min-w-0 flex-1 basis-0 place-items-center rounded-[16px] bg-danger text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.3)]"
+          className="grid h-12 w-[76px] shrink-0 place-items-center rounded-[16px] bg-danger text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.3)]"
         >
           <PhoneOff size={20} />
         </motion.button>

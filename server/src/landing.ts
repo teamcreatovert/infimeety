@@ -1,6 +1,7 @@
 /** Shared look for the link pages on infimeety.pages.dev (invites, meetings). */
 
-export const DOWNLOAD_URL = 'https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe';
+/** The download page: Windows and Mac, plus the web app. */
+export const DOWNLOAD_URL = '/download';
 
 export const COLORS: Record<string, [string, string]> = {
   blue: ['#5E9BFF', '#3D6BFF'],

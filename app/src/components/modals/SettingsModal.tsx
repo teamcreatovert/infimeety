@@ -10,7 +10,7 @@ import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION } from '@/config';
 import { api } from '@/lib/api';
-import { isTauri } from '@/lib/platform';
+import { isMac, isTauri } from '@/lib/platform';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useUpdater } from '@/lib/updater';
@@ -455,8 +455,15 @@ function DesktopTab() {
           />
         </Row>
       </Group>
-      <Group title="Window" footer="To quit completely, right-click the Infimeety icon in the system tray (next to the clock) and choose Quit.">
-        <Row label="Keep running when closed" detail="The close button hides Infimeety to the tray, so calls and messages keep coming in">
+      <Group
+        title="Window"
+        footer={
+          isMac
+            ? 'To quit completely, press ⌘Q, or click the Infimeety icon in the menu bar and choose Quit.'
+            : 'To quit completely, right-click the Infimeety icon in the system tray (next to the clock) and choose Quit.'
+        }
+      >
+        <Row label="Keep running when closed" detail={`The close button hides Infimeety to the ${isMac ? 'menu bar' : 'tray'}, so calls and messages keep coming in`}>
           <Switch checked={s.closeToTray} onChange={(v) => s.set({ closeToTray: v })} />
         </Row>
       </Group>

@@ -42,6 +42,6 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
       <a class="button" href="infimeety://meet/${preview.code}">Open in Infimeety</a>
       <a class="button glass" href="/web/?meet=${preview.code}">Join in your browser</a>
       <p class="code">Meeting code <b>${preview.code}</b></p>
-      <a class="secondary" href="${DOWNLOAD_URL}">Don't have Infimeety? Download for Windows</a>`,
+      <a class="secondary" href="${DOWNLOAD_URL}">Get Infimeety for Windows or Mac</a>`,
   });
 };

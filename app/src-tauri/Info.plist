@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the Mac app's Info.plist. macOS closes an app that uses the mic or camera without these. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Infimeety uses your microphone so friends can hear you in calls.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Infimeety uses your camera when you turn on video in a call.</string>
+</dict>
+</plist>

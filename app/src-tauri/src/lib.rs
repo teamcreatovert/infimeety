@@ -55,6 +55,13 @@ pub fn run() {
             desktop::overlay_open,
             desktop::overlay_close,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Infimeety");
+        .build(tauri::generate_context!())
+        .expect("error while building Infimeety")
+        .run(|_app, _event| {
+            // Mac: closing hides the window (the app stays in the menu bar); the Dock icon brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                desktop::show_main(_app);
+            }
+        });
 }
