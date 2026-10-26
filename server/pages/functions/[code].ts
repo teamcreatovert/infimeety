@@ -1,4 +1,5 @@
 import { COLORS, DOWNLOAD_URL, esc, landingPage } from '../../src/landing';
+import { allow, clientIp } from '../../src/limits';
 import { MEETING_CODE, meetingPreview } from '../../src/meetings';
 import type { Env } from '../../src/util';
 
@@ -11,6 +12,7 @@ const VIDEO_ICON = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
   const code = String(ctx.params.code ?? '');
   if (!MEETING_CODE.test(code)) return ctx.next();
+  if (!allow(`preview|${clientIp(ctx.request)}`, 200)) return new Response('Too many requests. Wait a minute and try again.', { status: 429, headers: { 'Retry-After': '60' } });
 
   const preview = await meetingPreview(ctx.env, code);
   const [a, b] = COLORS.teal;

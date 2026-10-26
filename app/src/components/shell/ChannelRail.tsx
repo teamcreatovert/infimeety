@@ -1,10 +1,12 @@
 import { motion } from 'motion/react';
-import { Plus, Settings } from 'lucide-react';
+import { Download, Plus, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { Tooltip } from '../ui/overlay';
+import { DOWNLOAD_PAGE } from '@/config';
 import { channelGradient } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
+import { isTauri } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMessages } from '@/stores/messages';
@@ -40,7 +42,21 @@ export function ChannelRail() {
         </Tooltip>
       </div>
 
-      <div className="flex shrink-0 flex-col items-center pb-3.5">
+      <div className="flex shrink-0 flex-col items-center gap-1 pb-3.5">
+        {!isTauri && (
+          <Tooltip label="Download the app for Windows or Mac" side="right">
+            <motion.a
+              aria-label="Download the app"
+              href={DOWNLOAD_PAGE}
+              target="_blank"
+              rel="noopener"
+              whileTap={{ scale: 0.9 }}
+              className="grid h-9 w-9 place-items-center rounded-[11px] text-fg-2 transition-colors hover:bg-fill-2 hover:text-fg"
+            >
+              <Download size={18} />
+            </motion.a>
+          </Tooltip>
+        )}
         <Tooltip label="Settings" side="right">
           <motion.button
             whileTap={{ scale: 0.9 }}

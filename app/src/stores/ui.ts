@@ -8,18 +8,10 @@ export interface Toast {
   body?: string;
 }
 
-export type SettingsTab = 'account' | 'voice' | 'screen' | 'appearance' | 'sounds' | 'desktop' | 'updates';
+export type SettingsTab = 'account' | 'voice' | 'screen' | 'files' | 'appearance' | 'sounds' | 'desktop' | 'updates';
 
 /** Where someone was right-clicked; decides which actions their menu offers. */
 export type UserMenuContext = { kind: 'voice'; channelId: string; peerId: string } | { kind: 'dm'; channelId: string } | { kind: 'member' };
-
-export interface Bubble {
-  x: number;
-  y: number;
-  mini: boolean;
-  /** Set once the user has placed the bubble themselves. */
-  dragged?: boolean;
-}
 
 interface UIState {
   settingsTab: SettingsTab | null;
@@ -35,10 +27,12 @@ interface UIState {
   voiceChat: boolean;
   /** Screen share shown full-stage ("theater"), by peer id. */
   focusedPeer: string | null;
-  /** Theater + fullscreen: hides the sidebars entirely. */
+  /** Full screen watching: hides the sidebars entirely. */
   immersive: boolean;
-  bubbles: Record<string, Bubble>;
-  bubblesHidden: boolean;
+  /** Watch mode's layout when not full screen. */
+  watchLayout: 'theater' | 'mini';
+  /** Showing the room's watch party (rather than the call grid) while one runs. */
+  partyView: boolean;
   userMenu: { userId: string; x: number; y: number; context: UserMenuContext } | null;
   profileCard: { userId: string; x: number; y: number; focusNote?: boolean } | null;
   /** Text for the visible message box to insert, e.g. an @mention picked from a menu. */
@@ -52,7 +46,6 @@ interface UIState {
   set: (patch: Partial<UIState>) => void;
   toast: (t: Omit<Toast, 'id'>) => void;
   dismiss: (id: number) => void;
-  setBubble: (peerId: string, b: Partial<Bubble>) => void;
 }
 
 let nextToast = 1;
@@ -68,8 +61,8 @@ export const useUI = create<UIState>()((set) => ({
   voiceChat: false,
   focusedPeer: null,
   immersive: false,
-  bubbles: {},
-  bubblesHidden: false,
+  watchLayout: 'theater',
+  partyView: true,
   userMenu: null,
   profileCard: null,
   composerInsert: null,
@@ -84,8 +77,6 @@ export const useUI = create<UIState>()((set) => ({
     setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), t.kind === 'error' ? 5200 : 3400);
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
-  setBubble: (peerId, b) =>
-    set((s) => ({ bubbles: { ...s.bubbles, [peerId]: { ...(s.bubbles[peerId] ?? { x: 0, y: 0, mini: false }), ...b } } })),
 }));
 
 export const toast = (t: Omit<Toast, 'id'>) => useUI.getState().toast(t);

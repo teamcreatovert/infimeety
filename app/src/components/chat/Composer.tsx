@@ -1,16 +1,19 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp, ImagePlus, Reply, Smile, X } from 'lucide-react';
+import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Reply, Smile, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Attachment, Channel, Room } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
-import { Popover, type Anchor } from '../ui/overlay';
+import { MenuItem, Popover, type Anchor } from '../ui/overlay';
 import { IconButton } from '../ui/primitives';
 import { EmojiPicker } from './EmojiPicker';
 import { formatBytes } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
-import { isTauri, localMedia, type SharedFile } from '@/lib/platform';
-import { adopt } from '@/lib/webMedia';
+import { isMobile, isTauri, localMedia, type SharedFile } from '@/lib/platform';
+import { adopt, FOLDER_MIME, fromDrop } from '@/lib/webMedia';
+
+/** Phones can't pick folders. */
+const canShareFolders = isTauri || !isMobile;
 import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
 import { useAuth } from '@/stores/auth';
@@ -118,9 +121,9 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
       e.preventDefault();
       depth = 0;
       setDragging(false);
-      const files = await adopt(Array.from(e.dataTransfer?.files ?? []));
+      const files = e.dataTransfer ? await fromDrop(e.dataTransfer).catch(() => []) : [];
       if (files.length) void stage(files);
-      else toast({ kind: 'info', title: 'Only images, GIFs, videos and audio can be shared' });
+      else toast({ kind: 'info', title: 'Nothing to share there', body: 'That folder looks empty.' });
     };
     window.addEventListener('dragenter', enter);
     window.addEventListener('dragover', over);
@@ -154,7 +157,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
                 files = await localMedia.takeDropped();
               }
               if (files.length) void stage(files);
-              else toast({ kind: 'info', title: 'Only images, GIFs, videos and audio can be shared' });
+              else toast({ kind: 'info', title: 'Nothing to share there', body: 'That folder looks empty.' });
             }, 40);
           }
         })
@@ -164,22 +167,24 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const attach = async () => {
+  const [attachMenu, setAttachMenu] = useState<Anchor | null>(null);
+  const attach = async (folder: boolean) => {
+    setAttachMenu(null);
     try {
-      const files = await localMedia.pick();
+      const files = await (folder ? localMedia.pickFolder() : localMedia.pick());
       if (files.length) await stage(files);
     } catch {
-      toast({ kind: 'error', title: "Couldn't open that file" });
+      toast({ kind: 'error', title: `Couldn't open that ${folder ? 'folder' : 'file'}` });
     }
   };
 
   const onPaste = async (e: React.ClipboardEvent) => {
-    const files = Array.from(e.clipboardData.files).filter((f) => /^(image|video)\//.test(f.type));
+    const files = Array.from(e.clipboardData.files);
     if (!files.length) return;
     e.preventDefault();
     if (!isTauri) return void stage(await adopt(files));
     for (const f of files) {
-      const ext = f.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png';
+      const ext = f.type.split('/')[1]?.replace('jpeg', 'jpg') ?? 'bin';
       const saved = await localMedia.saveBytes(f.name && f.name !== 'image.png' ? f.name : `pasted.${ext}`, new Uint8Array(await f.arrayBuffer()));
       await stage([saved]);
     }
@@ -198,6 +203,10 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
       height: s.height,
     }));
     for (const s of staged) useMedia.getState().setEntry(s.file.id, { status: 'ready', url: s.preview, local: true, progress: 1 });
+    // A browser shares straight from the open tab; the app keeps sharing from disk in the background.
+    if (!isTauri && staged.some((s) => s.file.mime === FOLDER_MIME || s.file.size > 64 * 1024 * 1024)) {
+      toast({ kind: 'info', title: 'Keep Infimeety open while friends copy it', body: 'Files come straight from this tab. The desktop app shares them even when it’s in the background.' });
+    }
     const replyId = replyTo && !replyTo.pending ? replyTo.id : null;
     const nonce = useMessages.getState().addPending(room.id, me.id, content, attachments, replyId);
     getHub(channel.id)?.send({ t: 'chat.send', roomId: room.id, content, attachments, replyTo: replyId, nonce });
@@ -247,7 +256,12 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
                     ) : s.file.mime.startsWith('video/') ? (
                       <video src={s.preview} muted className="h-full w-full object-cover" />
                     ) : (
-                      <div className="grid h-full place-items-center text-[11px] text-fg-2">Audio</div>
+                      <div className="flex h-full flex-col items-center justify-center gap-1 px-1.5 pb-4 text-center text-fg-2">
+                        {s.file.mime === FOLDER_MIME ? <Folder size={20} /> : s.file.mime.startsWith('audio/') ? <Music size={20} /> : <FileIcon size={20} />}
+                        <span className="w-full truncate text-[10px] font-medium uppercase">
+                          {s.file.mime === FOLDER_MIME ? s.file.name : s.file.name.includes('.') ? s.file.name.split('.').pop() : 'file'}
+                        </span>
+                      </div>
                     )}
                     <span className="absolute inset-x-0 bottom-0 truncate bg-black/50 px-1.5 py-0.5 text-[10px] text-white">{formatBytes(s.file.size)}</span>
                     <button
@@ -265,9 +279,22 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
         </AnimatePresence>
 
         <div className="flex items-end gap-0.5 p-1.5">
-          <IconButton label="Share images, GIFs or videos" size={34} className="rounded-full!" onClick={() => void attach()}>
-            <ImagePlus size={18} />
+          <IconButton
+            label="Share photos, videos, files or a folder"
+            size={34}
+            className="rounded-full!"
+            onClick={(e) => (canShareFolders ? setAttachMenu(e.currentTarget.getBoundingClientRect()) : void attach(false))}
+          >
+            <Paperclip size={18} />
           </IconButton>
+          <Popover open={!!attachMenu} anchor={attachMenu} onClose={() => setAttachMenu(null)} side="top" className="w-[220px] p-1.5">
+            <MenuItem icon={<FileIcon size={15} />} onClick={() => void attach(false)}>
+              Share files
+            </MenuItem>
+            <MenuItem icon={<Folder size={15} />} onClick={() => void attach(true)}>
+              Share a folder
+            </MenuItem>
+          </Popover>
           <textarea
             ref={ta}
             rows={1}
@@ -319,9 +346,9 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
         {dragging && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none fixed inset-0 z-[70] grid place-items-center bg-black/30 backdrop-blur-[2px]">
             <motion.div initial={{ scale: 0.92 }} animate={{ scale: 1 }} transition={spring} className="flex flex-col items-center gap-2 rounded-[24px] border-2 border-dashed border-[var(--accent)] px-12 py-10 text-center glass-pop">
-              <ImagePlus size={30} className="text-accent" />
+              <Paperclip size={30} className="text-accent" />
               <div className="font-display text-[17px] font-semibold">Drop to share in #{room.name}</div>
-              <div className="text-[12.5px] text-fg-2">Files stay on your PC — friends stream them from you</div>
+              <div className="text-[12.5px] text-fg-2">Any kind of file. It stays on your device; friends stream it from you.</div>
             </motion.div>
           </motion.div>
         )}

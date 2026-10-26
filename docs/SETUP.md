@@ -52,9 +52,11 @@ Edit `server/wrangler.jsonc`:
 Then:
 
 ```bash
-npm run db:migrate:remote
-npm run deploy:all        # Worker (hosts the realtime Durable Object) + Pages
+npm run deploy:all        # database migrations, then the Worker (hosts the realtime Durable Object) + Pages
 ```
+
+`deploy:all` applies any new database migrations first (wrangler may ask you to confirm with
+`y`). See [SECURITY.md](SECURITY.md) for what's protected and how.
 
 The app talks to **https://infimeety.pages.dev/api** (Pages project `infimeety`, config in
 `server/pages/wrangler.jsonc`). The Pages site also serves:

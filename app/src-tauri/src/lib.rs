@@ -1,6 +1,7 @@
 mod desktop;
 mod media;
 mod system_audio;
+mod tarball;
 
 use tauri::{DragDropEvent, Manager, WebviewEvent, WindowEvent};
 
@@ -18,6 +19,7 @@ pub fn run() {
         .setup(|app| {
             let registry = media::Registry::load(app.handle())?;
             app.manage(registry);
+            app.manage(media::Receivers::default());
             app.manage(system_audio::SystemAudio::default());
             app.manage(desktop::CloseToTray::default());
             desktop::setup_tray(app)?;
@@ -43,12 +45,18 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             media::media_pick,
+            media::media_pick_folder,
             media::media_take_dropped,
             media::media_save_bytes,
             media::media_read,
             media::media_stat,
             media::media_missing,
             media::media_forget,
+            media::media_reveal,
+            media::media_choose_folder,
+            media::media_receive_open,
+            media::media_receive_write,
+            media::media_receive_close,
             system_audio::system_audio_start,
             system_audio::system_audio_stop,
             desktop::set_close_to_tray,

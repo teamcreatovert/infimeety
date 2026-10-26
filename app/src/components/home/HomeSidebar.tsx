@@ -1,14 +1,16 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AudioLines, BellOff, Link2, Pin, Users, Video } from 'lucide-react';
+import { AudioLines, BellOff, Download, Link2, Pin, Users, Video } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { UserBar, VoicePanel } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { Spinner } from '../ui/primitives';
+import { DOWNLOAD_PAGE } from '@/config';
 import { channelGradient } from '@/lib/format';
 import { timeLeft } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
+import { isTauri } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMeetings } from '@/stores/meetings';
@@ -71,6 +73,13 @@ export function HomeSidebar() {
           <Link2 size={16} className="relative shrink-0 text-fg-2" />
           <span className="relative flex-1 text-left">Join a meeting</span>
         </NavButton>
+        {/* In a browser: the desktop app is a tap away (opens in a new tab, so a call keeps going). */}
+        {!isTauri && (
+          <NavButton active={false} onClick={() => window.open(DOWNLOAD_PAGE, '_blank', 'noopener')}>
+            <Download size={16} className="relative shrink-0 text-fg-2" />
+            <span className="relative flex-1 text-left">Download the app</span>
+          </NavButton>
+        )}
 
         {meetings.length > 0 && (
           <>

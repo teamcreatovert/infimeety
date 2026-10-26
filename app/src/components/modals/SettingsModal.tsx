@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AppWindow, AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
+import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
@@ -11,8 +11,10 @@ import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from
 import { APP_VERSION } from '@/config';
 import { api } from '@/lib/api';
 import { isMac, isTauri } from '@/lib/platform';
+import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
+import { OPEN_LIMIT } from '@/lib/party';
 import { useUpdater } from '@/lib/updater';
 import { listDevices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -23,6 +25,7 @@ const TABS: { id: SettingsTab; label: string; icon: ReactNode; tint: string }[] 
   { id: 'account', label: 'Account', icon: <UserRound size={15} />, tint: '#0a84ff' },
   { id: 'voice', label: 'Voice & Video', icon: <Mic size={15} />, tint: '#30d158' },
   { id: 'screen', label: 'Screen Share', icon: <MonitorUp size={15} />, tint: '#bf5af2' },
+  { id: 'files', label: 'Files', icon: <FolderDown size={15} />, tint: '#64d2ff' },
   { id: 'appearance', label: 'Appearance', icon: <Palette size={15} />, tint: '#ff9f0a' },
   { id: 'sounds', label: 'Sounds', icon: <Bell size={15} />, tint: '#ff375f' },
   { id: 'desktop', label: 'Overlay & Tray', icon: <AppWindow size={15} />, tint: '#5e5ce6' },
@@ -33,10 +36,10 @@ export function SettingsModal() {
   const tab = useUI((s) => s.settingsTab);
   const close = () => useUI.getState().set({ settingsTab: null });
   return (
-    <Modal open={!!tab} onClose={close} width={820}>
+    <Modal open={!!tab} onClose={close} width={960}>
       {/* Phones: the tabs become a scrolling row above the page. */}
-      <div className="flex h-[580px] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
-        <nav className="hairline-r flex w-[214px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
+      <div className="flex h-[min(680px,calc(100dvh-48px))] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
+        <nav className="hairline-r flex w-[230px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
           <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em] compact:hidden">Settings</div>
           {TABS.filter((t) => isTauri || (t.id !== 'desktop' && t.id !== 'updates')).map((t) => (
             <button
@@ -62,6 +65,7 @@ export function SettingsModal() {
             {tab === 'account' && <AccountTab />}
             {tab === 'voice' && <VoiceTab />}
             {tab === 'screen' && <ScreenTab />}
+            {tab === 'files' && <FilesTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'sounds' && <SoundsTab />}
             {tab === 'desktop' && <DesktopTab />}
@@ -327,7 +331,11 @@ function ScreenTab() {
       </Group>
       <Group title="Watching together">
         <div className="space-y-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-fg-2">
-          <p>Share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Friends’ faces float as bubbles you can drag anywhere.</p>
+          <p>
+            Have the movie file? Start a <b>watch party</b> from the call (the popcorn button). Everyone copies the file straight from you and plays their own copy in perfect sync, with
+            subtitles. Above {OPEN_LIMIT} people, only you and the co-hosts you pick control playback; everyone else can ask.
+          </p>
+          <p>Or share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Chat and everyone’s faces sit in a panel beside it, or switch to Mini or Full screen.</p>
           <p className="text-fg-3">
             Netflix, Disney+ and other DRM-protected sites can appear black when captured. In your browser, turn off <i>Use graphics acceleration</i> (Settings → System), restart it, and share again.
           </p>
@@ -396,6 +404,33 @@ function AppearanceTab() {
           <Switch checked={s.reduceTransparency} onChange={(v) => s.set({ reduceTransparency: v })} />
         </Row>
       </Group>
+    </>
+  );
+}
+
+function FilesTab() {
+  const folder = useSettings((s) => (isTauri ? s.saveFolder : s.saveFolderName));
+  return (
+    <>
+      <Group
+        title="Copies"
+        footer="When friends share files, folders or a watch-party movie, Copy saves them here. They come straight from your friend’s device, over several connections at once."
+      >
+        {canChooseFolder ? (
+          <Row label="Save copies to" detail={folder ?? 'Not chosen yet. You’ll be asked the first time you copy something.'}>
+            <Button size="sm" onClick={() => void chooseSaveFolder()}>
+              {folder ? 'Change…' : 'Choose…'}
+            </Button>
+          </Row>
+        ) : (
+          <Row label="Save copies to" detail="Your Downloads folder. Chrome, Edge and the Infimeety app can save into a folder you pick." />
+        )}
+      </Group>
+      {!isTauri && (
+        <p className="px-1 text-[12px] leading-snug text-fg-3">
+          Big copies and watch parties work best in the Infimeety app: it writes straight to disk at full speed and keeps sharing in the background.
+        </p>
+      )}
     </>
   );
 }
