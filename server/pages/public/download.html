@@ -3,136 +3,383 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Download Infimeety for Windows and Mac</title>
-    <meta name="description" content="Voice rooms, chat, meetings and watch-together. Free for Windows and Mac, or right in your browser." />
+    <title>Download Infimeety for Windows, Mac, iPhone and Android</title>
+    <meta name="description" content="Watch parties in perfect sync, big file copies straight to your friends, voice rooms with no time limits, and meetings anyone can join. Free for Windows and Mac, and right in your browser." />
     <meta property="og:title" content="Download Infimeety" />
-    <meta property="og:description" content="Voice rooms, chat, meetings and watch-together. Free for Windows and Mac, or right in your browser." />
+    <meta property="og:description" content="Watch parties in perfect sync, big file copies straight to your friends, voice rooms with no time limits. Free." />
+    <meta property="og:image" content="/img/theater.webp" />
+    <meta name="theme-color" content="#07070b" />
     <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/site.css" />
     <style>
-      :root {
-        --bg: #08080c;
-        --fg: rgba(255, 255, 255, 0.94);
-        --fg2: rgba(235, 235, 245, 0.64);
-        --fg3: rgba(235, 235, 245, 0.42);
-        --glass: rgba(30, 30, 40, 0.55);
-        --hair: rgba(255, 255, 255, 0.12);
-        --fill: rgba(255, 255, 255, 0.08);
-        --accent: #0a84ff;
-        color-scheme: dark;
-      }
-      @media (prefers-color-scheme: light) {
-        :root {
-          --bg: #e9ebf1;
-          --fg: rgba(0, 0, 0, 0.88);
-          --fg2: rgba(60, 60, 67, 0.72);
-          --fg3: rgba(60, 60, 67, 0.5);
-          --glass: rgba(255, 255, 255, 0.62);
-          --hair: rgba(0, 0, 0, 0.08);
-          --fill: rgba(0, 0, 0, 0.05);
-          color-scheme: light;
-        }
-      }
-      * { box-sizing: border-box; }
-      html, body { margin: 0; min-height: 100%; }
-      body {
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: max(28px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
-        background: var(--bg);
-        color: var(--fg);
-        font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI Variable Display', system-ui, sans-serif;
-        -webkit-font-smoothing: antialiased;
-        overflow-x: hidden;
-      }
-      .wall { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
-      .wall span { position: absolute; border-radius: 50%; filter: blur(110px); opacity: 0.5; }
-      .wall span:nth-child(1) { width: 62vw; height: 62vw; left: -14vw; top: -26vw; background: #3a5bff; }
-      .wall span:nth-child(2) { width: 54vw; height: 54vw; right: -16vw; bottom: -24vw; background: #8f3dff; }
-      .card {
-        width: 100%;
-        max-width: 460px;
-        padding: 38px 30px 28px;
-        border-radius: 32px;
-        text-align: center;
-        background: var(--glass);
-        backdrop-filter: blur(40px) saturate(180%);
-        -webkit-backdrop-filter: blur(40px) saturate(180%);
-        box-shadow: 0 0 0 0.5px var(--hair), 0 30px 80px rgba(0, 0, 0, 0.35);
-      }
-      .logo { width: 92px; height: 92px; filter: drop-shadow(0 18px 30px rgba(90, 80, 255, 0.45)); }
-      h1 { margin: 18px 0 6px; font-size: 30px; font-weight: 700; letter-spacing: -0.035em; }
-      .lede { margin: 0; color: var(--fg2); font-size: 15px; line-height: 1.5; }
-      .buttons { display: grid; gap: 10px; margin-top: 26px; }
-      .button {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        height: 50px;
-        border-radius: 14px;
-        background: var(--fill);
-        color: var(--fg);
-        font-size: 15.5px;
-        font-weight: 600;
-        text-decoration: none;
-        box-shadow: inset 0 0 0 0.5px var(--hair);
-        transition: filter 0.15s ease, transform 0.15s ease;
-      }
-      .button.primary { background: var(--accent); color: #fff; box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(10, 132, 255, 0.35); }
-      .button:hover { filter: brightness(1.08); }
-      .button:active { transform: scale(0.985); }
-      .button[aria-disabled='true'] { opacity: 0.45; pointer-events: none; }
-      .button small { font-weight: 500; opacity: 0.7; font-size: 12.5px; }
-      .button svg { flex: none; }
-      .meta { margin: 6px 0 0; font-size: 12px; color: var(--fg3); line-height: 1.5; }
-      .divider { display: flex; align-items: center; gap: 12px; margin: 24px 0 14px; color: var(--fg3); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-      .divider::before, .divider::after { content: ''; flex: 1; height: 0.5px; background: var(--hair); }
-      .web { color: var(--accent); font-size: 15px; font-weight: 600; text-decoration: none; }
-      .web:hover { text-decoration: underline; }
-      details { margin-top: 22px; text-align: left; font-size: 13px; color: var(--fg2); line-height: 1.55; border-radius: 14px; background: var(--fill); padding: 12px 14px; }
-      summary { cursor: pointer; color: var(--fg); font-weight: 600; }
-      details ol { margin: 8px 0 0; padding-left: 20px; }
-      .foot { margin-top: 18px; font-size: 12px; color: var(--fg3); }
-      .foot a { color: inherit; }
+      section { padding: 110px 0 0; }
+      @media (max-width: 700px) { section { padding-top: 80px; } }
+
+      /* Hero */
+      .hero { padding-top: 70px; text-align: center; }
+      .hero .lede { margin: 0 auto; }
+      .hero .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 34px; }
+      .hero .meta { margin-top: 14px; font-size: 13px; color: var(--fg3); min-height: 20px; }
+      .hero-shot { position: relative; margin: 60px auto 0; max-width: 1100px; }
+      .hero-shot .shot { animation: rise 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both 0.2s; }
+      .hero-shot .phone-shot { position: absolute; right: -28px; bottom: -48px; width: 210px; animation: rise 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both 0.5s; }
+      @media (max-width: 900px) { .hero-shot .phone-shot { display: none; } }
+      @keyframes rise { from { opacity: 0; transform: translateY(40px) scale(0.98); } }
+      .float { animation: float 7s ease-in-out infinite; }
+      @keyframes float { 50% { transform: translateY(-10px); } }
+
+      /* Numbers */
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 120px; }
+      .stat { padding: 24px 22px; border-radius: 20px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .stat b { display: block; font-size: clamp(30px, 3.4vw, 42px); letter-spacing: -0.04em; line-height: 1.05; }
+      .stat span { display: block; margin-top: 8px; color: var(--fg2); font-size: 14px; line-height: 1.45; }
+      @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 460px) { .stats { gap: 10px; margin-top: 72px; } .stat { padding: 18px 16px; border-radius: 16px; } .stat span { font-size: 13px; } }
+
+      /* Feature rows */
+      .feature { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; }
+      .feature.flip { grid-template-columns: 1.25fr 1fr; }
+      .feature.flip .copy { order: 2; }
+      @media (max-width: 900px) { .feature, .feature.flip { grid-template-columns: 1fr; gap: 32px; } .feature.flip .copy { order: 0; } }
+      .points { list-style: none; margin: 26px 0 0; padding: 0; display: grid; gap: 14px; }
+      .points li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; color: var(--fg2); font-size: 15.5px; }
+      .points li b { color: var(--fg); font-weight: 620; }
+      .points .ic { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(10, 132, 255, 0.16); color: #7db6ff; }
+      .points .ic svg { width: 15px; height: 15px; }
+
+      /* Sync demo */
+      .sync { margin-top: 28px; padding: 18px; border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .lane { display: grid; grid-template-columns: 74px 1fr 64px; align-items: center; gap: 12px; font-size: 13px; color: var(--fg2); }
+      .lane + .lane { margin-top: 12px; }
+      .bar { position: relative; height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+      .bar i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 99px; background: linear-gradient(90deg, #5e8bff, #b07bff); }
+      .tc { font-variant-numeric: tabular-nums; text-align: right; color: var(--fg); }
+      .sync .badge { margin-top: 14px; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: #8ff0a8; }
+      .sync .badge i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.2); animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(48, 209, 88, 0); } }
+
+      /* Copy demo + speed table */
+      .copybox { margin-top: 28px; padding: 18px 20px; border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .copybox .row { display: flex; align-items: center; gap: 14px; }
+      .copybox .file { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: rgba(10, 132, 255, 0.16); color: #7db6ff; flex-shrink: 0; }
+      .copybox .name { font-size: 14.5px; font-weight: 600; }
+      .copybox .sub { font-size: 12.5px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+      .copybox .bar { margin-top: 14px; height: 5px; }
+      .copybox .bar i { background: var(--accent); }
+      .lanes { display: flex; gap: 6px; margin-top: 12px; }
+      .lanes span { flex: 1; height: 3px; border-radius: 3px; background: rgba(10, 132, 255, 0.25); overflow: hidden; position: relative; }
+      .lanes span::after { content: ''; position: absolute; inset: 0; width: 40%; background: #4aa3ff; animation: lane 1.2s linear infinite; }
+      .lanes span:nth-child(2)::after { animation-delay: -0.3s; }
+      .lanes span:nth-child(3)::after { animation-delay: -0.6s; }
+      .lanes span:nth-child(4)::after { animation-delay: -0.9s; }
+      @keyframes lane { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      .speeds { width: 100%; margin-top: 18px; border-collapse: collapse; font-size: 14px; }
+      .speeds th, .speeds td { padding: 9px 4px; text-align: left; border-bottom: 0.5px solid var(--hair); }
+      .speeds th { color: var(--fg3); font-weight: 600; font-size: 12.5px; }
+      .speeds td:last-child, .speeds th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+      .speeds td { color: var(--fg2); }
+      .speeds td b { color: var(--fg); }
+      .note { margin-top: 10px; font-size: 12.5px; color: var(--fg3); }
+
+      /* Layout trio */
+      .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 44px; }
+      .trio figure { margin: 0; }
+      .trio figcaption { margin-top: 14px; color: var(--fg2); font-size: 14.5px; }
+      .trio figcaption b { color: var(--fg); display: block; font-size: 16px; margin-bottom: 2px; }
+      @media (max-width: 900px) { .trio { grid-template-columns: 1fr; } }
+
+      /* Cards grid */
+      .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 44px; }
+      @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
+      .card { padding: 26px 24px; border-radius: 22px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); transition: transform 0.25s ease, background 0.25s ease; }
+      .card:hover { transform: translateY(-3px); background: var(--card2); }
+      .card .ic { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: #fff; margin-bottom: 16px; }
+      .card .ic svg { width: 22px; height: 22px; }
+      .card h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -0.02em; }
+      .card p { margin: 0; color: var(--fg2); font-size: 14.5px; }
+
+      /* Platforms */
+      .platforms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 44px; }
+      @media (max-width: 760px) { .platforms { grid-template-columns: 1fr; } }
+      .plat { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 26px; border-radius: 24px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .plat.mine { background: linear-gradient(160deg, rgba(10, 132, 255, 0.16), rgba(143, 91, 255, 0.1)); box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.45); }
+      .plat .head { display: flex; align-items: center; gap: 14px; }
+      .plat .logo { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--card2); }
+      .plat .logo svg { width: 24px; height: 24px; }
+      .plat h3 { margin: 0; font-size: 19px; letter-spacing: -0.02em; }
+      .plat .req { color: var(--fg3); font-size: 13px; }
+      .plat p { margin: 0; color: var(--fg2); font-size: 14.5px; }
+      .plat .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
+      .soon { position: absolute; top: 22px; right: 22px; padding: 4px 10px; border-radius: 99px; background: rgba(255, 159, 10, 0.16); color: #ffc46b; font-size: 12px; font-weight: 600; }
+      .plat details { font-size: 14px; color: var(--fg2); }
+      .plat summary { cursor: pointer; color: var(--fg); font-weight: 600; font-size: 14px; }
+      .plat ol { margin: 10px 0 0; padding-left: 20px; }
+      .plat li { margin: 5px 0; }
+
+      /* FAQ */
+      .faq { margin-top: 36px; display: grid; gap: 10px; max-width: 820px; }
+      .faq details { padding: 18px 22px; border-radius: 18px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .faq summary { cursor: pointer; font-weight: 620; font-size: 16px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+      .faq summary::-webkit-details-marker { display: none; }
+      .faq summary::after { content: '+'; color: var(--fg3); font-weight: 400; font-size: 22px; line-height: 1; transition: transform 0.2s ease; }
+      .faq details[open] summary::after { transform: rotate(45deg); }
+      .faq p { margin: 12px 0 0; color: var(--fg2); font-size: 15px; }
+
+      .cta { margin-top: 120px; padding: 56px 32px; border-radius: 30px; text-align: center; background: radial-gradient(120% 140% at 50% 0%, rgba(96, 104, 255, 0.35), rgba(143, 61, 255, 0.12) 50%, transparent 75%), var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
+      .cta h2 { margin: 0 0 10px; font-size: clamp(30px, 4vw, 46px); letter-spacing: -0.035em; }
+      .cta p { margin: 0 auto 26px; max-width: 520px; color: var(--fg2); }
+      .cta .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
     </style>
   </head>
   <body>
-    <div class="wall" aria-hidden="true"><span></span><span></span></div>
-    <main class="card">
-      <img class="logo" src="/icon.png" alt="" />
-      <h1>Get Infimeety</h1>
-      <p class="lede">Voice rooms, chat, meetings and watch-together with your friends. Free, with no time limits.</p>
+    <div class="wall" aria-hidden="true"><span></span><span></span><span></span></div>
 
-      <div class="buttons" id="buttons">
-        <a class="button" id="windows" data-os="windows" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.1 10.4 4v7.2H3zm8.3-1.2L21 2.5v8.7h-9.7zM3 12.8h7.4V20L3 18.9zm8.3 0H21v8.7l-9.7-1.4z" /></svg>
-          <span>Download for Windows</span>
-        </a>
-        <a class="button" id="mac" data-os="mac" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.dmg">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.35 1.92-3.48 2-3.54-1.09-1.6-2.79-1.81-3.39-1.84-1.44-.15-2.82.85-3.55.85-.74 0-1.86-.83-3.06-.81-1.57.02-3.02.92-3.83 2.33-1.64 2.84-.42 7.04 1.17 9.35.78 1.13 1.7 2.39 2.91 2.35 1.17-.05 1.61-.76 3.03-.76 1.41 0 1.81.76 3.05.73 1.26-.02 2.06-1.14 2.82-2.28.9-1.31 1.26-2.59 1.28-2.66-.03-.01-2.45-.94-2.48-3.72zM14.06 5.68c.64-.79 1.08-1.87.96-2.96-.93.04-2.07.63-2.73 1.41-.59.69-1.12 1.81-.98 2.87 1.04.08 2.11-.53 2.75-1.32z" /></svg>
-          <span>Download for Mac</span>
-        </a>
+    <nav class="nav">
+      <div class="wrap">
+        <a class="brand" href="/?home"><img src="/icon.png" alt="" />Infimeety</a>
+        <div class="links">
+          <a class="hide-sm" href="#features">Features</a>
+          <a class="hide-sm" href="#faq">FAQ</a>
+          <a href="#get">Download</a>
+        </div>
       </div>
-      <p class="meta" id="meta">Windows 10 or 11 · macOS 11 or later, Apple Silicon and Intel</p>
+    </nav>
 
-      <div class="divider">or</div>
-      <a class="web" href="/web/">Use Infimeety in your browser →</a>
-      <p class="meta">Works on phones and tablets too. Nothing to install.</p>
+    <main class="wrap">
+      <!-- Hero -->
+      <header class="hero">
+        <span class="eyebrow"><i></i>Free · No time limits · Open source</span>
+        <h1 class="hero-title">Movie night with friends,<br /><span class="grad">wherever they are.</span></h1>
+        <p class="lede">
+          Infimeety is where your group hangs out: voice rooms that are always open, chat, quick meetings, and watch parties where everyone sees the same frame at the same moment.
+          Send movies and folders of any size straight to your friends.
+        </p>
+        <div class="actions" id="hero-actions">
+          <a class="btn primary" id="hero-download" href="#get">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3" /><path d="m7 10 5 5 5-5" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></svg>
+            <span>Download Infimeety</span>
+          </a>
+          <a class="btn" href="/web/" data-web>Open in your browser</a>
+        </div>
+        <p class="meta" id="meta">Windows 10 or 11 · macOS 11 or later · Every modern browser</p>
 
-      <details id="mac-help">
-        <summary>Opening it on a Mac for the first time</summary>
-        <ol>
-          <li>Open the downloaded file and drag Infimeety into Applications.</li>
-          <li>Open Infimeety from Applications. If macOS says it can’t check the app, open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. (On older macOS, Control-click the app and choose <b>Open</b>.)</li>
-          <li>Allow the microphone and camera when Infimeety asks, so friends can hear and see you.</li>
-        </ol>
-      </details>
+        <div class="hero-shot">
+          <div class="shot"><img src="/img/theater.webp" width="1600" height="1000" alt="A watch party: the movie with subtitles on the left, friends chatting on the right" /></div>
+          <div class="phone-shot float"><img src="/img/phone.webp" width="600" height="1299" alt="The same watch party on a phone" /></div>
+        </div>
+      </header>
 
-      <p class="foot">
-        Free and open source · <a href="https://github.com/teamcreatovert/infimeety/releases">All versions</a> · <a href="/privacy">Privacy</a>
-      </p>
+      <!-- Numbers -->
+      <div class="stats reveal" aria-label="Infimeety in numbers">
+        <div class="stat"><b data-count="0">0 MB</b><span>of your movies and files uploaded to our servers. They go straight to your friends.</span></div>
+        <div class="stat"><b>~5 ms</b><span>apart in our tests: how closely everyone’s players stay in step in a watch party.</span></div>
+        <div class="stat"><b>4×</b><span>connections at once for big copies, so a copy can use your whole connection.</span></div>
+        <div class="stat"><b>∞</b><span>No time limits on calls, rooms or meetings. Stay as long as you like.</span></div>
+      </div>
+
+      <!-- Watch parties -->
+      <section id="features">
+        <div class="feature">
+          <div class="copy reveal">
+            <span class="kicker">Watch parties</span>
+            <h2 class="section-title">Press play together. <span class="grad">Really together.</span></h2>
+            <p class="section-lede">Everyone plays their own copy of the movie, so it looks exactly as sharp as the file and never buffers over someone’s internet. Infimeety keeps every player on the same moment.</p>
+            <ul class="points">
+              <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span><span><b>Plan it, then start it.</b> Pick the movie and subtitles, everyone gets the file and taps “I’m ready”, and you start it with a 3, 2, 1.</span></li>
+              <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span><span><b>Pause lands on the same frame</b> for everyone. So do skips, jumps and starting over.</span></li>
+              <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span><span><b>You decide who controls it.</b> Everyone, or just you and your co-hosts. Others can ask: “Play from 1:43:28”, and you tap Accept.</span></li>
+              <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span><span><b>Late? Join them.</b> Arrive 30 minutes in and one button puts you exactly where everyone is.</span></li>
+              <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span><span><b>Subtitles</b> in SRT, VTT or ASS, big and readable, for everyone at once.</span></li>
+            </ul>
+            <div class="sync" aria-hidden="true">
+              <div class="lane"><span>Maya</span><div class="bar"><i data-sync></i></div><span class="tc" data-tc>0:00:00</span></div>
+              <div class="lane"><span>Leo</span><div class="bar"><i data-sync></i></div><span class="tc" data-tc>0:00:00</span></div>
+              <div class="lane"><span>Sara</span><div class="bar"><i data-sync></i></div><span class="tc" data-tc>0:00:00</span></div>
+              <span class="badge"><i></i>All three on the same frame</span>
+            </div>
+          </div>
+          <div class="reveal"><div class="shot"><img src="/img/lobby.webp" width="1600" height="1000" loading="lazy" alt="The watch party lobby: who has the movie and who is ready" /></div></div>
+        </div>
+
+        <div class="trio">
+          <figure class="reveal"><div class="shot"><img src="/img/theater.webp" width="1600" height="1000" loading="lazy" alt="Theater layout" /></div><figcaption><b>Theater</b>The movie, with chat and everyone in the call beside it.</figcaption></figure>
+          <figure class="reveal"><div class="shot"><img src="/img/mini.webp" width="1600" height="1000" loading="lazy" alt="Mini layout" /></div><figcaption><b>Mini</b>The movie, your friends’ faces underneath, and the chat.</figcaption></figure>
+          <figure class="reveal"><div class="shot"><img src="/img/fullscreen.webp" width="1600" height="1000" loading="lazy" alt="Full screen layout" /></div><figcaption><b>Full screen</b>Just the movie. Who’s talking shows in the corner, chat opens with a tap.</figcaption></figure>
+        </div>
+      </section>
+
+      <!-- Big files -->
+      <section id="files">
+        <div class="feature flip">
+          <div class="copy reveal">
+            <span class="kicker">Big files and folders</span>
+            <h2 class="section-title">A 2 GB movie in minutes. <span class="grad">No upload first.</span></h2>
+            <p class="section-lede">Share any file or a whole folder in chat. When a friend taps Copy, it travels straight from your computer to theirs over several encrypted connections at once, and lands in the folder they chose.</p>
+            <div class="copybox" aria-hidden="true">
+              <div class="row">
+                <span class="file"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4" /></svg></span>
+                <div><div class="name">Night Drive (2026) 1080p.mkv</div><div class="sub" data-copy-sub>Starting…</div></div>
+              </div>
+              <div class="bar"><i data-copy-bar></i></div>
+              <div class="lanes"><span></span><span></span><span></span><span></span></div>
+            </div>
+            <table class="speeds">
+              <thead><tr><th>Your friend’s upload speed</th><th>A 2 GB movie takes about</th></tr></thead>
+              <tbody>
+                <tr><td>20 Mbps</td><td><b>14 min</b></td></tr>
+                <tr><td>50 Mbps</td><td><b>6 min</b></td></tr>
+                <tr><td>100 Mbps</td><td><b>3 min</b></td></tr>
+                <tr><td>300 Mbps</td><td><b>1 min</b></td></tr>
+                <tr><td>1 Gbps</td><td><b>17 s</b></td></tr>
+              </tbody>
+            </table>
+            <p class="note">Copies go as fast as the sender’s upload and your download allow. In our tests (two browsers on one computer) a 300 MB copy ran at over 25 MB/s, so your connection is the limit, not Infimeety.</p>
+          </div>
+          <div class="reveal"><div class="shot"><img src="/img/copy.webp" width="1600" height="1000" loading="lazy" alt="A big movie file being copied in chat, with speed and time left" /></div></div>
+        </div>
+      </section>
+
+      <!-- Everything else -->
+      <section>
+        <div class="reveal" style="text-align: center">
+          <span class="kicker">And everything a group needs</span>
+          <h2 class="section-title">Your place to hang out.</h2>
+          <p class="section-lede" style="margin: 0 auto">Make a channel for your friends, your class or your team. Drop into a voice room anytime, no call to start or end.</p>
+        </div>
+        <div class="cards">
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #30d158, #0a9d4a)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" /></svg></div>
+            <h3>Voice rooms</h3>
+            <p>Always-open rooms like “Lounge” and “Movie Night”. Clear voice with noise suppression and echo cancellation. No time limits.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #bf5af2, #7d3cff)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg></div>
+            <h3>Screen sharing</h3>
+            <p>Up to 1440p at 60 fps, tuned for movies or for text. The Windows app shares your computer’s sound too, without echoing your friends back to them.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #5ad8e6, #2a9bd7)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11" /><rect x="2" y="6" width="14" height="12" rx="2.5" /></svg></div>
+            <h3>Quick meetings</h3>
+            <p>Share a link. Anyone can join from their browser without an account, after you let them in. Co-hosts, a waiting room, and it tidies itself up after.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #0a84ff, #3d6bff)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg></div>
+            <h3>Chat that keeps up</h3>
+            <p>Messages, replies, reactions, @mentions and files in every room, synced across your devices. Chat beside the call without leaving it.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #ff9f0a, #ff6a3d)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
+            <h3>Friends and DMs</h3>
+            <p>Add friends by username, see who’s online, and call anyone straight from a direct message.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic" style="background: linear-gradient(135deg, #ff375f, #c3245f)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></div>
+            <h3>Private by design</h3>
+            <p>Calls, screens and files go device to device, encrypted. We only keep your account and text messages. <a href="/privacy">Read the privacy policy</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Downloads -->
+      <section id="get">
+        <div class="reveal" style="text-align: center">
+          <span class="kicker">Download</span>
+          <h2 class="section-title">Get Infimeety</h2>
+          <p class="section-lede" style="margin: 0 auto">Free on every device. Your friends can be on any of them.</p>
+        </div>
+        <div class="platforms">
+          <div class="plat reveal" id="p-windows">
+            <div class="head">
+              <span class="logo"><svg viewBox="0 0 24 24" fill="#4cc2ff"><path d="M3 5.5 10 4.5v7H3zM11 4.4 21 3v8.5H11zM3 12.5h7v7l-7-1zM11 12.5h10V21l-10-1.4z" /></svg></span>
+              <div><h3>Windows</h3><div class="req">Windows 10 or 11 · 64-bit</div></div>
+            </div>
+            <p>The full experience: fastest copies, your computer’s sound in screen shares, and a small overlay showing who’s talking. Updates itself.</p>
+            <div class="row"><a class="btn primary" id="dl-windows" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe">Download for Windows</a></div>
+          </div>
+          <div class="plat reveal" id="p-mac">
+            <div class="head">
+              <span class="logo"><svg viewBox="0 0 24 24" fill="#fff"><path d="M16.4 12.6c0-2.4 2-3.5 2.1-3.6-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8-.1 0-2.5-1-2.5-4zM14 5.4c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z" /></svg></span>
+              <div><h3>Mac</h3><div class="req">macOS 11 or later · Apple Silicon and Intel</div></div>
+            </div>
+            <p>One download for every Mac. Watch parties, fast copies and screen sharing, and it updates itself.</p>
+            <div class="row"><a class="btn primary" id="dl-mac" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.dmg">Download for Mac</a></div>
+            <details id="mac-help">
+              <summary>Opening it for the first time</summary>
+              <ol>
+                <li>Open the downloaded file and drag Infimeety into Applications.</li>
+                <li>Open Infimeety from Applications. If macOS says it can’t check the app, open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. (On older macOS, Control-click the app and choose <b>Open</b>.)</li>
+                <li>Allow the microphone and camera when Infimeety asks, so friends can hear and see you.</li>
+              </ol>
+            </details>
+          </div>
+          <div class="plat reveal" id="p-ios">
+            <span class="soon">Coming soon</span>
+            <div class="head">
+              <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="3" /><path d="M11 18h2" stroke-linecap="round" /></svg></span>
+              <div><h3>iPhone and iPad</h3><div class="req">iOS and iPadOS</div></div>
+            </div>
+            <p>The app is on its way. Until then, Infimeety works in Safari, and you can add it to your Home Screen so it opens like an app.</p>
+            <div class="row"><a class="btn" href="/web/" data-web>Open in Safari</a></div>
+            <details>
+              <summary>Add it to your Home Screen</summary>
+              <ol><li>Open Infimeety in Safari.</li><li>Tap the Share button, then <b>Add to Home Screen</b>.</li></ol>
+            </details>
+          </div>
+          <div class="plat reveal" id="p-android">
+            <span class="soon">Coming soon</span>
+            <div class="head">
+              <span class="logo"><svg viewBox="0 0 24 24" fill="#3ddc84"><path d="M17.6 9.5 19.4 6.4a.5.5 0 1 0-.9-.5l-1.8 3.1A10.4 10.4 0 0 0 12 8a10.4 10.4 0 0 0-4.7 1l-1.8-3.1a.5.5 0 1 0-.9.5l1.8 3.1C3.4 11 1.8 13.7 1.5 16.9h21c-.3-3.2-1.9-5.9-4.9-7.4zM7.5 14.2a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm9 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" /></svg></span>
+              <div><h3>Android</h3><div class="req">Phones and tablets</div></div>
+            </div>
+            <p>The app is on its way. Until then, Infimeety works in Chrome, and you can install it from the browser so it opens like an app.</p>
+            <div class="row"><a class="btn" href="/web/" data-web>Open in Chrome</a></div>
+            <details>
+              <summary>Install it from Chrome</summary>
+              <ol><li>Open Infimeety in Chrome.</li><li>Tap the ⋮ menu, then <b>Add to Home screen</b> or <b>Install app</b>.</li></ol>
+            </details>
+          </div>
+        </div>
+        <p class="note" id="version" style="text-align: center; margin-top: 22px">Free and open source · <a href="https://github.com/teamcreatovert/infimeety/releases">All versions</a></p>
+      </section>
+
+      <!-- FAQ -->
+      <section id="faq">
+        <div class="reveal">
+          <span class="kicker">Questions</span>
+          <h2 class="section-title">Good to know</h2>
+        </div>
+        <div class="faq">
+          <details class="reveal"><summary>Is Infimeety free?</summary><p>Yes. There are no paid plans, no ads and no time limits.</p></details>
+          <details class="reveal"><summary>Do my movies and files get uploaded anywhere?</summary><p>No. They go straight from the sender’s device to yours, encrypted, and are saved in the folder you choose. Our servers only see a file’s name and size, so the chat can show what it is.</p></details>
+          <details class="reveal"><summary>Does everyone need the movie for a watch party?</summary><p>Each person plays their own copy, which is why the picture stays perfect. Getting it takes one tap: copy it from the host right in the lobby. If someone already has the file, they can point Infimeety at it instead.</p></details>
+          <details class="reveal"><summary>Which video files play in a watch party?</summary><p>MP4 (H.264) and WebM play everywhere. MKV files usually play in the Windows app and in Chrome and Edge. On a Mac or in Safari, use MP4.</p></details>
+          <details class="reveal"><summary>Can friends on different devices hang out together?</summary><p>Yes. Windows, Mac, phones and browsers all join the same rooms, calls and watch parties.</p></details>
+          <details class="reveal"><summary>Why is a streaming service black when I share my screen?</summary><p>Services like Netflix protect their videos from screen capture, so they show up black. Watch parties are made for movie files you have.</p></details>
+        </div>
+      </section>
+
+      <div class="cta reveal">
+        <h2>Bring your friends.</h2>
+        <p>Make a channel, open a voice room and start your first watch party tonight.</p>
+        <div class="actions">
+          <a class="btn primary" href="#get">Download Infimeety</a>
+          <a class="btn" href="/web/" data-web>Open in your browser</a>
+        </div>
+      </div>
     </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <a class="brand" href="/?home"><img src="/icon.png" alt="" />Infimeety</a>
+        <span class="spacer"></span>
+        <a href="/web/" data-web>Open in browser</a>
+        <a href="https://github.com/teamcreatovert/infimeety/releases">All versions</a>
+        <a href="/privacy">Privacy</a>
+        <a href="https://github.com/teamcreatovert/infimeety">GitHub</a>
+      </div>
+    </footer>
 
     <script src="/download.js"></script>
   </body>
