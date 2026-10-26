@@ -1,7 +1,7 @@
 import type { RtcPayload, VoiceLocalState, VoiceParticipant, VoiceSnapshot } from '../../../../shared/protocol';
 import { api } from '@/lib/api';
 import type { HubClient } from '@/lib/hub';
-import { isTauri } from '@/lib/platform';
+import { canShareScreen, isTauri, isWindows } from '@/lib/platform';
 import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
 import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
@@ -42,6 +42,30 @@ interface AudioChain {
   data: Float32Array<ArrayBuffer>;
 }
 
+/**
+ * Codec order for a screen share's video. Text & code prefers AV1, whose screen-content tools
+ * keep text sharp at a fraction of the bitrate; movies & games prefer H.264, which most PCs
+ * and Macs encode in hardware, so 60 fps stays smooth. Anyone who can't decode the first
+ * choice gets the next one.
+ */
+export function preferScreenCodecs(transceiver: RTCRtpTransceiver | undefined, mode: 'motion' | 'detail') {
+  const caps = typeof RTCRtpReceiver.getCapabilities === 'function' ? RTCRtpReceiver.getCapabilities('video') : null;
+  if (!transceiver || typeof transceiver.setCodecPreferences !== 'function' || !caps) return;
+  const order = mode === 'detail' ? ['video/av1', 'video/vp9'] : ['video/h264', 'video/vp8'];
+  const rank = (c: RTCRtpCodec) => {
+    const i = order.indexOf(c.mimeType.toLowerCase());
+    if (i < 0) return order.length;
+    // packetization-mode=1 is the H.264 flavour every browser decodes, in hardware where it can.
+    return c.mimeType.toLowerCase() === 'video/h264' && !/packetization-mode=1/.test(c.sdpFmtpLine ?? '') ? i + 0.5 : i;
+  };
+  const codecs = caps.codecs.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i);
+  try {
+    transceiver.setCodecPreferences(codecs.map((x) => x.c));
+  } catch (err) {
+    console.warn('[voice] codec preferences unavailable', err);
+  }
+}
+
 function rms(analyser: AnalyserNode, data: Float32Array<ArrayBuffer>) {
   analyser.getFloatTimeDomainData(data);
   let sum = 0;
@@ -78,6 +102,11 @@ class VoiceEngine {
   private lastLoud: Record<string, number> = {};
   private unsubSettings: (() => void) | null = null;
   private myJoinedAt = 0;
+  /**
+   * Set once the mic is open. Until then the hub's snapshots and offers are ignored: a peer
+   * made before the mic exists would never carry it, and that person would talk to nobody.
+   */
+  private live = false;
 
   get inCall() {
     return !!useVoice.getState().roomId;
@@ -103,6 +132,8 @@ class VoiceEngine {
     if (useVoice.getState().roomId !== roomId) return; // left while we were waiting on permissions
 
     this.myJoinedAt = Date.now();
+    this.live = true;
+    // Dropped while the hub is still connecting; onWelcome sends it once it's up.
     hub.send({ t: 'voice.join', roomId, state: this.localState() });
     useVoice.setState({ status: 'connected' });
     sounds.join();
@@ -137,6 +168,7 @@ class VoiceEngine {
     this.unsubSettings?.();
     this.unsubSettings = null;
     this.hub = null;
+    this.live = false;
 
     useVoice.setState({
       channelId: null,
@@ -150,6 +182,7 @@ class VoiceEngine {
       connection: {},
       localCam: null,
       localScreen: null,
+      audioBlocked: false,
     });
     useUI.getState().set({ focusedPeer: null, immersive: false });
     if (!silent) sounds.leave();
@@ -161,6 +194,7 @@ class VoiceEngine {
     const vs = useVoice.getState();
     if (!vs.roomId || vs.channelId !== hub.channelId) return;
     this.hub = hub;
+    if (!this.live) return; // join() announces us once the mic is open
     for (const id of [...this.peers.keys()]) this.closePeer(id);
     this.participants.clear();
     hub.send({ t: 'voice.join', roomId: vs.roomId, state: this.localState() });
@@ -169,7 +203,7 @@ class VoiceEngine {
   onSnapshot(channelId: string, snap: VoiceSnapshot) {
     const vs = useVoice.getState();
     const myPeer = this.hub?.peerId;
-    if (!vs.roomId || channelId !== vs.channelId || !myPeer) return;
+    if (!vs.roomId || channelId !== vs.channelId || !myPeer || !this.live) return;
 
     const me = snap.participants.find((p) => p.peerId === myPeer);
     if (me && me.serverMuted !== vs.serverMuted) {
@@ -204,7 +238,7 @@ class VoiceEngine {
 
   onSignal(channelId: string, from: string, data: Extract<RtcPayload, { kind: 'voice' }>) {
     const vs = useVoice.getState();
-    if (!vs.roomId || channelId !== vs.channelId) return;
+    if (!vs.roomId || channelId !== vs.channelId || !this.live) return;
     if (!this.peers.has(from)) {
       // An offer can beat the snapshot that announces its sender.
       if (data.description?.type !== 'offer') return;
@@ -277,25 +311,35 @@ class VoiceEngine {
     if (!this.inCall || this.screen) return;
     const s = useSettings.getState();
     const preset = SCREEN_PRESETS[s.screenQuality];
-    // The desktop webview's picker has no system audio, so sound is captured natively instead.
-    const nativeAudio = isTauri && s.shareAudio;
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({
+    // The Windows webview's picker has no system audio, so sound is captured natively instead.
+    // The Mac webview has neither, so a Mac shares without sound.
+    const nativeAudio = isTauri && isWindows && s.shareAudio;
+    const pickerAudio = s.shareAudio && !isTauri;
+    const options = (audio: boolean) =>
+      ({
         video: { width: { ideal: preset.width }, height: { ideal: preset.height }, frameRate: { ideal: preset.fps, max: preset.fps } },
-        audio:
-          s.shareAudio && !nativeAudio
-            ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, sampleRate: 48000 }
-            : false,
+        audio: audio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, sampleRate: 48000 } : false,
         // Chromium hints: offer system audio, allow switching surfaces mid-share.
         systemAudio: 'include',
         surfaceSwitching: 'include',
         selfBrowserSurface: 'exclude',
         monitorTypeSurfaces: 'include',
-      } as DisplayMediaStreamOptions);
+      }) as DisplayMediaStreamOptions;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia(options(pickerAudio)).catch((err: DOMException) => {
+        // Some browsers (Safari) refuse a request that includes sound instead of ignoring it.
+        if (!pickerAudio || err.name === 'NotAllowedError' || err.name === 'AbortError') throw err;
+        return navigator.mediaDevices.getDisplayMedia(options(false));
+      });
     } catch (err) {
-      if ((err as DOMException).name !== 'NotAllowedError') {
-        toast({ kind: 'error', title: "Couldn't start screen share", body: String((err as Error).message ?? err) });
+      const name = (err as DOMException).name;
+      if (name !== 'NotAllowedError' && name !== 'AbortError') {
+        toast({
+          kind: 'error',
+          title: "Couldn't start screen share",
+          body: canShareScreen ? String((err as Error).message ?? err) : 'This browser can’t share its screen. Try a computer.',
+        });
       }
       return;
     }
@@ -311,7 +355,7 @@ class VoiceEngine {
       }
     }
     this.screen = stream;
-    for (const peer of this.peers.values()) for (const t of stream.getTracks()) peer.pc.addTrack(t, this.screenOut);
+    for (const peer of this.peers.values()) this.addScreenTracks(peer);
     useVoice.setState({ screen: true, localScreen: stream });
     this.pushState();
     sounds.shareStart();
@@ -368,12 +412,25 @@ class VoiceEngine {
 
   private ensureAudio() {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
+      // The desktop's system-sound capture streams 48 kHz. Browsers keep the device rate:
+      // Firefox can't feed a mic at another rate into the graph.
+      this.ctx = new AudioContext(isTauri ? { latencyHint: 'interactive', sampleRate: 48000 } : { latencyHint: 'interactive' });
       this.master = this.ctx.createGain();
       this.master.connect(this.ctx.destination);
       this.applyOutput();
+      const ctx = this.ctx;
+      const sync = () => useVoice.setState({ audioBlocked: ctx.state !== 'running' && this.inCall });
+      ctx.onstatechange = sync;
+      // Mobile browsers only start (or restart, after a phone call) audio from a tap.
+      const unlock = () => {
+        if (ctx.state !== 'running' && this.inCall) void ctx.resume().catch(() => {});
+      };
+      for (const type of ['pointerdown', 'touchend', 'keydown'] as const) window.addEventListener(type, unlock, { capture: true, passive: true });
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => {});
+    // A context that can't start yet shows "Tap to turn on sound" in the call.
+    const ctx = this.ctx;
+    setTimeout(() => useVoice.setState({ audioBlocked: ctx.state !== 'running' && this.inCall }), 600);
   }
 
   private applyOutput() {
@@ -406,12 +463,18 @@ class VoiceEngine {
     }
     useVoice.setState({ micAvailable: true });
     this.micMeter?.source.disconnect();
+    this.micMeter = null;
     if (this.ctx) {
-      const source = this.ctx.createMediaStreamSource(this.mic);
-      const analyser = this.ctx.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-      this.micMeter = { source, analyser, data: new Float32Array(analyser.fftSize) };
+      // Only the "you're speaking" ring depends on this; never let it stop the call.
+      try {
+        const source = this.ctx.createMediaStreamSource(this.mic);
+        const analyser = this.ctx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        this.micMeter = { source, analyser, data: new Float32Array(analyser.fftSize) };
+      } catch (err) {
+        console.warn('[voice] mic meter unavailable', err);
+      }
     }
     this.applyMicEnabled();
   }
@@ -440,8 +503,15 @@ class VoiceEngine {
     const micTrack = this.mic?.getAudioTracks()[0];
     if (micTrack) peer.pc.addTrack(micTrack, this.micOut);
     for (const t of this.cam?.getTracks() ?? []) peer.pc.addTrack(t, this.camOut);
-    for (const t of this.screen?.getTracks() ?? []) peer.pc.addTrack(t, this.screenOut);
+    this.addScreenTracks(peer);
     this.peers.set(peerId, peer);
+  }
+
+  private addScreenTracks(peer: Peer) {
+    for (const track of this.screen?.getTracks() ?? []) {
+      const sender = peer.pc.addTrack(track, this.screenOut);
+      if (track.kind === 'video') preferScreenCodecs(peer.pc.getTransceivers().find((t) => t.sender === sender), useSettings.getState().screenMode);
+    }
   }
 
   /** Screen-share audio is the only stereo stream; ids are announced when each person joins. */
@@ -468,7 +538,12 @@ class VoiceEngine {
     if (useUI.getState().focusedPeer === peerId) useUI.getState().set({ focusedPeer: null });
   }
 
-  /** Per-track encoder limits; screen bitrate is shared across viewers in a mesh. */
+  /**
+   * Per-track encoder limits; screen bitrate is shared across viewers in a mesh.
+   * A screen share always keeps its resolution: when bandwidth or CPU runs short it drops
+   * frames instead. Letting the encoder shrink the picture turned a 1080p share into a
+   * blurry 480×270 within seconds, and it never scaled back up.
+   */
   private tuneSenders(peer: Peer) {
     const s = useSettings.getState();
     const preset = SCREEN_PRESETS[s.screenQuality];
@@ -478,11 +553,13 @@ class VoiceEngine {
       if (!track) continue;
       const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
       if (!params.encodings?.length) continue;
-      const enc = params.encodings[0];
+      const enc = params.encodings[0] as RTCRtpEncodingParameters & { priority?: string; networkPriority?: string };
       if (this.screen?.getVideoTracks().includes(track)) {
-        enc.maxBitrate = Math.min(preset.bitrate, Math.floor(36_000_000 / viewers));
+        enc.maxBitrate = Math.min(preset.bitrate, Math.floor(40_000_000 / viewers));
         enc.maxFramerate = preset.fps;
-        params.degradationPreference = s.screenMode === 'motion' ? 'maintain-framerate' : 'maintain-resolution';
+        enc.scaleResolutionDownBy = 1;
+        enc.priority = enc.networkPriority = 'high';
+        params.degradationPreference = 'maintain-resolution';
       } else if (this.screen?.getAudioTracks().includes(track)) {
         enc.maxBitrate = 192_000;
       } else if (this.cam?.getVideoTracks().includes(track)) {

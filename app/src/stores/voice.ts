@@ -23,6 +23,8 @@ interface VoiceState {
   localCam: MediaStream | null;
   localScreen: MediaStream | null;
   micAvailable: boolean;
+  /** The browser hasn't let the call's sound start yet (mobile: until the first tap). */
+  audioBlocked: boolean;
 }
 
 export const useVoice = create<VoiceState>()(() => ({
@@ -40,4 +42,5 @@ export const useVoice = create<VoiceState>()(() => ({
   localCam: null,
   localScreen: null,
   micAvailable: true,
+  audioBlocked: false,
 }));

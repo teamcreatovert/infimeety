@@ -1,8 +1,17 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-/** True inside the desktop app; false in a plain browser (future web build). */
+/** True inside the desktop app; false in a plain browser (the web app). */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+export const isWindows = /Windows/.test(ua);
+/** A Mac (iPads also report "Macintosh", so check for touch). */
+export const isMac = /Macintosh/.test(ua) && !(typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+/** Phones and tablets: no screen sharing, touch instead of hover, and a smaller screen. */
+export const isMobile = /Android|iPhone|iPad|iPod|Mobile/.test(ua) || (/Macintosh/.test(ua) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+/** Whether this browser can share its screen at all (phones can't). */
+export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices && !isMobile;
 
 export async function openExternal(url: string) {
   if (isTauri) {
