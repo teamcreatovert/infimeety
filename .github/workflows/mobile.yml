@@ -121,7 +121,9 @@ jobs:
           retention-days: 14
 
   ios:
-    if: ${{ inputs.ios != false }}
+    # On a push or a manual run `inputs.ios` is missing, and a missing value equals false in
+    # these expressions; its JSON text is 'null' then, so only an explicit `ios: false` skips.
+    if: ${{ toJSON(inputs.ios) != 'false' }}
     runs-on: macos-latest
     timeout-minutes: 60
     concurrency:
@@ -157,6 +159,8 @@ jobs:
           npx tauri ios init --ci
           npx tauri icon src-tauri/icons/mobile/icons.json
 
+      # --no-sign: signing needs an Apple developer team, which a Simulator build doesn't. Tauri
+      # then archives without code signing and copies the .app out for the Simulator.
       - name: Build for the Simulator
         working-directory: app
-        run: npx tauri ios build --target aarch64-sim --ci
+        run: npx tauri ios build --target aarch64-sim --no-sign --ci
