@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
+import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserRound, Video, VideoOff, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
@@ -8,13 +8,12 @@ import { DiscordLogo, GoogleLogo } from '../auth/SignIn';
 import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
 import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
-import { APP_VERSION } from '@/config';
+import { APP_VERSION, PRIVACY_PAGE } from '@/config';
 import { api } from '@/lib/api';
-import { isMac, isTauri } from '@/lib/platform';
+import { isMac, isTauri, openExternal } from '@/lib/platform';
 import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
-import { OPEN_LIMIT } from '@/lib/party';
 import { useUpdater } from '@/lib/updater';
 import { listDevices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -36,10 +35,10 @@ export function SettingsModal() {
   const tab = useUI((s) => s.settingsTab);
   const close = () => useUI.getState().set({ settingsTab: null });
   return (
-    <Modal open={!!tab} onClose={close} width={960}>
+    <Modal open={!!tab} onClose={close} width={1080}>
       {/* Phones: the tabs become a scrolling row above the page. */}
-      <div className="flex h-[min(680px,calc(100dvh-48px))] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
-        <nav className="hairline-r flex w-[230px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
+      <div className="flex h-[min(800px,calc(100dvh-48px))] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
+        <nav className="hairline-r flex w-[240px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pt-2.5 compact:[scrollbar-width:none]">
           <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em] compact:hidden">Settings</div>
           {TABS.filter((t) => isTauri || (t.id !== 'desktop' && t.id !== 'updates')).map((t) => (
             <button
@@ -56,12 +55,15 @@ export function SettingsModal() {
           ))}
           <div className="mt-auto px-2.5 pb-1 text-[11px] text-fg-3 compact:hidden">Infimeety {APP_VERSION}</div>
         </nav>
-        <div className="relative min-h-0 min-w-0 flex-1 compact:static">
-          <button aria-label="Close" onClick={close} className="absolute right-3.5 top-3.5 z-10 compact:top-3 grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg">
-            <X size={14} />
-          </button>
-          <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={spring} className="scroll h-full px-7 pb-6 pt-5 compact:px-4 compact:pt-4">
-            <h2 className="mb-5 font-display text-[20px] font-bold tracking-[-0.02em]">{TABS.find((t) => t.id === tab)?.label}</h2>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* The page's title and the close button stay put; only the page below scrolls. */}
+          <header className="hairline-b flex h-[60px] shrink-0 items-center gap-3 px-8 compact:h-12 compact:px-4">
+            <h2 className="flex-1 truncate font-display text-[20px] font-bold tracking-[-0.02em] compact:text-[17px]">{TABS.find((t) => t.id === tab)?.label}</h2>
+            <button aria-label="Close" onClick={close} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg">
+              <X size={15} />
+            </button>
+          </header>
+          <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={spring} className="scroll min-h-0 flex-1 px-8 pb-8 pt-5 compact:px-4 compact:pt-4">
             {tab === 'account' && <AccountTab />}
             {tab === 'voice' && <VoiceTab />}
             {tab === 'screen' && <ScreenTab />}
@@ -131,6 +133,11 @@ function AccountForm({ me }: { me: Me }) {
           Save changes
         </Button>
       </div>
+      <p className="mt-6 text-[12px] text-fg-3">
+        <button onClick={() => void openExternal(PRIVACY_PAGE)} className="hover:text-accent hover:underline">
+          Privacy policy
+        </button>
+      </p>
     </>
   );
 }
@@ -292,12 +299,25 @@ function VoiceTab() {
         <Row label="Camera">
           <Select value={s.cameraDeviceId} options={opts(devices?.cameras)} onChange={(v) => s.set({ cameraDeviceId: v })} />
         </Row>
+        {/* A preview sized to fit the window (whole, not cut off), with its button inside. */}
         <div className="p-3.5">
-          <div className="relative grid aspect-video place-items-center overflow-hidden rounded-[12px] bg-black/40">
-            {preview ? <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} /> : <span className="text-[12px] text-fg-3">Camera preview is off</span>}
-            <Button size="sm" className="absolute bottom-2.5 right-2.5" onClick={() => void togglePreview()}>
-              {preview ? 'Stop preview' : 'Test camera'}
-            </Button>
+          <div className="relative mx-auto grid aspect-video w-full max-w-[480px] place-items-center overflow-hidden rounded-[14px] bg-black/50">
+            {preview ? (
+              <>
+                <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+                <Button size="sm" className="absolute bottom-2.5 right-2.5" onClick={() => void togglePreview()}>
+                  Stop preview
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-2.5 text-center">
+                <VideoOff size={26} className="text-white/45" />
+                <span className="text-[12.5px] text-white/60">Your camera is off</span>
+                <Button size="sm" icon={<Video size={13} />} onClick={() => void togglePreview()}>
+                  Test camera
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </Group>
@@ -332,8 +352,8 @@ function ScreenTab() {
       <Group title="Watching together">
         <div className="space-y-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-fg-2">
           <p>
-            Have the movie file? Start a <b>watch party</b> from the call (the popcorn button). Everyone copies the file straight from you and plays their own copy in perfect sync, with
-            subtitles. Above {OPEN_LIMIT} people, only you and the co-hosts you pick control playback; everyone else can ask.
+            Have the movie file? Plan a <b>watch party</b> from any chat’s <b>+</b> menu. Everyone copies the file straight from you, says they’re ready, and you start it
+            together, in perfect sync and with subtitles. You choose who can play and pause; everyone else can ask.
           </p>
           <p>Or share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Chat and everyone’s faces sit in a panel beside it, or switch to Mini or Full screen.</p>
           <p className="text-fg-3">

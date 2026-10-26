@@ -17,13 +17,14 @@ import { useVoice } from '@/stores/voice';
 export function Shell() {
   const immersive = useUI((s) => s.immersive);
   const mobileNav = useUI((s) => s.mobileNav);
+  const navCollapsed = useUI((s) => s.navCollapsed);
   const compact = useCompact();
   const loaded = useChannels((s) => s.loaded);
   const channel = useActiveChannel();
   const room = useActiveRoom();
   const space = channel?.kind === 'space' ? channel : null;
   // Phones show the channel list or what's open, never both. Both stay mounted so scroll and drafts survive.
-  const navHidden = immersive || (compact && !mobileNav);
+  const navHidden = immersive || (navCollapsed && !compact) || (compact && !mobileNav);
   const mainHidden = compact && mobileNav && !immersive;
 
   // Phones: opening a conversation or joining a call from anywhere (Friends, a link, a ringing call) shows it.

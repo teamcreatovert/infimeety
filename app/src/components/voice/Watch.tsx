@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Expand, Minimize2, MessageSquareText, PanelRight, PictureInPicture2, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
@@ -48,10 +48,12 @@ interface Props extends WatchPeople {
   media: ReactNode;
   controls?: ReactNode;
   overlay?: ReactNode;
-  /** The call's controls; `floating` when they sit over the picture (and fade with it). */
-  dock: (floating: boolean) => ReactNode;
+  /** The call's controls, hidden or not (they sit over the picture except on upright phones). */
+  dock: (hidden: boolean) => ReactNode;
   exitLabel: string;
   onExit: () => void;
+  /** Phones: the stage holds more than a picture (a watch party's lobby), so give it more room. */
+  tallStage?: boolean;
 }
 
 export function WatchStage(props: Props) {
@@ -68,19 +70,33 @@ export function WatchStage(props: Props) {
   const effective: WatchLayout = compact && landscape ? 'full' : layout;
   // Phones held upright keep the call's controls under the picture, not over it.
   const floatingDock = !compact || effective === 'full';
+  // Full screen keeps the call's controls tucked away until the pointer nears the bottom edge
+  // (or, on touch, until a tap wakes the controls).
+  const [nearBottom, setNearBottom] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const full = effective === 'full';
+  const dockHidden = full ? !(nearBottom || (touched && !idle)) : floatingDock && idle;
+  const dockSpace = !floatingDock || (full && dockHidden) ? '0px' : compact ? '72px' : '88px';
 
   const stage = (
     <div
       className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--stage)]"
-      style={{ cursor: idle ? 'none' : undefined, ['--dock-space' as string]: floatingDock ? (compact ? '72px' : '88px') : '0px' }}
+      style={{ cursor: idle && !nearBottom ? 'none' : undefined, ['--dock-space' as string]: dockSpace }}
+      onPointerMove={(e) => {
+        setTouched(e.pointerType === 'touch');
+        const r = e.currentTarget.getBoundingClientRect();
+        setNearBottom(e.pointerType !== 'touch' && r.bottom - e.clientY < 110);
+      }}
+      onPointerDown={(e) => setTouched(e.pointerType === 'touch')}
+      onPointerLeave={() => setNearBottom(false)}
     >
       {media}
       <Header {...props} effective={effective} />
       {overlay}
       {controls && <Chrome idle={idle}>{controls}</Chrome>}
       {effective === 'full' && <Talking {...props} />}
-      {effective === 'full' && <ChatBubble channel={props.channel} room={props.chatRoom} idle={idle} />}
-      {floatingDock && dock(true)}
+      {effective === 'full' && <ChatBubble channel={props.channel} room={props.chatRoom} idle={idle} lifted={!!controls && dockHidden} />}
+      {floatingDock && dock(dockHidden)}
     </div>
   );
 
@@ -88,7 +104,7 @@ export function WatchStage(props: Props) {
   const phone = !floatingDock;
   return (
     <div className={clsx('flex h-full min-h-0', phone && 'flex-col bg-[var(--bg)]')}>
-      <div className={clsx('relative flex min-w-0', phone ? 'aspect-video max-h-[46vh] w-full shrink-0' : 'min-h-0 flex-1 flex-col')}>
+      <div className={clsx('relative flex min-w-0', phone ? (props.tallStage ? 'h-[62vh] w-full shrink-0' : 'aspect-video max-h-[46vh] w-full shrink-0') : 'min-h-0 flex-1 flex-col')}>
         {stage}
         {effective === 'mini' && <Strip {...props} />}
       </div>
@@ -124,6 +140,7 @@ function Chrome({ idle, children }: { idle: boolean; children: ReactNode }) {
 function Header({ badge, title, headerExtras, layout, effective, onLayout, idle, exitLabel, onExit }: Props & { effective: WatchLayout }) {
   const compact = useCompact();
   const panel = useUI((s) => s.voiceChat);
+  const navCollapsed = useUI((s) => s.navCollapsed);
   return (
     <motion.header
       data-tauri-drag-region
@@ -132,6 +149,11 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       className="absolute inset-x-0 top-0 z-30 flex h-[56px] items-center gap-2.5 bg-gradient-to-b from-black/75 to-transparent px-4 text-white compact:h-[48px] compact:gap-2 compact:px-2.5"
       style={{ pointerEvents: idle ? 'none' : 'auto' }}
     >
+      {!compact && effective !== 'full' && (
+        <HeadButton label={navCollapsed ? 'Show channels' : 'Hide channels'} active={!navCollapsed} onClick={() => useUI.getState().set({ navCollapsed: !navCollapsed })}>
+          <PanelLeft size={16} />
+        </HeadButton>
+      )}
       {badge}
       <span data-tauri-drag-region className="min-w-0 truncate text-[13.5px] font-semibold">
         {title}
@@ -330,7 +352,8 @@ function Talking({ people, users, speakingOf }: Props) {
   );
 }
 
-function ChatBubble({ channel, room, idle }: { channel: Channel; room: Room; idle: boolean }) {
+/** `lifted`: the movie's controls are along the bottom (call bar tucked away), so sit above them. */
+function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: Room; idle: boolean; lifted: boolean }) {
   const [open, setOpen] = useState(false);
   const unread = useMessages((s) => s.unread[room.id] ?? 0);
   return (
@@ -340,7 +363,10 @@ function ChatBubble({ channel, room, idle }: { channel: Channel; room: Room; idl
         onClick={() => setOpen(!open)}
         animate={{ opacity: idle && !open && !unread ? 0 : 1 }}
         whileTap={{ scale: 0.92 }}
-        className="absolute bottom-[26px] right-5 z-30 grid h-12 w-12 place-items-center rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md hover:bg-black/75 compact:bottom-3 compact:right-3"
+        className={clsx(
+          'absolute right-5 z-30 grid h-12 w-12 place-items-center rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md transition-[bottom] duration-200 hover:bg-black/75 compact:right-3',
+          lifted ? 'bottom-[96px] compact:bottom-[84px]' : 'bottom-[26px] compact:bottom-3',
+        )}
       >
         {open ? <X size={19} /> : <MessageSquareText size={19} />}
         {!open && unread > 0 && (

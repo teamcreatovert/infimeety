@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Button, Spinner, TextField } from '../ui/primitives';
-import { API_URL, DOWNLOAD_PAGE } from '@/config';
-import { isTauri } from '@/lib/platform';
+import { API_URL, DOWNLOAD_PAGE, PRIVACY_PAGE } from '@/config';
+import { isTauri, openExternal } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
 import { softSpring, spring } from '@/lib/motion';
 import { useAuth } from '@/stores/auth';
@@ -126,7 +126,10 @@ export function SignIn() {
       </motion.div>
 
       <p className="absolute bottom-5 px-4 text-center text-[11.5px] text-fg-3 compact:hidden">
-        Your media never leaves your device. Only messages are stored.
+        Your media never leaves your device. Only messages are stored.{' '}
+        <a href={PRIVACY_PAGE} target="_blank" rel="noopener" onClick={(e) => (e.preventDefault(), void openExternal(PRIVACY_PAGE))} className="font-medium text-accent hover:underline">
+          Privacy
+        </a>
         {!isTauri && (
           <>
             {' '}

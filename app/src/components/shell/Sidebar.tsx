@@ -3,18 +3,21 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   AudioLines,
   ChevronDown,
+  Ellipsis,
   Hash,
   Headphones,
   HeadphoneOff,
   LogOut,
   Mic,
   MicOff,
+  Pencil,
   PhoneOff,
   Plus,
   ScreenShare,
   ScreenShareOff,
   Settings,
   ShieldAlert,
+  Trash2,
   UserPlus,
   Video,
   VideoOff,
@@ -23,6 +26,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
+import { ChannelIcon } from '../ui/ChannelIcon';
 import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
 import { IconButton } from '../ui/primitives';
 import { api } from '@/lib/api';
@@ -57,15 +61,25 @@ export function Sidebar({ channel }: { channel: Channel }) {
 
   return (
     <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col compact:w-auto compact:min-w-0 compact:flex-1">
-      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-2.5">
+      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-0.5 px-2.5">
         <button
           onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-fill-2"
         >
-          <span className="emoji text-[17px] leading-none">{channel.emoji}</span>
+          <span className="h-[22px] w-[22px] shrink-0 overflow-hidden rounded-[7px] text-[13px] leading-none">
+            <ChannelIcon channel={channel} />
+          </span>
           <span className="truncate font-display text-[14.5px] font-semibold tracking-[-0.015em]">{channel.name}</span>
           <ChevronDown size={14} className="ml-auto shrink-0 text-fg-3" />
         </button>
+        <IconButton label="Add people" tooltipSide="bottom" onClick={copyInvite}>
+          <UserPlus size={16} />
+        </IconButton>
+        {isAdmin && (
+          <IconButton label="Channel settings" tooltipSide="bottom" onClick={() => ui({ channelSettings: channel.id })}>
+            <Settings size={16} />
+          </IconButton>
+        )}
       </header>
 
       <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} className="w-[230px] p-1.5">
@@ -99,7 +113,7 @@ export function Sidebar({ channel }: { channel: Channel }) {
       <div className="scroll flex-1 px-2 pb-3 pt-2" style={{ scrollbarGutter: 'auto' }}>
         <Section title="Chat rooms" onAdd={isAdmin ? () => setAdding('text') : undefined}>
           {text.map((r) => (
-            <TextRoomRow key={r.id} channel={channel} room={r} />
+            <TextRoomRow key={r.id} channel={channel} room={r} canDelete={text.length > 1} />
           ))}
           {adding === 'text' && <AddRoom channelId={channel.id} kind="text" onDone={() => setAdding(null)} />}
         </Section>
@@ -164,24 +178,117 @@ function AddRoom({ channelId, kind, onDone }: { channelId: string; kind: Room['k
   );
 }
 
-function RoomButton({ active, onClick, children, onContextMenu }: { active: boolean; onClick: () => void; children: ReactNode; onContextMenu?: (e: React.MouseEvent) => void }) {
+/**
+ * A room in the list. Admins get Rename and Delete from its "⋯" button or a right-click
+ * (long-press on touch), and rename it right where it is.
+ */
+function RoomButton({
+  channel,
+  room,
+  active,
+  onClick,
+  canDelete = true,
+  children,
+}: {
+  channel: Channel;
+  room: Room;
+  active: boolean;
+  onClick: () => void;
+  canDelete?: boolean;
+  children: ReactNode;
+}) {
+  const [menu, setMenu] = useState<Anchor | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const isAdmin = channel.role !== 'member';
+  const openMenu = (e: React.MouseEvent) => {
+    if (!isAdmin) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const remove = async () => {
+    setMenu(null);
+    const what = room.kind === 'text' ? `#${room.name} and all its messages` : room.name;
+    if (!confirm(`Delete ${what}? This can’t be undone.`)) return;
+    try {
+      if (room.kind === 'voice' && useVoice.getState().roomId === room.id) voice.leave();
+      await useChannels.getState().deleteRoom(channel.id, room.id);
+    } catch {
+      toast({ kind: 'error', title: 'Couldn’t delete the room' });
+    }
+  };
+
+  if (renaming) return <RenameRoom channel={channel} room={room} onDone={() => setRenaming(false)} />;
+
   return (
-    <button
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      className={clsx('relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors compact:h-11 compact:text-[15px]', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
-    >
-      {active && <motion.span layoutId="room-selection" transition={spring} className="absolute inset-0 rounded-[8px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
-      {children}
-    </button>
+    <div className="group/room relative">
+      <button
+        onClick={onClick}
+        onContextMenu={openMenu}
+        className={clsx('relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors compact:h-11 compact:text-[15px]', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg', isAdmin && 'pr-8')}
+      >
+        {active && <motion.span layoutId="room-selection" transition={spring} className="absolute inset-0 rounded-[8px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
+        {children}
+      </button>
+      {isAdmin && (
+        <button
+          aria-label={`Options for ${room.name}`}
+          onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
+          className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-3 hover:text-fg group-hover/room:opacity-100 touch:opacity-100 compact:h-8 compact:w-8"
+        >
+          <Ellipsis size={15} />
+        </button>
+      )}
+      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} className="w-[250px] p-1.5">
+        <MenuItem icon={<Pencil size={15} />} onClick={() => (setMenu(null), setRenaming(true))}>
+          Rename
+        </MenuItem>
+        <MenuItem danger disabled={!canDelete} icon={<Trash2 size={15} />} onClick={() => void remove()}>
+          {canDelete ? 'Delete room' : 'Can’t delete the only chat room'}
+        </MenuItem>
+      </Popover>
+    </div>
   );
 }
 
-function TextRoomRow({ channel, room }: { channel: Channel; room: Room }) {
+function RenameRoom({ channel, room, onDone }: { channel: Channel; room: Room; onDone: () => void }) {
+  const [name, setName] = useState(room.name);
+  const submit = async () => {
+    const clean = name.trim();
+    onDone();
+    if (!clean || clean === room.name) return;
+    try {
+      await useChannels.getState().renameRoom(channel.id, room.id, clean);
+    } catch {
+      toast({ kind: 'error', title: 'Couldn’t rename the room' });
+    }
+  };
+  return (
+    <div className="field mx-0.5 flex h-[31px] items-center gap-2 px-2 compact:h-11">
+      {room.kind === 'text' ? <Hash size={15} className="text-fg-3" /> : <Volume2 size={15} className="text-fg-3" />}
+      <input
+        autoFocus
+        value={name}
+        maxLength={40}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => void submit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void submit();
+          if (e.key === 'Escape') onDone();
+        }}
+        className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+      />
+    </div>
+  );
+}
+
+function TextRoomRow({ channel, room, canDelete }: { channel: Channel; room: Room; canDelete: boolean }) {
   const active = useActiveRoom()?.id === room.id;
   const unread = useMessages((s) => s.unread[room.id] ?? 0);
   return (
-    <RoomButton active={active} onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())}>
+    <RoomButton channel={channel} room={room} canDelete={canDelete} active={active} onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())}>
       <Hash size={15} className="relative shrink-0 text-fg-3" />
       <span className={clsx('relative flex-1 truncate text-left', unread > 0 && !active && 'font-semibold text-fg')}>{room.name}</span>
       {unread > 0 && !active && (
@@ -209,7 +316,7 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
 
   return (
     <div>
-      <RoomButton active={active} onClick={open}>
+      <RoomButton channel={channel} room={room} active={active} onClick={open}>
         {connected ? <AudioLines size={15} className="relative shrink-0 text-success" /> : <Volume2 size={15} className="relative shrink-0 text-fg-3" />}
         <span className="relative flex-1 truncate text-left">{room.name}</span>
         {roomMuted && <MicOff size={12} className="relative text-danger" />}

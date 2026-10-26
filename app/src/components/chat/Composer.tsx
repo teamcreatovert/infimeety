@@ -1,10 +1,10 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Reply, Smile, X } from 'lucide-react';
+import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Popcorn, Reply, Smile, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { Attachment, Channel, Room } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
-import { MenuItem, Popover, type Anchor } from '../ui/overlay';
+import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
 import { IconButton } from '../ui/primitives';
 import { EmojiPicker } from './EmojiPicker';
 import { formatBytes } from '@/lib/format';
@@ -168,6 +168,8 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   }, []);
 
   const [attachMenu, setAttachMenu] = useState<Anchor | null>(null);
+  // A watch party needs a voice room to watch in (spaces have them; DMs and meetings have their call).
+  const canWatch = channel.rooms.some((r) => r.kind === 'voice');
   const attach = async (folder: boolean) => {
     setAttachMenu(null);
     try {
@@ -280,10 +282,10 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
 
         <div className="flex items-end gap-0.5 p-1.5">
           <IconButton
-            label="Share photos, videos, files or a folder"
+            label="Share files, a folder, or plan a watch party"
             size={34}
             className="rounded-full!"
-            onClick={(e) => (canShareFolders ? setAttachMenu(e.currentTarget.getBoundingClientRect()) : void attach(false))}
+            onClick={(e) => (canShareFolders || canWatch ? setAttachMenu(e.currentTarget.getBoundingClientRect()) : void attach(false))}
           >
             <Paperclip size={18} />
           </IconButton>
@@ -291,9 +293,22 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
             <MenuItem icon={<FileIcon size={15} />} onClick={() => void attach(false)}>
               Share files
             </MenuItem>
-            <MenuItem icon={<Folder size={15} />} onClick={() => void attach(true)}>
-              Share a folder
-            </MenuItem>
+            {canShareFolders && (
+              <MenuItem icon={<Folder size={15} />} onClick={() => void attach(true)}>
+                Share a folder
+              </MenuItem>
+            )}
+            {canWatch && (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  icon={<Popcorn size={15} />}
+                  onClick={() => (setAttachMenu(null), useUI.getState().set({ partyPlanner: { channelId: channel.id, roomId: room.kind === 'voice' ? room.id : undefined } }))}
+                >
+                  Watch party…
+                </MenuItem>
+              </>
+            )}
           </Popover>
           <textarea
             ref={ta}

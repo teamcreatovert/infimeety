@@ -13,6 +13,7 @@ import {
   Popcorn,
   RotateCcw,
   RotateCw,
+  Settings2,
   Shield,
   SkipBack,
   Subtitles,
@@ -41,13 +42,18 @@ import {
   describe,
   dismiss,
   endParty,
+  expectedPosition,
   formatTime,
+  isHost,
+  joinIn,
   OPEN_LIMIT,
   prepare,
   removeSubtitles,
   roomPeople,
   serverNow,
   setCohost,
+  setReady,
+  startNow,
   pickOwnCopy,
   useParty,
   type PartyRequest,
@@ -58,6 +64,8 @@ import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { useSettings } from '@/stores/settings';
+import { useUI } from '@/stores/ui';
+import { useVoice } from '@/stores/voice';
 
 /**
  * The watch party's screen: getting a copy of the movie, the synced player, its controls,
@@ -101,15 +109,57 @@ function useControls(roomId: string) {
   return !!party && canControl(roomId, me);
 }
 
-// ─── Media: the movie, or getting a copy of it ────────────────────────────────
+// ─── Media: the lobby, joining in, or the movie ────────────────────────────────
 
+/** The party's picture: the movie once it's on and you're watching along, the lobby otherwise. */
 export function PartyMedia({ roomId, party, chromeHidden }: { roomId: string; party: PartyState; chromeHidden: boolean }) {
   const copy = useParty((s) => s.copies[party.file.id]);
+  const joined = useParty((s) => !!s.joined[party.id]);
   useEffect(() => {
     void prepare(roomId);
   }, [roomId, party.file.id]);
-  if (copy?.state === 'ready' && copy.url) return <PartyPlayer key={copy.url} roomId={roomId} url={copy.url} subtitleId={party.subtitle?.id} chromeHidden={chromeHidden} />;
-  return <PartySetup roomId={roomId} party={party} checking={!copy || copy.state === 'checking'} />;
+  if (party.phase === 'live' && joined && copy?.state === 'ready' && copy.url)
+    return (
+      <>
+        <PartyPlayer key={copy.url} roomId={roomId} url={copy.url} subtitleId={party.subtitle?.id} chromeHidden={chromeHidden} />
+        <Countdown party={party} />
+      </>
+    );
+  return <PartyLobby roomId={roomId} party={party} checking={!copy || copy.state === 'checking'} />;
+}
+
+/** Is this device watching the movie along (so it shows the player and its controls)? */
+export const useWatchingAlong = (party: PartyState | undefined) =>
+  useParty((s) => !!party && party.phase === 'live' && !!s.joined[party.id] && s.copies[party.file.id]?.state === 'ready');
+
+/** 3, 2, 1… while a start is scheduled (the start and every play are a moment ahead). */
+function Countdown({ party }: { party: PartyState }) {
+  const [left, setLeft] = useState(0);
+  useEffect(() => {
+    if (!party.playing) return setLeft(0);
+    const tick = () => setLeft(Math.max(0, party.at - serverNow()));
+    tick();
+    const t = setInterval(tick, 100);
+    return () => clearInterval(t);
+  }, [party.playing, party.at]);
+  // Ordinary plays are scheduled ~0.4 s ahead; only a real start counts down.
+  if (left < 700) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-black/35">
+      <AnimatePresence mode="popLayout">
+        <motion.span
+          key={Math.ceil(left / 1000)}
+          initial={{ opacity: 0, scale: 1.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.6 }}
+          transition={spring}
+          className="font-display text-[clamp(64px,14vw,160px)] font-bold text-white [text-shadow:0_6px_30px_rgba(0,0,0,0.6)]"
+        >
+          {Math.ceil(left / 1000)}
+        </motion.span>
+      </AnimatePresence>
+    </div>
+  );
 }
 
 function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string; url: string; subtitleId?: string; chromeHidden: boolean }) {
@@ -290,121 +340,251 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
   );
 }
 
-function PartySetup({ roomId, party, checking }: { roomId: string; party: PartyState; checking: boolean }) {
+/**
+ * Before the movie: get your copy, then say you're ready. The host starts it (ready or not)
+ * and whoever wasn't ready, or arrives later, joins in where everyone is.
+ */
+function PartyLobby({ roomId, party, checking }: { roomId: string; party: PartyState; checking: boolean }) {
   const me = useMe();
-  const entry = useMedia((s) => s.items[party.file.id]);
-  const host = useChannels((s) => s.users[party.file.ownerId]);
-  const saveFolder = useSettings((s) => s.saveFolder ?? s.saveFolderName);
-  const mine = party.file.ownerId === me;
-  const status = entry?.status ?? 'idle';
-  const busy = status === 'requesting' || status === 'loading' || status === 'waiting' || status === 'saving';
-  const failed = status === 'error' || status === 'offline' || status === 'gone';
-  const progress = entry?.progress ?? 0;
+  const control = useControls(roomId);
+  const host = useChannels((s) => s.users[party.hostId]);
+  const owner = useChannels((s) => s.users[party.file.ownerId]);
+  const hasCopy = useParty((s) => s.copies[party.file.id]?.state === 'ready');
+  const people = useRoomPeople(roomId);
+  const ready = party.ready.includes(me ?? '');
+  const live = party.phase === 'live';
+  const notReady = people.filter((u) => !party.ready.includes(u));
+  const [confirming, setConfirming] = useState(false);
+  const hosting = isHost(party, me);
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    if (!live) return;
+    const t = setInterval(() => rerender((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [live]);
+
+  const start = () => {
+    if (notReady.length && !confirming) return setConfirming(true);
+    setConfirming(false);
+    startNow(roomId);
+  };
 
   return (
-    <div className="absolute inset-0 grid place-items-center overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(120,90,255,0.18),transparent_60%)] p-6 pt-[64px] text-white compact:p-4 compact:pt-[52px]">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex w-full max-w-[440px] flex-col items-center text-center">
-        <div className="grid h-16 w-16 place-items-center rounded-[20px] bg-white/10 compact:h-12 compact:w-12 compact:rounded-[16px]">
-          <Popcorn size={30} className="compact:hidden" />
-          <Popcorn size={22} className="hidden compact:block" />
-        </div>
-        <h2 className="mt-3 max-w-full truncate font-display text-[19px] font-bold tracking-[-0.02em] compact:mt-2 compact:text-[16px]">{party.file.name}</h2>
+    <div className="absolute inset-0 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(120,90,255,0.2),transparent_60%)] px-6 pb-[calc(var(--dock-space)+24px)] pt-[72px] text-white compact:px-4 compact:pt-[56px]">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="mx-auto flex w-full max-w-[460px] flex-col items-center text-center">
+        <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-white/70">
+          {live ? 'The movie is on' : 'Watch party lobby'}
+        </span>
+        <h2 className="mt-3 max-w-full truncate font-display text-[20px] font-bold tracking-[-0.02em] compact:text-[17px]">{party.file.name}</h2>
         <p className="mt-0.5 text-[12.5px] text-white/60">
-          {formatBytes(party.file.size)} · {mine ? 'You’re sharing this movie' : `From ${host?.name ?? 'the host'}`}
+          {formatBytes(party.file.size)} · hosted by {party.hostId === me ? 'you' : (host?.name ?? 'someone')}
           {party.subtitle ? ' · with subtitles' : ''}
         </p>
 
-        {checking ? (
-          <div className="mt-5 flex items-center gap-2 text-[13px] text-white/70">
-            <Spinner size={15} /> Getting ready…
-          </div>
-        ) : mine ? (
-          <>
-            <p className="mt-4 text-[13px] leading-snug text-white/75">Your movie file isn’t on this device anymore. Find it again so everyone can copy and watch it.</p>
-            <Button variant="primary" className="mt-4" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
-              Find the movie file…
-            </Button>
-          </>
-        ) : busy ? (
-          <div className="mt-5 w-full">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
-              <motion.div className="h-full rounded-full bg-accent" animate={{ width: `${Math.max(2, progress * 100)}%` }} transition={{ duration: 0.3 }} />
+        {/* Your copy of the movie */}
+        <div className="mt-5 w-full rounded-[18px] bg-white/[0.07] p-4 text-left">
+          {checking ? (
+            <div className="flex items-center gap-2 text-[13px] text-white/70">
+              <Spinner size={15} /> Looking for the movie on this device…
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-white/65">
-              <span className="truncate">
-                {status === 'requesting'
-                  ? `Connecting to ${host?.name ?? 'the host'}…`
-                  : status === 'waiting'
-                    ? `${host?.name ?? 'The host'} is sending to others; you’re next…`
-                    : status === 'saving'
-                      ? 'Finishing…'
-                      : `${Math.round(progress * 100)}% of ${formatBytes(party.file.size)}${pace(entry?.speed, party.file.size * (1 - progress))}`}
+          ) : hasCopy ? (
+            <div className="flex items-center gap-2.5 text-[13px]">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-success">
+                <Check size={14} strokeWidth={3} />
               </span>
-              <button onClick={() => cancelCopy(party.file.id)} className="shrink-0 font-medium text-white/80 hover:text-white">
-                Cancel
+              <span className="flex-1">You have the movie</span>
+              <button onClick={() => void pickOwnCopy(roomId)} className="text-[12px] text-white/55 hover:text-white">
+                Use another copy…
               </button>
             </div>
-            {entry?.where && <p className="mt-1 truncate text-left text-[11.5px] text-white/45">Saving to {entry.where}</p>}
+          ) : (
+            <CopyMovie roomId={roomId} party={party} owner={owner?.name} mine={party.file.ownerId === me} />
+          )}
+        </div>
+
+        {live ? (
+          // Arrived late, or wasn't ready when it started: join in where everyone is.
+          <div className="mt-5 flex flex-col items-center">
+            <p className="text-[13px] text-white/75">
+              Everyone is at <b className="tabular-nums text-white">{formatTime(expectedPosition(party))}</b>
+              {party.playing ? '' : ' (paused)'}
+            </p>
+            <Button variant="primary" size="lg" className="mt-3" icon={<Play size={16} fill="currentColor" />} disabled={!hasCopy} onClick={() => joinIn(party)}>
+              {hasCopy ? `Join them at ${formatTime(expectedPosition(party))}` : 'Get the movie to join in'}
+            </Button>
           </div>
         ) : (
           <>
-            {failed && (
-              <p className="mt-4 text-[12.5px] text-[#ff9b9b]">
-                {status === 'offline' ? `${host?.name ?? 'The host'} isn’t reachable right now.` : (entry?.problem ?? 'The copy didn’t finish.')}
+            <Button
+              variant={ready ? 'secondary' : 'primary'}
+              size="lg"
+              className={clsx('mt-5 min-w-[220px]', ready && '!bg-success !text-white')}
+              icon={ready ? <Check size={17} strokeWidth={3} /> : undefined}
+              disabled={!hasCopy && !ready}
+              onClick={() => setReady(roomId, !ready)}
+            >
+              {ready ? 'Ready (tap to undo)' : hasCopy ? 'I’m ready' : 'Get the movie first'}
+            </Button>
+
+            <div className="mt-5 w-full">
+              <div className="mb-2 text-left text-[11.5px] font-semibold uppercase tracking-[0.05em] text-white/50">
+                {party.ready.filter((u) => people.includes(u)).length} of {people.length} ready
+              </div>
+              <div className="flex flex-col gap-1">
+                {people.map((u) => (
+                  <PersonStatus key={u} roomId={roomId} party={party} userId={u} />
+                ))}
+              </div>
+            </div>
+
+            {control ? (
+              <div className="mt-5 flex w-full flex-col items-center gap-2">
+                {confirming && (
+                  <p className="text-[12.5px] text-white/75">
+                    {notReady.length === 1 ? `${nameOf(notReady[0])} isn’t` : `${notReady.length} people aren’t`} ready yet. They can join in later, where everyone is.
+                  </p>
+                )}
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="primary" size="lg" icon={<Play size={16} fill="currentColor" />} onClick={start}>
+                    {notReady.length === 0 ? 'Start the movie' : confirming ? 'Start anyway' : `Start (${people.length - notReady.length}/${people.length} ready)`}
+                  </Button>
+                  {confirming && (
+                    <Button variant="secondary" size="lg" className="!bg-white/10 !text-white" onClick={() => setConfirming(false)}>
+                      Wait for them
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-5 text-[12.5px] text-white/60">
+                {party.settings.autoStart ? 'It starts by itself once everyone’s ready.' : `Waiting for ${host?.name ?? 'the host'} to start it.`}
               </p>
             )}
-            <p className="mt-4 text-[13px] leading-snug text-white/75">
-              Everyone plays their own copy, so it looks perfect and stays in sync. Copy it straight from {host?.name ?? 'the host'}’s computer.
-            </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <Button variant="primary" icon={<Film size={15} />} onClick={() => void copyMovie(roomId)}>
-                {failed ? 'Try again' : `Copy the movie`}
-              </Button>
-              <Button variant="secondary" className="!bg-white/10 !text-white" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
-                I already have it
-              </Button>
-            </div>
-            {saveFolder && <p className="mt-2.5 text-[11.5px] text-white/45">Saves to {saveFolder}</p>}
+            {control && party.settings.autoStart && <p className="mt-2 text-[11.5px] text-white/45">Or it starts by itself once everyone’s ready.</p>}
           </>
         )}
 
-        {!isTauri && !checking && (
+        {hosting && (
+          <div className="mt-5 flex gap-4 text-[12px]">
+            <button onClick={() => openSettings(roomId)} className="flex items-center gap-1.5 text-white/60 hover:text-white">
+              <Settings2 size={13} /> Settings
+            </button>
+            <button onClick={() => endParty(roomId)} className="flex items-center gap-1.5 text-white/60 hover:text-[#ff9b9b]">
+              <X size={13} /> End the party
+            </button>
+          </div>
+        )}
+        {!isTauri && !checking && !hasCopy && (
           <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 text-[11.5px] text-white/50 hover:text-accent">
             Watch parties copy faster and play more formats in the Infimeety app →
           </a>
         )}
-        <Readiness roomId={roomId} />
       </motion.div>
     </div>
   );
 }
 
-/** Who has the movie yet. */
-function Readiness({ roomId }: { roomId: string }) {
-  const statuses = useParty((s) => s.statuses[roomId]);
-  const users = useChannels((s) => s.users);
-  const people = Object.values(statuses ?? {});
-  if (!people.length) return null;
-  const ready = people.filter((s) => s.state === 'ready').length;
-  return (
-    <div className="mt-5 flex flex-col items-center gap-2">
-      <div className="flex -space-x-1.5">
-        {people.slice(0, 8).map((s) => (
-          <span key={s.userId} className="relative rounded-full shadow-[0_0_0_2px_#000]">
-            <Avatar user={users[s.userId]} size={26} />
-            {s.state === 'ready' && (
-              <span className="absolute -bottom-0.5 -right-0.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-success text-white">
-                <Check size={9} strokeWidth={3} />
-              </span>
-            )}
-          </span>
-        ))}
+/** Copying the movie from the host (or pointing at a copy you already have). */
+function CopyMovie({ roomId, party, owner, mine }: { roomId: string; party: PartyState; owner?: string; mine: boolean }) {
+  const entry = useMedia((s) => s.items[party.file.id]);
+  const saveFolder = useSettings((s) => s.saveFolder ?? s.saveFolderName);
+  const status = entry?.status ?? 'idle';
+  const busy = status === 'requesting' || status === 'loading' || status === 'waiting' || status === 'saving';
+  const failed = status === 'error' || status === 'offline' || status === 'gone';
+  const progress = entry?.progress ?? 0;
+  const from = owner ?? 'the host';
+
+  if (mine)
+    return (
+      <div className="flex flex-col gap-2.5 text-[13px] text-white/75">
+        <span>Your movie file isn’t on this device anymore. Find it so everyone can copy it.</span>
+        <Button variant="primary" className="self-start" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
+          Find the movie file…
+        </Button>
       </div>
-      <span className="text-[11.5px] text-white/55">
-        {ready} of {people.length} ready
-      </span>
+    );
+  if (busy)
+    return (
+      <div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+          <motion.div className="h-full rounded-full bg-accent" animate={{ width: `${Math.max(2, progress * 100)}%` }} transition={{ duration: 0.3 }} />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-white/65">
+          <span className="truncate">
+            {status === 'requesting'
+              ? `Connecting to ${from}…`
+              : status === 'waiting'
+                ? `${from} is sending to others; you’re next…`
+                : status === 'saving'
+                  ? 'Finishing…'
+                  : `Copying · ${Math.round(progress * 100)}%${pace(entry?.speed, party.file.size * (1 - progress))}`}
+          </span>
+          <button onClick={() => cancelCopy(party.file.id)} className="shrink-0 font-medium text-white/80 hover:text-white">
+            Cancel
+          </button>
+        </div>
+        {entry?.where && <p className="mt-1 truncate text-[11.5px] text-white/45">Saving to {entry.where}</p>}
+      </div>
+    );
+  return (
+    <div className="flex flex-col gap-2.5">
+      {failed && <p className="text-[12.5px] text-[#ff9b9b]">{status === 'offline' ? `${from} isn’t reachable right now.` : (entry?.problem ?? 'The copy didn’t finish.')}</p>}
+      <p className="text-[13px] leading-snug text-white/75">Everyone plays their own copy, so it looks perfect and stays in sync. Copy it straight from {from}’s computer.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" icon={<Film size={15} />} onClick={() => void copyMovie(roomId)}>
+          {failed ? 'Try again' : 'Copy the movie'}
+        </Button>
+        <Button variant="secondary" className="!bg-white/10 !text-white" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
+          I already have it
+        </Button>
+      </div>
+      {saveFolder && <p className="text-[11.5px] text-white/45">Saves to {saveFolder}</p>}
     </div>
   );
+}
+
+/** The people in the room, by user, longest-present first. */
+function useRoomPeople(roomId: string) {
+  const channelId = useVoice((s) => s.channelId);
+  const participants = useChannels((s) => (channelId ? s.voice[channelId]?.participants : undefined));
+  return [...new Set((participants ?? []).filter((p) => p.roomId === roomId).sort((a, b) => a.joinedAt - b.joinedAt).map((p) => p.userId))];
+}
+
+/** One person in the lobby list. */
+function PersonStatus({ roomId, party, userId }: { roomId: string; party: PartyState; userId: string }) {
+  const user = useChannels((s) => s.users[userId]);
+  const me = useMe();
+  const copy = useParty((s) => Object.values(s.statuses[roomId] ?? {}).find((x) => x.userId === userId));
+  const ready = party.ready.includes(userId);
+  return (
+    <div className="flex items-center gap-2.5 rounded-[12px] bg-white/[0.05] px-2.5 py-2 text-left">
+      <Avatar user={user} size={28} />
+      <span className="min-w-0 flex-1 truncate text-[13px]">
+        {user?.name ?? 'Someone'}
+        {userId === me && <span className="text-white/45"> (you)</span>}
+        {party.hostId === userId && <Crown size={12} className="ml-1.5 inline text-[#f5b83d]" />}
+      </span>
+      {ready ? (
+        <span className="flex items-center gap-1 rounded-full bg-success/90 px-2 py-0.5 text-[11.5px] font-semibold">
+          <Check size={11} strokeWidth={3} /> Ready
+        </span>
+      ) : copy?.state === 'ready' ? (
+        <span className="text-[11.5px] text-white/60">Has the movie</span>
+      ) : copy?.state === 'copying' ? (
+        <span className="text-[11.5px] tabular-nums text-white/60">Copying {Math.round((copy.progress ?? 0) * 100)}%</span>
+      ) : copy?.state === 'failed' ? (
+        <span className="text-[11.5px] text-[#ff9b9b]">Copy failed</span>
+      ) : (
+        <span className="text-[11.5px] text-white/40">No copy yet</span>
+      )}
+    </div>
+  );
+}
+
+/** The host's settings for this party (the planner, for this room). */
+function openSettings(roomId: string) {
+  const channelId = useVoice.getState().channelId;
+  if (channelId) useUI.getState().set({ partyPlanner: { channelId, roomId, edit: true } });
 }
 
 // ─── Controls ────────────────────────────────────────────────────────────────
@@ -416,6 +596,7 @@ const typing = (e: KeyboardEvent) => {
 
 export function PartyControls({ roomId, party }: { roomId: string; party: PartyState }) {
   const control = useControls(roomId);
+  const me = useMe();
   const time = usePlayer((s) => s.time);
   const duration = usePlayer((s) => s.duration);
   const volume = usePlayer((s) => s.volume);
@@ -470,7 +651,7 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const asks = control ? '' : ' (asks the host)';
 
   return (
-    <div className="absolute inset-x-0 bottom-[var(--dock-space)] z-20 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-5 pb-3 pt-10 text-white compact:px-3 compact:pb-2 compact:pt-8">
+    <div className="absolute inset-x-0 bottom-[var(--dock-space)] z-20 bg-gradient-to-t transition-[bottom] duration-200 from-black/80 via-black/45 to-transparent px-5 pb-3 pt-10 text-white compact:px-3 compact:pb-2 compact:pt-8">
       <SeekBar position={position} duration={length} onSeek={seek} />
       <div className="mt-1.5 flex items-center gap-1 compact:gap-0.5">
         <Control label={`Start over${asks}`} onClick={() => seek(0)} className="compact:hidden">
@@ -527,6 +708,11 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
         <MenuItem icon={<FolderOpen size={15} />} onClick={() => (setMenu(null), void pickOwnCopy(roomId))}>
           Play a different copy of this movie…
         </MenuItem>
+        {isHost(party, me) && (
+          <MenuItem icon={<Settings2 size={15} />} onClick={() => (setMenu(null), openSettings(roomId))}>
+            Watch party settings…
+          </MenuItem>
+        )}
         {control && (
           <>
             <MenuSeparator />
@@ -677,6 +863,10 @@ export function PartyPersonExtra({ roomId, party, p }: { roomId: string; party: 
   const host = party.hostId === p.userId;
   const cohost = party.cohosts.includes(p.userId);
   const big = roomPeople(roomId).length > OPEN_LIMIT;
+  const control = party.settings?.control ?? 'auto';
+  const cohostHint =
+    control === 'everyone' ? 'Everyone controls playback in this party.' : control === 'auto' && !big ? `Co-hosts matter once more than ${OPEN_LIMIT} people are here.` : undefined;
+  const isReady = party.ready.includes(p.userId);
   return (
     <>
       {host && (
@@ -689,14 +879,18 @@ export function PartyPersonExtra({ roomId, party, p }: { roomId: string; party: 
           <Shield size={11} /> Co-host
         </span>
       )}
-      {status?.state === 'ready' && <span className="text-success">Ready</span>}
+      {party.phase === 'lobby' && isReady ? (
+        <span className="font-medium text-success">Ready</span>
+      ) : (
+        status?.state === 'ready' && <span className={party.phase === 'live' ? 'text-success' : undefined}>Has the movie</span>
+      )}
       {status?.state === 'copying' && <span>Copying {Math.round((status.progress ?? 0) * 100)}%</span>}
       {status?.state === 'choosing' && <span>No copy yet</span>}
       {status?.state === 'failed' && <span className="text-danger">Copy failed</span>}
       {party.hostId === me && p.userId !== me && (
         <button
           onClick={() => setCohost(roomId, p.userId, !cohost)}
-          title={big ? undefined : `Co-hosts matter once more than ${OPEN_LIMIT} people are here; until then everyone controls playback.`}
+          title={cohostHint}
           className="ml-auto shrink-0 rounded-full bg-fill-2 px-2 py-0.5 text-[11px] font-medium text-fg-2 hover:bg-fill-3 hover:text-fg"
         >
           {cohost ? 'Remove co-host' : 'Make co-host'}
@@ -716,16 +910,15 @@ export function PartyBadge() {
 
 /** Header: who's hosting, and how many have the movie. */
 export function PartyHeaderInfo({ roomId, party }: { roomId: string; party: PartyState }) {
-  const statuses = useParty((s) => s.statuses[roomId]);
   const host = useChannels((s) => s.users[party.hostId]);
-  const people = Object.values(statuses ?? {});
-  const ready = people.filter((s) => s.state === 'ready').length;
+  const people = useRoomPeople(roomId);
+  const ready = party.ready.filter((u) => people.includes(u)).length;
   return (
     <span className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px] text-white/65 sm:flex">
       <Crown size={12} className="text-[#f5b83d]" /> {host?.name ?? nameOf(party.hostId)}
-      {people.length > 1 && (
+      {party.phase === 'lobby' && (
         <>
-          <span className="text-white/35">·</span> {ready}/{people.length} ready
+          <span className="text-white/35">·</span> lobby, {ready}/{people.length} ready
         </>
       )}
     </span>

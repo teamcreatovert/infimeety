@@ -32,13 +32,13 @@ import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
-import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests } from './Party';
+import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { WatchStage, type WatchLayout } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
-import { startParty, useParty } from '@/lib/party';
+import { useParty } from '@/lib/party';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -257,6 +257,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
   const watchingParty = !!party && partyView && !focused;
   const watching = !!focused || watchingParty;
+  // The movie (and its controls) once it's on and this device watches along; the lobby before.
+  const watchingAlong = useWatchingAlong(party);
 
   // When a friend is sharing (e.g. a movie) — or starts to — jump straight into watch mode.
   const sharers = participants.filter((p) => p.screen && p.peerId !== myPeer).map((p) => p.peerId);
@@ -280,9 +282,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
   useEffect(() => {
     if (!watching && useUI.getState().immersive) void setImmersive(false);
-    // Watching opens the side panel (chat and people) next to the picture.
-    if (watching && !isCompactNow()) useUI.getState().set({ voiceChat: true });
+    // Watching opens the side panel (chat and people) next to the picture and folds the
+    // channel list away; a button in the header brings it back.
+    if (watching && !isCompactNow()) useUI.getState().set({ voiceChat: true, navCollapsed: true });
+    if (!watching) useUI.getState().set({ navCollapsed: false });
   }, [watching]);
+  useEffect(() => () => useUI.getState().set({ navCollapsed: false }), []);
 
   // Cinema behaviour: controls fade out after a moment of stillness.
   const [idle, setIdle] = useState(false);
@@ -311,8 +316,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     };
   }, []);
 
-  // A paused movie keeps its controls up.
-  const hideChrome = watching && idle && !(watchingParty && !party.playing);
+  // A paused movie (or the lobby) keeps its controls up.
+  const hideChrome = watching && idle && !(watchingParty && (!party.playing || !watchingAlong));
   const audioBlocked = useVoice((s) => s.audioBlocked);
   const soundPrompt = (
     <AnimatePresence>
@@ -369,14 +374,15 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               <PartyMedia roomId={room.id} party={party!} chromeHidden={hideChrome} />
             )
           }
-          controls={watchingParty ? <PartyControls roomId={room.id} party={party} /> : undefined}
+          controls={watchingParty && watchingAlong ? <PartyControls roomId={room.id} party={party} /> : undefined}
           overlay={
             <>
               {soundPrompt}
               {watchingParty && <PartyRequests roomId={room.id} />}
             </>
           }
-          dock={(floating) => <Dock channel={channel} room={room} participants={participants} hidden={floating && hideChrome} myPeer={myPeer} watching />}
+          dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}
+          tallStage={watchingParty && !watchingAlong}
           exitLabel="Exit watch mode"
           onExit={exit}
           people={participants}
@@ -629,10 +635,10 @@ function Dock({
   const micOff = muted || deafened || serverMuted;
   const toggleRoomMute = () => getHub(channel.id)?.send({ t: 'voice.roomMute', roomId: room.id, muted: !roomMuted });
   const toggleWatch = () => sharer && useUI.getState().set({ focusedPeer: focusedPeer ? null : sharer.peerId });
-  // Watch party: start one, or go back to (or away from) the one running.
+  // A watch party is planned from the chat; here you only go back to (or away from) one that's on.
   const onParty = !!party && partyView && !focusedPeer;
-  const partyLabel = !party ? 'Start a watch party' : onParty ? 'Back to the call' : 'Back to the watch party';
-  const togglePartyView = () => (party ? useUI.getState().set(onParty ? { partyView: false } : { partyView: true, focusedPeer: null }) : void startParty(room.id));
+  const partyLabel = onParty ? 'Back to the call' : 'Back to the watch party';
+  const togglePartyView = () => useUI.getState().set(onParty ? { partyView: false } : { partyView: true, focusedPeer: null });
 
   if (compact)
     return (
@@ -680,9 +686,11 @@ function Dock({
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
             </MenuItem>
           )}
-          <MenuItem icon={<Popcorn size={15} />} onClick={() => (setMoreMenu(null), togglePartyView())}>
-            {partyLabel}
-          </MenuItem>
+          {party && (
+            <MenuItem icon={<Popcorn size={15} />} onClick={() => (setMoreMenu(null), togglePartyView())}>
+              {partyLabel}
+            </MenuItem>
+          )}
           {isAdmin && (
             <>
               <MenuSeparator />
@@ -730,12 +738,14 @@ function Dock({
           <Clapperboard size={19} />
         </DockButton>
       )}
-      <DockButton label={partyLabel} state={onParty ? 'on' : 'normal'} onClick={togglePartyView}>
-        <span className="relative">
-          <Popcorn size={19} />
-          {party && !onParty && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
-        </span>
-      </DockButton>
+      {party && (
+        <DockButton label={partyLabel} state={onParty ? 'on' : 'normal'} onClick={togglePartyView}>
+          <span className="relative">
+            <Popcorn size={19} />
+            {!onParty && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
+          </span>
+        </DockButton>
+      )}
       {!watching && (
         <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
           <MessageSquareText size={19} />

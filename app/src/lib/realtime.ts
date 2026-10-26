@@ -76,7 +76,7 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     case 'welcome':
       channels.set({ online: { ...channels.online, [cid]: msg.online }, voice: { ...channels.voice, [cid]: msg.voice } });
       voice.onWelcome(hub);
-      onParties(msg.parties);
+      onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;

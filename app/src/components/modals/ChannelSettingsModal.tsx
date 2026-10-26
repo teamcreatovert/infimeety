@@ -1,11 +1,12 @@
 import { motion } from 'motion/react';
-import { Copy, Crown, RefreshCw, ShieldCheck, Trash2, UserMinus, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Camera, Copy, Crown, ImageMinus, ImageUp, RefreshCw, ShieldCheck, Smile, Trash2, UserMinus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import type { Member, Role } from '../../../../shared/protocol';
+import { prepareAvatar } from '../auth/AvatarEditor';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { Avatar } from '../ui/Avatar';
-import { Modal, Popover, type Anchor } from '../ui/overlay';
-import { Button, Group, Row, Select, TextField } from '../ui/primitives';
+import { MenuItem, Modal, Popover, type Anchor } from '../ui/overlay';
+import { Button, Group, Row, Select, Spinner, TextField } from '../ui/primitives';
 import { api } from '@/lib/api';
 import { CHANNEL_COLORS, channelGradient } from '@/lib/format';
 import { spring } from '@/lib/motion';
@@ -27,6 +28,9 @@ export function ChannelSettingsModal() {
   const [emoji, setEmoji] = useState('');
   const [color, setColor] = useState('blue');
   const [picker, setPicker] = useState<Anchor | null>(null);
+  const [tileMenu, setTileMenu] = useState<Anchor | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (channel) {
@@ -43,6 +47,18 @@ export function ChannelSettingsModal() {
   const save = async () => {
     await useChannels.getState().update(channel.id, { name: name.trim(), emoji, color });
     toast({ kind: 'success', title: 'Channel updated' });
+  };
+
+  const setPicture = async (file: File | null) => {
+    setUploading(true);
+    try {
+      await useChannels.getState().setIcon(channel.id, file ? await prepareAvatar(file) : null);
+      toast({ kind: 'success', title: file ? 'Channel picture updated' : 'Picture removed' });
+    } catch (err) {
+      toast({ kind: 'error', title: 'Couldn’t change the picture', body: err instanceof Error ? err.message : undefined });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const resetInvite = async () => {
@@ -83,14 +99,33 @@ export function ChannelSettingsModal() {
         <Group title="Overview">
           <div className="flex items-center gap-4 p-3.5">
             <motion.button
+              aria-label="Change the channel’s picture or emoji"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={(e) => setPicker(e.currentTarget.getBoundingClientRect())}
-              className="emoji grid h-16 w-16 shrink-0 place-items-center rounded-[20px] text-[32px]"
+              onClick={(e) => setTileMenu(e.currentTarget.getBoundingClientRect())}
+              className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-[20px] text-[32px]"
               style={{ background: channelGradient(color) }}
             >
-              {emoji}
+              {channel.iconUrl ? (
+                <img src={channel.iconUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="emoji grid h-full w-full place-items-center">{emoji}</span>
+              )}
+              <span className="absolute inset-0 grid place-items-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {uploading ? <Spinner size={18} /> : <Camera size={18} />}
+              </span>
             </motion.button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void setPicture(file);
+              }}
+            />
             <div className="min-w-0 flex-1">
               <TextField className="h-9!" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
               <div className="mt-2.5 flex gap-2">
@@ -169,6 +204,19 @@ export function ChannelSettingsModal() {
           </Group>
         )}
       </div>
+      <Popover open={!!tileMenu} anchor={tileMenu} onClose={() => setTileMenu(null)} side="bottom" align="start" className="w-[220px] p-1.5">
+        <MenuItem icon={<ImageUp size={15} />} onClick={() => (setTileMenu(null), fileInput.current?.click())}>
+          {channel.iconUrl ? 'Change picture…' : 'Upload a picture…'}
+        </MenuItem>
+        {channel.iconUrl && (
+          <MenuItem icon={<ImageMinus size={15} />} onClick={() => (setTileMenu(null), void setPicture(null))}>
+            Remove picture (use the emoji)
+          </MenuItem>
+        )}
+        <MenuItem icon={<Smile size={15} />} onClick={() => (setPicker(tileMenu), setTileMenu(null))}>
+          Choose an emoji
+        </MenuItem>
+      </Popover>
       <Popover open={!!picker} anchor={picker} onClose={() => setPicker(null)} side="right" align="center">
         <EmojiPicker
           onPick={(e) => {

@@ -520,6 +520,8 @@ app.patch('/channels/:id', auth, requireRole('admin'), async (c) => {
 
 app.delete('/channels/:id', auth, requireRole('owner'), async (c) => {
   const id = c.req.param('id');
+  const icon = await c.env.DB.prepare('SELECT icon_key FROM channels WHERE id = ?').bind(id).first<{ icon_key: string | null }>().catch(() => null);
+  if (icon?.icon_key) await c.env.AVATARS.delete(icon.icon_key);
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM messages WHERE room_id IN (SELECT id FROM rooms WHERE channel_id = ?)').bind(id),
     c.env.DB.prepare('DELETE FROM rooms WHERE channel_id = ?').bind(id),
@@ -528,6 +530,34 @@ app.delete('/channels/:id', auth, requireRole('owner'), async (c) => {
   ]);
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.removed' }));
   return c.json({ ok: true });
+});
+
+/** A channel picture (shown instead of the emoji), stored like avatars. */
+app.put('/channels/:id/icon', limit('avatar', 10), auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const type = c.req.header('Content-Type') ?? '';
+  if (!AVATAR_TYPES.test(type)) return c.json({ error: 'unsupported_type' }, 415);
+  if (Number(c.req.header('Content-Length') ?? 0) > 4 * 1024 * 1024) return c.json({ error: 'too_large' }, 413);
+  const data = await c.req.arrayBuffer();
+  if (data.byteLength > 4 * 1024 * 1024) return c.json({ error: 'too_large' }, 413);
+  const old = await c.env.DB.prepare('SELECT icon_key FROM channels WHERE id = ?').bind(id).first<{ icon_key: string | null }>();
+  const key = `ch-${id}.${randomToken(6)}`;
+  await c.env.AVATARS.put(key, data, { metadata: { type } });
+  await c.env.DB.prepare('UPDATE channels SET icon_key = ?, icon_url = ? WHERE id = ?').bind(key, `${c.env.PUBLIC_URL}/avatars/${key}`, id).run();
+  if (old?.icon_key) await c.env.AVATARS.delete(old.icon_key);
+  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  const [channel] = await loadChannels(c.env, c.get('user').id, id);
+  return c.json(channel);
+});
+
+app.delete('/channels/:id/icon', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const old = await c.env.DB.prepare('SELECT icon_key FROM channels WHERE id = ?').bind(id).first<{ icon_key: string | null }>();
+  await c.env.DB.prepare('UPDATE channels SET icon_key = NULL, icon_url = NULL WHERE id = ?').bind(id).run();
+  if (old?.icon_key) await c.env.AVATARS.delete(old.icon_key);
+  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  const [channel] = await loadChannels(c.env, c.get('user').id, id);
+  return c.json(channel);
 });
 
 app.post('/channels/:id/invite/reset', auth, requireRole('admin'), async (c) => {
@@ -606,7 +636,11 @@ app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) =
   const { name } = await c.req.json<{ name?: string }>();
   const clean = (name ?? '').trim().slice(0, 40);
   if (!clean) return c.json({ error: 'name_required' }, 400);
-  await c.env.DB.prepare('UPDATE rooms SET name = ? WHERE id = ? AND channel_id = ?').bind(clean, c.req.param('roomId'), id).run();
+  const room = await c.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(c.req.param('roomId'), id).first<{ kind: string }>();
+  if (!room) return c.json({ error: 'not_found' }, 404);
+  // Chat rooms are written like "#movie-night", as when they're created.
+  const final = room.kind === 'text' ? clean.toLowerCase().replace(/\s+/g, '-') : clean;
+  await c.env.DB.prepare('UPDATE rooms SET name = ? WHERE id = ? AND channel_id = ?').bind(final, c.req.param('roomId'), id).run();
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   return c.json({ ok: true });
 });

@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
+import { PartyBanner } from '../voice/PartyBanner';
 import { Hash, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { Channel, PublicUser, Room } from '../../../../shared/protocol';
@@ -54,6 +55,7 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
             </IconButton>
           </header>
         )}
+        {!compact && <PartyBanner channel={channel} />}
         <MessageList channel={channel} room={room} onReply={setReplyTo} compact={compact} dmPeer={dmPeer} />
         <TypingIndicator roomId={room.id} />
         <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
