@@ -15,7 +15,6 @@ interface Stored {
   blob: Blob;
 }
 
-const SHAREABLE = /^(image|video|audio)\//;
 const live = new Map<string, SharedFile & { blob: Blob }>();
 let db: Promise<IDBDatabase | null> | null = null;
 
@@ -55,12 +54,12 @@ function remember(s: Stored) {
 
 const toShared = ({ blob: _blob, ...file }: SharedFile & { blob: Blob }): SharedFile => file;
 
-/** Registers files picked, pasted or dropped in the browser. Anything but media is skipped. */
+/** Registers files picked, pasted or dropped in the browser. Folders (which drop as empty files) are skipped. */
 export async function adopt(files: File[]): Promise<SharedFile[]> {
   const out: SharedFile[] = [];
   for (const f of files) {
-    if (!SHAREABLE.test(f.type)) continue;
-    const stored: Stored = { id: randomId(12), name: f.name || 'file', mime: f.type, size: f.size, blob: f };
+    if (!f.size && !f.type) continue;
+    const stored: Stored = { id: randomId(12), name: f.name || 'file', mime: f.type || 'application/octet-stream', size: f.size, blob: f };
     await tx('readwrite', (s) => s.put(stored)); // if storage is full, it's shared for this visit only
     out.push(toShared(remember(stored)));
   }
@@ -74,7 +73,6 @@ export const webMedia = {
       const input = document.createElement('input');
       input.type = 'file';
       input.multiple = true;
-      input.accept = 'image/*,video/*,audio/*';
       input.onchange = () => void adopt(Array.from(input.files ?? [])).then(resolve);
       input.oncancel = () => resolve([]);
       input.click();

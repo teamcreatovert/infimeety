@@ -6,6 +6,8 @@ export interface MediaEntry {
   status: MediaStatus;
   progress: number;
   url?: string;
+  /** A file received from someone, kept so it can be saved. */
+  blob?: Blob;
   /** Owner's own file, served straight from disk. */
   local?: boolean;
 }

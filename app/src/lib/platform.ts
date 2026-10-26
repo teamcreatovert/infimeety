@@ -23,6 +23,23 @@ export async function openExternal(url: string) {
   }
 }
 
+/** Saves a file received in chat: the system's Save dialog in the desktop app, a download in a browser. */
+export async function saveFile(name: string, blob: Blob) {
+  if (isTauri) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    return !!(await invoke<string | null>('media_save_as', bytes, { headers: { 'x-file-name': encodeURIComponent(name) } }));
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return true;
+}
+
 export const appWindow = {
   minimize: () => isTauri && getCurrentWindow().minimize(),
   toggleMaximize: () => isTauri && getCurrentWindow().toggleMaximize(),

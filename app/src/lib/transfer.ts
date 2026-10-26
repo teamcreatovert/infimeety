@@ -8,7 +8,7 @@ import { Peer, type Signal } from './voice/peer';
 import { useMedia } from '@/stores/media';
 
 /**
- * Peer-to-peer media: chat attachments are streamed straight from the sender's disk
+ * Peer-to-peer files: chat attachments are streamed straight from the sender's disk
  * over a WebRTC data channel. Viewers keep them in memory only, so deleting the file
  * on the sender's PC removes it for everyone.
  */
@@ -117,9 +117,9 @@ function receive(reqId: string, dc: RTCDataChannel) {
       const msg = JSON.parse(e.data) as { done?: boolean; error?: string };
       if (msg.done) {
         clearTimeout(req.timer);
-        const url = URL.createObjectURL(new Blob(req.chunks, { type: req.att.mime }));
+        const blob = new Blob(req.chunks, { type: req.att.mime });
         incoming.delete(reqId);
-        media.setEntry(req.att.id, { status: 'ready', url, progress: 1 });
+        media.setEntry(req.att.id, { status: 'ready', url: URL.createObjectURL(blob), blob, progress: 1 });
         setTimeout(() => req.peer?.close(), 500);
       } else if (msg.error) {
         fail(reqId, msg.error === 'gone' ? 'gone' : 'error');

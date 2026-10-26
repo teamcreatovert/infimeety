@@ -45,6 +45,7 @@ pub fn run() {
             media::media_pick,
             media::media_take_dropped,
             media::media_save_bytes,
+            media::media_save_as,
             media::media_read,
             media::media_stat,
             media::media_missing,

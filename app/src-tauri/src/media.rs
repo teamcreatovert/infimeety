@@ -1,7 +1,7 @@
 //! Local media sharing.
 //!
-//! Images, GIFs and videos posted in chat never leave this PC except when a friend
-//! streams them peer-to-peer. This registry remembers which files the user chose to
+//! Files posted in chat (images, GIFs, videos, documents, anything) never leave this PC
+//! except when a friend streams them peer-to-peer. This registry remembers which files the user chose to
 //! share (picked, dropped or pasted). The webview can only read files by registry id,
 //! so a compromised page can't name arbitrary paths on disk.
 
@@ -22,9 +22,12 @@ use tauri_plugin_dialog::DialogExt;
 
 const MAX_FILE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_CHUNK: u64 = 4 * 1024 * 1024;
-const EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "mp4", "webm", "mov", "m4v", "mkv", "mp3", "wav", "ogg", "m4a",
-];
+
+/// Only media the chat shows inline is opened to the webview's asset protocol; other files
+/// are only ever read in chunks for streaming.
+fn previewable(mime: &str) -> bool {
+    mime.starts_with("image/") || mime.starts_with("video/") || mime.starts_with("audio/")
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +59,7 @@ impl Registry {
 
         // Let the app preview its own files through the asset protocol (supports video seeking).
         let scope = app.asset_protocol_scope();
-        for file in files.values() {
+        for file in files.values().filter(|f| previewable(&f.mime)) {
             let _ = scope.allow_file(&file.path);
         }
         Ok(Self { files: Mutex::new(files), dropped: Mutex::new(Vec::new()), store, pasted_dir })
@@ -81,9 +84,6 @@ impl Registry {
                 continue;
             }
             let mime = mime_guess::from_path(&path).first_or_octet_stream().essence_str().to_string();
-            if !(mime.starts_with("image/") || mime.starts_with("video/") || mime.starts_with("audio/")) {
-                continue;
-            }
             let file = SharedFile {
                 id: uuid::Uuid::new_v4().simple().to_string(),
                 name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into()),
@@ -91,7 +91,9 @@ impl Registry {
                 mime,
                 size: meta.len(),
             };
-            let _ = app.asset_protocol_scope().allow_file(&path);
+            if previewable(&file.mime) {
+                let _ = app.asset_protocol_scope().allow_file(&path);
+            }
             files.insert(file.id.clone(), file.clone());
             added.push(file);
         }
@@ -109,7 +111,7 @@ impl Registry {
 /// Opens the native file picker and shares the chosen files.
 #[tauri::command]
 pub async fn media_pick(app: AppHandle, registry: State<'_, Registry>) -> Result<Vec<SharedFile>, String> {
-    let picked = app.dialog().file().add_filter("Images, GIFs & videos", EXTENSIONS).blocking_pick_files();
+    let picked = app.dialog().file().blocking_pick_files();
     let paths = picked.unwrap_or_default().into_iter().filter_map(|p| p.into_path().ok()).collect();
     Ok(registry.register(&app, paths))
 }
@@ -137,6 +139,46 @@ pub async fn media_save_bytes(
     let path = registry.pasted_dir.join(format!("{stamp}-{}", if safe.is_empty() { "pasted.png" } else { &safe }));
     fs::write(&path, bytes).map_err(|e| e.to_string())?;
     registry.register(&app, vec![path]).into_iter().next().ok_or_else(|| "unsupported file type".into())
+}
+
+/// Saves a file received in chat wherever the user picks. Returns where, or nothing if cancelled.
+#[tauri::command]
+pub async fn media_save_as(app: AppHandle, request: Request<'_>) -> Result<Option<String>, String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw bytes".into());
+    };
+    let name = request
+        .headers()
+        .get("x-file-name")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| percent_decode(v))
+        .unwrap_or_else(|| "file".into());
+    // The name comes from whoever sent the file: keep it a plain file name.
+    let safe: String = name.chars().filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()).take(120).collect();
+    let Some(target) = app.dialog().file().set_file_name(if safe.trim().is_empty() { "file" } else { safe.trim() }).blocking_save_file() else {
+        return Ok(None);
+    };
+    let path = target.into_path().map_err(|e| e.to_string())?;
+    fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Undoes JavaScript's encodeURIComponent (header values are ASCII-only).
+fn percent_decode(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// Reads a chunk of a shared file as raw bytes (for peer-to-peer streaming).

@@ -125,7 +125,8 @@ export function sanitizeAttachments(input: unknown, ownerId: string): Attachment
     if (!a || typeof a !== 'object') continue;
     const { id, name, mime, size, width, height } = a as Record<string, unknown>;
     if (typeof id !== 'string' || id.length > 64 || !/^[\w-]+$/.test(id)) continue;
-    if (typeof mime !== 'string' || !/^(image|video|audio)\/[\w.+-]{1,40}$/.test(mime)) continue;
+    // Any kind of file; the type only decides how the chat shows it.
+    if (typeof mime !== 'string' || !/^[\w.+-]{1,40}\/[\w.+-]{1,100}$/.test(mime)) continue;
     if (typeof size !== 'number' || size < 0 || size > 4 * 1024 ** 3) continue;
     out.push({
       id,
