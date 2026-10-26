@@ -17,6 +17,7 @@ import { renderRich } from '@/lib/richtext';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import type { LocalMessage } from '@/stores/messages';
+import { openProfile, openUserMenu } from '@/stores/ui';
 
 interface Props {
   msg: LocalMessage;
@@ -66,7 +67,14 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         {grouped ? (
           <span className="block pt-[3px] text-right text-[10.5px] tabular-nums text-fg-3 opacity-0 group-hover:opacity-100">{formatTime(msg.createdAt)}</span>
         ) : (
-          <Avatar user={author} size={36} />
+          <button
+            aria-label={`${author?.name ?? 'Someone'}'s profile`}
+            onClick={(e) => openProfile(e, msg.userId)}
+            onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member' })}
+            className="block rounded-full transition-transform active:scale-95"
+          >
+            <Avatar user={author} size={36} />
+          </button>
         )}
       </div>
 
@@ -81,7 +89,13 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         )}
         {!grouped && (
           <div className="flex items-baseline gap-2">
-            <span className="text-[13.5px] font-semibold tracking-[-0.01em]">{author?.name ?? 'Someone'}</span>
+            <button
+              onClick={(e) => openProfile(e, msg.userId)}
+              onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member' })}
+              className="text-[13.5px] font-semibold tracking-[-0.01em] hover:underline"
+            >
+              {author?.name ?? 'Someone'}
+            </button>
             <Tooltip label={formatFull(msg.createdAt)}>
               <span className="text-[11px] tabular-nums text-fg-3">{formatTime(msg.createdAt)}</span>
             </Tooltip>

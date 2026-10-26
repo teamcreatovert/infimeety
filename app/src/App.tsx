@@ -13,7 +13,8 @@ import { TitleBar } from './components/shell/TitleBar';
 import { Toasts } from './components/ui/Toasts';
 import { Spinner } from './components/ui/primitives';
 import { UpdatePrompt } from './components/UpdatePrompt';
-import { ParticipantMenu } from './components/voice/ParticipantMenu';
+import { ProfileCard } from './components/people/ProfileCard';
+import { UserMenu } from './components/people/UserMenu';
 import { IncomingCall } from './components/home/IncomingCall';
 import { startDeepLinks } from './lib/deeplink';
 import { startDesktop } from './lib/desktop';
@@ -136,7 +137,8 @@ export default function App() {
           </AnimatePresence>
         </div>
         <Toasts />
-        <ParticipantMenu />
+        <UserMenu />
+        <ProfileCard />
         <SettingsModal />
         <CreateChannelModal />
         <ChannelSettingsModal />

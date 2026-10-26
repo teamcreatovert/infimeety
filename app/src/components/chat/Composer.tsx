@@ -16,7 +16,7 @@ import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { useMessages, type LocalMessage } from '@/stores/messages';
-import { toast } from '@/stores/ui';
+import { toast, useUI } from '@/stores/ui';
 
 interface Staged {
   file: SharedFile;
@@ -26,6 +26,8 @@ interface Staged {
 }
 
 const drafts = new Map<string, string>();
+/** Shared across message boxes so one insert lands once, even if two boxes are mounted. */
+let lastInsert = 0;
 
 async function measure(file: SharedFile, src: string): Promise<{ width?: number; height?: number }> {
   try {
@@ -61,6 +63,16 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const [dragging, setDragging] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
+
+  // "Mention" from a person's menu types @username here.
+  const insert = useUI((s) => s.composerInsert);
+  useEffect(() => {
+    if (!insert || insert.at <= lastInsert) return;
+    lastInsert = insert.at;
+    setText((t) => `${t}${t && !/\s$/.test(t) ? ' ' : ''}${insert.text} `);
+    ta.current?.focus();
+    useUI.getState().set({ composerInsert: null });
+  }, [insert]);
 
   useEffect(() => {
     drafts.set(room.id, text);

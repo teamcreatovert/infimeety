@@ -9,6 +9,9 @@ export interface Toast {
 
 export type SettingsTab = 'account' | 'voice' | 'screen' | 'appearance' | 'sounds' | 'desktop' | 'updates';
 
+/** Where someone was right-clicked; decides which actions their menu offers. */
+export type UserMenuContext = { kind: 'voice'; channelId: string; peerId: string } | { kind: 'dm'; channelId: string } | { kind: 'member' };
+
 export interface Bubble {
   x: number;
   y: number;
@@ -35,7 +38,10 @@ interface UIState {
   immersive: boolean;
   bubbles: Record<string, Bubble>;
   bubblesHidden: boolean;
-  participantMenu: { channelId: string; peerId: string; userId: string; x: number; y: number } | null;
+  userMenu: { userId: string; x: number; y: number; context: UserMenuContext } | null;
+  profileCard: { userId: string; x: number; y: number; focusNote?: boolean } | null;
+  /** Text for the visible message box to insert, e.g. an @mention picked from a menu. */
+  composerInsert: { text: string; at: number } | null;
   toasts: Toast[];
 
   set: (patch: Partial<UIState>) => void;
@@ -59,7 +65,9 @@ export const useUI = create<UIState>()((set) => ({
   immersive: false,
   bubbles: {},
   bubblesHidden: false,
-  participantMenu: null,
+  userMenu: null,
+  profileCard: null,
+  composerInsert: null,
   toasts: [],
 
   set: (patch) => set(patch),
@@ -74,3 +82,15 @@ export const useUI = create<UIState>()((set) => ({
 }));
 
 export const toast = (t: Omit<Toast, 'id'>) => useUI.getState().toast(t);
+
+/** Right-click on a person anywhere: avatar rows, voice tiles, DMs, chat. */
+export function openUserMenu(e: React.MouseEvent, userId: string | undefined, context: UserMenuContext) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (userId) useUI.getState().set({ userMenu: { userId, x: e.clientX, y: e.clientY, context }, profileCard: null });
+}
+
+export function openProfile(e: React.MouseEvent, userId: string | undefined) {
+  e.stopPropagation();
+  if (userId) useUI.getState().set({ profileCard: { userId, x: e.clientX, y: e.clientY }, userMenu: null });
+}

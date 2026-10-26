@@ -155,6 +155,12 @@ export class ChannelHub extends DurableObject<Env> {
         this.send(target, { t: 'voice.kicked' });
         return this.broadcastVoice();
       }
+      case 'voice.move': {
+        const target = this.byPeer(msg.peerId);
+        if (!target || !this.canModerate(me, this.peer(target)) || !this.peer(target).voice) return;
+        if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
+      }
 
       case 'rtc': {
         const target = this.byPeer(msg.to);

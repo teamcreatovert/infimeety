@@ -66,11 +66,26 @@ export interface SettingsState {
   overlayShow: 'speaking' | 'everyone';
   overlayCorner: OverlayCorner;
 
+  /** Only on this device, never sent anywhere: DM list order and visibility, muted chats, notes. */
+  pinnedDms: string[];
+  closedDms: Record<string, true>;
+  mutedChats: Record<string, true>;
+  notes: Record<string, string>;
+
   set: (patch: Partial<SettingsState>) => void;
   setUserVolume: (userId: string, volume: number) => void;
   setStreamVolume: (userId: string, volume: number) => void;
   toggleLocalMute: (userId: string) => void;
+  toggleDmPin: (channelId: string) => void;
+  setDmClosed: (channelId: string, closed: boolean) => void;
+  toggleChatMute: (channelId: string) => void;
+  setNote: (userId: string, note: string) => void;
 }
+
+const without = <T,>(record: Record<string, T>, key: string) => {
+  const { [key]: _, ...rest } = record;
+  return rest;
+};
 
 export const useSettings = create<SettingsState>()(
   persist(
@@ -107,11 +122,24 @@ export const useSettings = create<SettingsState>()(
       overlayShow: 'speaking',
       overlayCorner: 'top-left',
 
+      pinnedDms: [],
+      closedDms: {},
+      mutedChats: {},
+      notes: {},
+
       set: (patch) => set(patch),
       setUserVolume: (userId, volume) => set((s) => ({ userVolumes: { ...s.userVolumes, [userId]: volume } })),
       setStreamVolume: (userId, volume) => set((s) => ({ streamVolumes: { ...s.streamVolumes, [userId]: volume } })),
       toggleLocalMute: (userId) => set((s) => ({ localMutes: { ...s.localMutes, [userId]: !s.localMutes[userId] } })),
+      toggleDmPin: (id) => set((s) => ({ pinnedDms: s.pinnedDms.includes(id) ? s.pinnedDms.filter((x) => x !== id) : [...s.pinnedDms, id] })),
+      setDmClosed: (id, closed) => set((s) => (closed ? { closedDms: { ...s.closedDms, [id]: true } } : s.closedDms[id] ? { closedDms: without(s.closedDms, id) } : s)),
+      toggleChatMute: (id) => set((s) => ({ mutedChats: s.mutedChats[id] ? without(s.mutedChats, id) : { ...s.mutedChats, [id]: true } })),
+      setNote: (userId, note) => set((s) => ({ notes: note.trim() ? { ...s.notes, [userId]: note } : without(s.notes, userId) })),
     }),
-    { name: 'infimeety.settings', partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, toggleLocalMute: _c, ...rest }) => rest },
+    {
+      name: 'infimeety.settings',
+      // Functions don't survive JSON anyway; listing them keeps the stored shape obvious.
+      partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, toggleLocalMute: _c, toggleDmPin: _d, setDmClosed: _e, toggleChatMute: _f, setNote: _g, ...rest }) => rest,
+    },
   ),
 );

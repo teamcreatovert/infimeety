@@ -31,7 +31,7 @@ import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useActiveRoom, useChannels } from '@/stores/channels';
 import { useMessages } from '@/stores/messages';
-import { toast, useUI } from '@/stores/ui';
+import { openUserMenu, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 export function Sidebar({ channel }: { channel: Channel }) {
@@ -197,7 +197,6 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   const users = useChannels((s) => s.users);
   const myRoom = useVoice((s) => s.roomId);
   const speaking = useVoice((s) => s.speaking);
-  const me = useAuth((s) => s.me);
   const participants = (snapshot?.participants ?? []).filter((p) => p.roomId === room.id).sort((a, b) => a.joinedAt - b.joinedAt);
   const roomMuted = snapshot?.mutedRooms.includes(room.id);
   const connected = myRoom === room.id;
@@ -224,11 +223,7 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
             animate={{ opacity: 1, height: 28 }}
             exit={{ opacity: 0, height: 0 }}
             transition={spring}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              if (p.userId !== me?.id)
-                useUI.getState().set({ participantMenu: { channelId: channel.id, peerId: p.peerId, userId: p.userId, x: e.clientX, y: e.clientY } });
-            }}
+            onContextMenu={(e) => openUserMenu(e, p.userId, { kind: 'voice', channelId: channel.id, peerId: p.peerId })}
             className="ml-6 flex items-center gap-2 overflow-hidden rounded-[7px] px-1.5 hover:bg-fill-1"
           >
             <Avatar user={users[p.userId]} size={20} speaking={p.peerId === voice.peerId ? speaking.self : speaking[p.peerId]} />

@@ -37,6 +37,25 @@ window.addEventListener('online', () => hubs.forEach((h) => h.nudge()));
 // Open sockets can't be hot-swapped; reload the page in dev instead of duplicating them.
 import.meta.hot?.accept(() => location.reload());
 
+/** Sends a plain text message as if typed in the room's message box. */
+export function sendChat(channelId: string, roomId: string, content: string) {
+  const me = useAuth.getState().me;
+  const hub = getHub(channelId);
+  if (!me || !hub) return false;
+  const nonce = useMessages.getState().addPending(roomId, me.id, content, [], null);
+  hub.send({ t: 'chat.send', roomId, content, attachments: [], replyTo: null, nonce });
+  return true;
+}
+
+/** Switches the call to another voice room; the view follows if you were looking at the old one. */
+export async function moveVoice(channelId: string, roomId: string) {
+  const { roomId: from } = useVoice.getState();
+  const channels = useChannels.getState();
+  const viewingOld = channels.activeChannelId === channelId && channels.activeRoom[channelId] === from;
+  await voice.join(channelId, roomId);
+  if (viewingOld) channels.selectRoom(channelId, roomId);
+}
+
 function onStatus(hub: HubClient, status: HubStatus) {
   useChannels.setState((s) => ({ hubStatus: { ...s.hubStatus, [hub.channelId]: status } }));
 }
@@ -65,14 +84,23 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     case 'voice.kicked':
       if (useVoice.getState().channelId === cid) voice.leave({ kicked: true });
       return;
+    case 'voice.moved': {
+      if (useVoice.getState().channelId !== cid) return;
+      const room = channels.channels.find((c) => c.id === cid)?.rooms.find((r) => r.id === msg.roomId);
+      void moveVoice(cid, msg.roomId);
+      toast({ kind: 'info', title: `An admin moved you to ${room?.name ?? 'another room'}` });
+      return;
+    }
 
     case 'chat.new': {
       useMessages.getState().receive(msg.message, msg.nonce);
       const mine = msg.message.userId === useAuth.getState().me?.id;
       if (mine) return;
+      const settings = useSettings.getState();
+      settings.setDmClosed(cid, false); // a closed DM comes back when they write again
       if (!isViewing(msg.message.roomId)) {
         useMessages.getState().bumpUnread(msg.message.roomId);
-        if (useSettings.getState().messageSounds) sounds.message();
+        if (settings.messageSounds && !settings.mutedChats[cid]) sounds.message();
       }
       return;
     }

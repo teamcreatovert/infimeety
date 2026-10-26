@@ -161,6 +161,8 @@ export type ClientMsg =
   | { t: 'voice.serverMute'; peerId: string; muted: boolean }
   | { t: 'voice.roomMute'; roomId: string; muted: boolean }
   | { t: 'voice.disconnect'; peerId: string }
+  /** Admin: move someone to another voice room in this channel. */
+  | { t: 'voice.move'; peerId: string; roomId: string }
   | { t: 'rtc'; to: string; data: RtcPayload }
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string }
   | { t: 'media.revoked'; attachmentIds: string[] }
@@ -171,6 +173,8 @@ export type ServerMsg =
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
   | { t: 'voice.kicked' }
+  /** An admin moved you; your client rejoins voice in `roomId`. */
+  | { t: 'voice.moved'; roomId: string }
   | { t: 'chat.new'; message: Message; nonce?: string }
   | { t: 'chat.edited'; id: string; roomId: string; content: string; editedAt: number }
   | { t: 'chat.deleted'; id: string; roomId: string }

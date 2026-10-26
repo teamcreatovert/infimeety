@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AudioLines, Users } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { AudioLines, BellOff, Pin, Users } from 'lucide-react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { UserBar, VoicePanel } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
@@ -9,13 +9,26 @@ import { spring } from '@/lib/motion';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMessages } from '@/stores/messages';
+import { useSettings } from '@/stores/settings';
+import { openUserMenu } from '@/stores/ui';
 
 /** Home: Friends plus the list of direct messages. */
 export function HomeSidebar() {
   const active = useChannels((s) => s.activeChannelId);
   const channels = useChannels((s) => s.channels);
   const incoming = useFriends((s) => s.friends.filter((f) => f.status === 'incoming').length);
-  const dms = useMemo(() => channels.filter((c) => c.kind === 'dm'), [channels]);
+  const pinned = useSettings((s) => s.pinnedDms);
+  const closed = useSettings((s) => s.closedDms);
+  // Pinned first; closed conversations stay hidden until they're opened or written to again.
+  const dms = useMemo(() => {
+    const list = channels.filter((c) => c.kind === 'dm' && (!closed[c.id] || c.id === active));
+    return [...list.filter((c) => pinned.includes(c.id)), ...list.filter((c) => !pinned.includes(c.id))];
+  }, [channels, pinned, closed, active]);
+
+  // Opening a closed conversation (e.g. from Friends) brings it back for good.
+  useEffect(() => {
+    if (active && closed[active]) useSettings.getState().setDmClosed(active, false);
+  }, [active, closed]);
 
   return (
     <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col">
@@ -46,10 +59,11 @@ export function HomeSidebar() {
   );
 }
 
-function NavButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+function NavButton({ active, onClick, onContextMenu, children }: { active: boolean; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void; children: ReactNode }) {
   return (
     <button
       onClick={onClick}
+      onContextMenu={onContextMenu}
       className={clsx('relative flex h-[38px] w-full items-center gap-2.5 rounded-[9px] px-2.5 text-[13.5px] transition-colors', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg')}
     >
       {active && <motion.span layoutId="home-selection" transition={spring} className="absolute inset-0 rounded-[9px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
@@ -58,8 +72,10 @@ function NavButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-const Badge = ({ children }: { children: ReactNode }) => (
-  <span className="relative grid h-[18px] min-w-[18px] place-items-center rounded-full bg-danger px-1 text-[10.5px] font-bold text-white">{children}</span>
+const Badge = ({ children, quiet }: { children: ReactNode; quiet?: boolean }) => (
+  <span className={clsx('relative grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10.5px] font-bold', quiet ? 'bg-fill-3 text-fg-2' : 'bg-danger text-white')}>
+    {children}
+  </span>
 );
 
 function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
@@ -69,12 +85,18 @@ function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
   const callRoom = dm.rooms.find((r) => r.kind === 'voice');
   const unread = useMessages((s) => (textRoom ? (s.unread[textRoom.id] ?? 0) : 0));
   const inCall = useChannels((s) => !!s.voice[dm.id]?.participants.some((p) => p.roomId === callRoom?.id));
+  const pinned = useSettings((s) => s.pinnedDms.includes(dm.id));
+  const muted = useSettings((s) => !!s.mutedChats[dm.id]);
 
   return (
-    <NavButton active={active} onClick={() => useChannels.getState().select(dm.id)}>
+    <NavButton active={active} onClick={() => useChannels.getState().select(dm.id)} onContextMenu={(e) => openUserMenu(e, peer?.id, { kind: 'dm', channelId: dm.id })}>
       <Avatar user={peer} size={30} presence={online ? 'online' : 'offline'} className="relative" />
       <span className="relative min-w-0 flex-1 text-left">
-        <span className={clsx('block truncate text-[13px] leading-tight', unread > 0 && !active && 'font-semibold text-fg')}>{peer?.name ?? 'Direct message'}</span>
+        <span className={clsx('flex items-center gap-1 text-[13px] leading-tight', unread > 0 && !active && !muted && 'font-semibold text-fg')}>
+          <span className="truncate">{peer?.name ?? 'Direct message'}</span>
+          {pinned && <Pin size={10} className="shrink-0 rotate-45 text-fg-3" />}
+          {muted && <BellOff size={10} className="shrink-0 text-fg-3" />}
+        </span>
         {inCall ? (
           <span className="flex items-center gap-1 text-[11px] leading-tight text-success">
             <AudioLines size={11} /> In a call
@@ -83,7 +105,7 @@ function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
           <span className="block truncate text-[11px] leading-tight text-fg-3">@{peer?.username}</span>
         )}
       </span>
-      {unread > 0 && !active && <Badge>{unread}</Badge>}
+      {unread > 0 && !active && <Badge quiet={muted}>{unread}</Badge>}
     </NavButton>
   );
 }

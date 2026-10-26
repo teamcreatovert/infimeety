@@ -10,6 +10,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { spring } from '@/lib/motion';
 
@@ -134,7 +135,10 @@ export function Popover({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Element;
+      // Submenus render in their own portal (marked data-menu-layer) but belong to this popover.
+      if (ref.current?.contains(target) || target.closest?.('[data-menu-layer]')) return;
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     const t = setTimeout(() => window.addEventListener('pointerdown', onDown), 0);
@@ -198,6 +202,62 @@ export function MenuItem({
 
 export const MenuSeparator = () => <div className="mx-2 my-1 h-px bg-[var(--hairline-strong)]" />;
 
+/** A menu row that opens a side panel on hover (flips left near the screen edge). */
+export function SubMenu({ icon, label, children }: { icon?: ReactNode; label: ReactNode; children: ReactNode }) {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const show = (el: HTMLElement) => {
+    clearTimeout(timer.current);
+    setRect(el.getBoundingClientRect());
+  };
+  // A short grace period lets the pointer cross the gap between the row and the panel.
+  const hide = () => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setRect(null), 160);
+  };
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  useLayoutEffect(() => {
+    if (!rect || !panel.current) return setPos(null);
+    const w = panel.current.offsetWidth;
+    const h = panel.current.offsetHeight;
+    const left = rect.right + 6 + w > window.innerWidth - 8 ? rect.left - 6 - w : rect.right + 6;
+    const top = Math.max(8, Math.min(rect.top - 6, window.innerHeight - h - 8));
+    setPos({ left, top });
+  }, [rect]);
+
+  return (
+    <div onMouseEnter={(e) => show(e.currentTarget)} onMouseLeave={hide}>
+      <MenuItem icon={icon} trailing={<ChevronRight size={13} className="opacity-50" />}>
+        {label}
+      </MenuItem>
+      {createPortal(
+        <AnimatePresence>
+          {rect && (
+            <motion.div
+              ref={panel}
+              data-menu-layer
+              onMouseEnter={() => clearTimeout(timer.current)}
+              onMouseLeave={hide}
+              className="fixed z-[91] w-[216px] rounded-[12px] p-1.5 glass-pop"
+              style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: pos ? 1 : 0, scale: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.08 } }}
+              transition={{ duration: 0.14 }}
+            >
+              {children}
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </div>
+  );
+}
 // ─── Modal sheet ─────────────────────────────────────────────────────────────
 
 export function Modal({

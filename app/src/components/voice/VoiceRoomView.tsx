@@ -40,7 +40,7 @@ import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { SCREEN_PRESETS, useSettings, type ScreenQuality } from '@/stores/settings';
-import { useUI } from '@/stores/ui';
+import { openUserMenu, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 type Tile = { key: string; kind: 'user' | 'screen'; p: VoiceParticipant };
@@ -53,9 +53,7 @@ function useRoomParticipants(channelId: string, roomId: string) {
 }
 
 function openMenu(e: React.MouseEvent, channelId: string, p: VoiceParticipant) {
-  e.preventDefault();
-  if (p.peerId === voice.peerId) return;
-  useUI.getState().set({ participantMenu: { channelId, peerId: p.peerId, userId: p.userId, x: e.clientX, y: e.clientY } });
+  openUserMenu(e, p.userId, { kind: 'voice', channelId, peerId: p.peerId });
 }
 
 async function setImmersive(on: boolean) {
