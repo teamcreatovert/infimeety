@@ -236,7 +236,8 @@ export function callbackPage(ok: boolean, detail: string, heading?: string) {
         background:${ok ? 'linear-gradient(135deg,#34c759,#30d158)' : 'linear-gradient(135deg,#ff453a,#ff375f)'}}
   h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px}
   p{margin:0;color:rgba(245,245,247,.6);font-size:15px;line-height:1.45}
-</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></div>
+  a{display:inline-block;margin-top:22px;padding:12px 22px;border-radius:14px;background:#0a84ff;color:#fff;font-weight:600;font-size:15px;text-decoration:none}
+</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p>${ok ? '<a href="infimeety://signed-in">Back to Infimeety</a>' : ''}</div>
 <script>${WEB_RETURN_SCRIPT}</script></body></html>`;
 }
 

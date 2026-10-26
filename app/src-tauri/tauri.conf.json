@@ -59,6 +59,12 @@
   },
   "plugins": {
     "deep-link": {
+      "mobile": [
+        {
+          "scheme": ["infimeety"],
+          "appLink": false
+        }
+      ],
       "desktop": {
         "schemes": [
           "infimeety"

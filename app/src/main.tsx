@@ -4,6 +4,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { GuestApp } from './guest/GuestApp';
 import { getToken } from './lib/api';
 import { meetingInLocation } from './lib/meeting';
+import { startPhoneApp } from './lib/phone';
 import { isTauri } from './lib/platform';
 import './styles.css';
 
@@ -18,6 +19,7 @@ if (!isTauri) {
     /* private mode */
   }
 }
+startPhoneApp();
 const asGuest = !!meeting && (!getToken() || new URLSearchParams(location.search).has('guest'));
 
 // No StrictMode: its double-mounted effects would open duplicate WebSocket/WebRTC sessions in dev.

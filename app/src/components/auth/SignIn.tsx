@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Button, Spinner, TextField } from '../ui/primitives';
 import { API_URL, DOWNLOAD_PAGE, PRIVACY_PAGE } from '@/config';
-import { isTauri, openExternal } from '@/lib/platform';
+import { isApp, openExternal } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
 import { softSpring, spring } from '@/lib/motion';
 import { useAuth } from '@/stores/auth';
@@ -58,7 +58,7 @@ export function SignIn() {
           {pending ? (
             <motion.div key="pending" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring} className="mt-8 flex flex-col items-center gap-3">
               <Spinner size={24} className="text-fg-2" />
-              {isTauri ? (
+              {isApp ? (
                 <>
                   <div className="text-[14px] font-medium">Continue in your browser</div>
                   <div className="text-[12.5px] text-fg-2">Sign in with {pending === 'google' ? 'Google' : 'Discord'}, then come back here. We’ll take it from there.</div>
@@ -115,7 +115,7 @@ export function SignIn() {
         </AnimatePresence>
 
         {/* Opened from a meeting link: no account needed to join it. */}
-        {!isTauri && pendingLink?.kind === 'meet' && !pending && (
+        {!isApp && pendingLink?.kind === 'meet' && !pending && (
           <a href={`?meet=${pendingLink.code}&guest`} className="mt-5 inline-block text-[13px] font-medium text-accent hover:underline">
             Join the meeting as a guest instead
           </a>
@@ -130,7 +130,7 @@ export function SignIn() {
         <a href={PRIVACY_PAGE} target="_blank" rel="noopener" onClick={(e) => (e.preventDefault(), void openExternal(PRIVACY_PAGE))} className="font-medium text-accent hover:underline">
           Privacy
         </a>
-        {!isTauri && (
+        {!isApp && (
           <>
             {' '}
             <a href={DOWNLOAD_PAGE} className="font-medium text-accent hover:underline">

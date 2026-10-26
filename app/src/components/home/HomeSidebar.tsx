@@ -10,7 +10,7 @@ import { DOWNLOAD_PAGE } from '@/config';
 import { channelGradient } from '@/lib/format';
 import { timeLeft } from '@/lib/meeting';
 import { spring } from '@/lib/motion';
-import { isTauri } from '@/lib/platform';
+import { isApp } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMeetings } from '@/stores/meetings';
@@ -74,7 +74,7 @@ export function HomeSidebar() {
           <span className="relative flex-1 text-left">Join a meeting</span>
         </NavButton>
         {/* In a browser: the desktop app is a tap away (opens in a new tab, so a call keeps going). */}
-        {!isTauri && (
+        {!isApp && (
           <NavButton active={false} onClick={() => window.open(DOWNLOAD_PAGE, '_blank', 'noopener')}>
             <Download size={16} className="relative shrink-0 text-fg-2" />
             <span className="relative flex-1 text-left">Download the app</span>

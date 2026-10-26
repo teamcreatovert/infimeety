@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "phone",
+  "description": "Permissions for the phone app (Android and iPhone)",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:default", "deep-link:default"]
+}

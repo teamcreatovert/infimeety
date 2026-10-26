@@ -6,7 +6,7 @@ import { Button, Group, Row, Segmented, Select, Switch } from '../ui/primitives'
 import { DOWNLOAD_PAGE } from '@/config';
 import { formatBytes } from '@/lib/format';
 import { changeMovie, createParty, OPEN_LIMIT, pickMovie, pickSubtitle, saveSettings, useParty, whenInRoom } from '@/lib/party';
-import { isTauri, type SharedFile } from '@/lib/platform';
+import { isApp, type SharedFile } from '@/lib/platform';
 import { voice } from '@/lib/voice/engine';
 import { useChannels } from '@/stores/channels';
 import { toast, useUI } from '@/stores/ui';
@@ -179,7 +179,7 @@ export function PartyPlanner() {
           </Row>
         </Group>
 
-        {!isTauri && (
+        {!isApp && (
           <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 block text-[12px] text-fg-3 hover:text-accent">
             Movies copy faster and more formats play in the Infimeety app →
           </a>

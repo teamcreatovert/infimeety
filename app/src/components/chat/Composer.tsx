@@ -9,7 +9,7 @@ import { IconButton } from '../ui/primitives';
 import { EmojiPicker } from './EmojiPicker';
 import { formatBytes } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
-import { isMobile, isTauri, localMedia, type SharedFile } from '@/lib/platform';
+import { isMobile, isPhoneApp, isTauri, localMedia, type SharedFile } from '@/lib/platform';
 import { adopt, FOLDER_MIME, fromDrop } from '@/lib/webMedia';
 
 /** Phones can't pick folders. */
@@ -207,7 +207,13 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     for (const s of staged) useMedia.getState().setEntry(s.file.id, { status: 'ready', url: s.preview, local: true, progress: 1 });
     // A browser shares straight from the open tab; the app keeps sharing from disk in the background.
     if (!isTauri && staged.some((s) => s.file.mime === FOLDER_MIME || s.file.size > 64 * 1024 * 1024)) {
-      toast({ kind: 'info', title: 'Keep Infimeety open while friends copy it', body: 'Files come straight from this tab. The desktop app shares them even when it’s in the background.' });
+      toast({
+        kind: 'info',
+        title: 'Keep Infimeety open while friends copy it',
+        body: isPhoneApp
+          ? 'Files come straight from this phone, so keep the app open until they’re done.'
+          : 'Files come straight from this tab. The desktop app shares them even when it’s in the background.',
+      });
     }
     const replyId = replyTo && !replyTo.pending ? replyTo.id : null;
     const nonce = useMessages.getState().addPending(room.id, me.id, content, attachments, replyId);

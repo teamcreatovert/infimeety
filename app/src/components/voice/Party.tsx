@@ -58,7 +58,7 @@ import {
   useParty,
   type PartyRequest,
 } from '@/lib/party';
-import { isTauri } from '@/lib/platform';
+import { isApp, isPhoneApp, isTauri } from '@/lib/platform';
 import { cancelCopy } from '@/lib/transfer';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
@@ -246,7 +246,9 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
       usePlayer.setState({
         error: isTauri
           ? 'This movie’s format can’t play here. MP4 (H.264) and WebM play everywhere; some MKV files don’t.'
-          : 'This browser can’t play this movie’s format. The Infimeety app plays more formats, or try an MP4 copy.',
+          : isPhoneApp
+            ? 'This movie’s format can’t play on this phone. Try an MP4 (H.264) copy.'
+            : 'This browser can’t play this movie’s format. The Infimeety app plays more formats, or try an MP4 copy.',
       });
     video.addEventListener('loadedmetadata', tick);
     video.addEventListener('canplay', tick);
@@ -328,7 +330,7 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
           <div className="max-w-[420px] rounded-[18px] bg-black/70 p-5 text-center text-white backdrop-blur-md">
             <Film size={26} className="mx-auto opacity-70" />
             <p className="mt-2 text-[13.5px] leading-snug">{error}</p>
-            {!isTauri && (
+            {!isApp && (
               <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-3 inline-block text-[12.5px] font-semibold text-accent hover:underline">
                 Get the Infimeety app →
               </a>
@@ -474,7 +476,7 @@ function PartyLobby({ roomId, party, checking }: { roomId: string; party: PartyS
             </button>
           </div>
         )}
-        {!isTauri && !checking && !hasCopy && (
+        {!isApp && !checking && !hasCopy && (
           <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 text-[11.5px] text-white/50 hover:text-accent">
             Watch parties copy faster and play more formats in the Infimeety app →
           </a>

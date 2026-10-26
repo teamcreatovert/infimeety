@@ -1,12 +1,37 @@
+#[cfg(desktop)]
 mod desktop;
+#[cfg(desktop)]
 mod media;
+mod names;
+#[cfg(mobile)]
+mod phone;
+#[cfg(desktop)]
 mod system_audio;
+#[cfg(desktop)]
 mod tarball;
-
-use tauri::{DragDropEvent, Manager, WebviewEvent, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
+    let builder = desktop_app();
+    #[cfg(mobile)]
+    let builder = phone_app();
+    builder
+        .build(tauri::generate_context!())
+        .expect("error while building Infimeety")
+        .run(|_app, _event| {
+            // Mac: closing hides the window (the app stays in the menu bar); the Dock icon brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                desktop::show_main(_app);
+            }
+        });
+}
+
+#[cfg(desktop)]
+fn desktop_app() -> tauri::Builder<tauri::Wry> {
+    use tauri::{DragDropEvent, Manager, WebviewEvent, WindowEvent};
+
     tauri::Builder::default()
         // A second launch brings back the running window (even from the tray) instead of opening another copy.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| desktop::show_main(app)))
@@ -63,13 +88,16 @@ pub fn run() {
             desktop::overlay_open,
             desktop::overlay_close,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building Infimeety")
-        .run(|_app, _event| {
-            // Mac: closing hides the window (the app stays in the menu bar); the Dock icon brings it back.
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                desktop::show_main(_app);
-            }
-        });
+}
+
+/// Android and iPhone: the web app in a native shell, plus saving copies where the Files app finds them.
+#[cfg(mobile)]
+fn phone_app() -> tauri::Builder<tauri::Wry> {
+    tauri::Builder::default()
+        // infimeety://invite/CODE and infimeety://meet/CODE open the app.
+        .plugin(tauri_plugin_deep_link::init())
+        // Links and sign-in open in the phone's browser.
+        .plugin(tauri_plugin_opener::init())
+        .manage(phone::Saves::default())
+        .invoke_handler(tauri::generate_handler![phone::save_open, phone::save_write, phone::save_close])
 }

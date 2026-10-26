@@ -1,6 +1,6 @@
 import { findInviteCode } from './invite';
 import { meetingInLocation } from './meeting';
-import { isTauri } from './platform';
+import { isApp } from './platform';
 import { useMeetings } from '@/stores/meetings';
 import { useUI } from '@/stores/ui';
 
@@ -10,7 +10,7 @@ import { useUI } from '@/stores/ui';
  * dropped from the address bar so a refresh doesn't ask again.
  */
 export function startWebLinks() {
-  if (isTauri) return;
+  if (isApp) return;
   const params = new URLSearchParams(location.search);
   const meeting = meetingInLocation();
   const invite = params.get('invite') ? findInviteCode(`infimeety://invite/${params.get('invite')}`) : null;

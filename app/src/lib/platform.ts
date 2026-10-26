@@ -1,9 +1,13 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isPhoneApp } from './phone';
 import { webMedia } from './webMedia';
 
-/** True inside the desktop app; false in a plain browser (the web app). */
-export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export { isPhoneApp };
+/** True inside the desktop app; false in a plain browser (the web app) and in the phone app. */
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window && !isPhoneApp;
+/** Inside one of the Infimeety apps (desktop or phone) rather than a browser tab. */
+export const isApp = isTauri || isPhoneApp;
 
 const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 export const isWindows = /Windows/.test(ua);
@@ -15,7 +19,7 @@ export const isMobile = /Android|iPhone|iPad|iPod|Mobile/.test(ua) || (/Macintos
 export const canShareScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices && !isMobile;
 
 export async function openExternal(url: string) {
-  if (isTauri) {
+  if (isApp) {
     const { openUrl } = await import('@tauri-apps/plugin-opener');
     await openUrl(url);
   } else {

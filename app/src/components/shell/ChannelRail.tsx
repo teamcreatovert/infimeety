@@ -6,7 +6,7 @@ import { ChannelIcon } from '../ui/ChannelIcon';
 import { Tooltip } from '../ui/overlay';
 import { DOWNLOAD_PAGE } from '@/config';
 import { spring, snappy } from '@/lib/motion';
-import { isTauri } from '@/lib/platform';
+import { isApp } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMessages } from '@/stores/messages';
@@ -43,7 +43,7 @@ export function ChannelRail() {
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-1 pb-3.5">
-        {!isTauri && (
+        {!isApp && (
           <Tooltip label="Download the app for Windows or Mac" side="right">
             <motion.a
               aria-label="Download the app"

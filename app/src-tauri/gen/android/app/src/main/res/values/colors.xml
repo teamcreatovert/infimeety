@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's background, so launch and the system bars match it. -->
+    <color name="background">#FF0A0A0F</color>
+</resources>

@@ -5,7 +5,7 @@ import type { Attachment } from '../../../../shared/protocol';
 import { Spinner } from '../ui/primitives';
 import { formatBytes } from '@/lib/format';
 import { DOWNLOAD_PAGE } from '@/config';
-import { isTauri, localMedia } from '@/lib/platform';
+import { isApp, isTauri, localMedia } from '@/lib/platform';
 import { getHub } from '@/lib/realtime';
 import { cancelCopy, copyFile, requestMedia, resolveOwn } from '@/lib/transfer';
 import { FOLDER_MIME } from '@/lib/webMedia';
@@ -252,7 +252,7 @@ function FileView({ att, channelId }: { att: Attachment; channelId: string }) {
           <motion.div className="h-full rounded-full bg-accent" animate={{ width: `${Math.round(progress * 100)}%` }} transition={{ duration: 0.3 }} />
         </div>
       )}
-      {!isTauri && !mine && att.size >= APP_HINT_SIZE && (status === 'idle' || busy) && (
+      {!isApp && !mine && att.size >= APP_HINT_SIZE && (status === 'idle' || busy) && (
         <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="relative mt-2 block text-[11.5px] text-fg-3 hover:text-accent">
           Big copies are faster in the Infimeety app →
         </a>

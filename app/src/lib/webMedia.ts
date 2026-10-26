@@ -1,4 +1,5 @@
 import { randomId } from './api';
+import { isPhoneApp, savedPlace, saveOnPhone } from './phone';
 import type { ReceiveTarget, SharedFile } from './platform';
 import { layout, read as readTar, unpack, type TarEntry } from './tar';
 
@@ -243,6 +244,7 @@ async function placeWriter(handle: FileSystemFileHandle) {
 
 /** Saves a finished file with a regular browser download (no folder to write into). */
 export function download(file: Blob, name: string) {
+  if (isPhoneApp) return void saveOnPhone(file, name);
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
@@ -272,7 +274,7 @@ export async function receiveWeb(dir: Dir | null, name: string, mime: string, is
   const handle = root ? await root.getFileHandle(fileName, { create: true }) : null;
   const writer = handle ? await placeWriter(handle) : null;
   const pieces = writer ? null : new Map<number, Uint8Array>();
-  const where = dir ? `${dir.name}/${target}` : 'Downloads';
+  const where = dir ? `${dir.name}/${target}` : isPhoneApp ? savedPlace : 'Downloads';
 
   return {
     where,

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Me } from '../../../shared/protocol';
 import { api, ApiError, getToken, handleUnauthorized, randomId, setToken, sha256 } from '@/lib/api';
-import { isTauri, openExternal } from '@/lib/platform';
+import { isApp, isTauri, openExternal } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
 import { API_URL } from '@/config';
 import { useMeetings } from './meetings';
@@ -70,7 +70,7 @@ const session = {
 };
 
 /** Opened in the click itself, so popup blockers allow it; pointed at the provider once it's known. */
-const blankTab = () => (isTauri ? null : window.open('', '_blank'));
+const blankTab = () => (isApp ? null : window.open('', '_blank'));
 
 async function openIn(tab: Window | null, url: string) {
   if (tab && !tab.closed) tab.location.href = url;

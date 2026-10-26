@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the iPhone app's Info.plist. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Infimeety uses your microphone so friends can hear you in calls.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Infimeety uses your camera when you turn on video in a call.</string>
+  <!-- A call keeps playing when you switch apps or lock the phone. -->
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+  </array>
+  <!-- Saved copies of friends' files show up in Files › On My iPhone › Infimeety. -->
+  <key>UIFileSharingEnabled</key>
+  <true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
+  <!-- Only standard encryption (HTTPS, WebRTC), which is exempt. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+</dict>
+</plist>

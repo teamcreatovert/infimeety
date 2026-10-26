@@ -14,16 +14,19 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The desktop app only: the tray, updates, one window at a time, and files shared from disk.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 mime_guess = "2"
 tar = "0.4"
 uuid = { version = "1", features = ["v4"] }
-tauri-plugin-deep-link = "2"
 
 [profile.release]
 codegen-units = 1
