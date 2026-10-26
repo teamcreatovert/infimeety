@@ -35,5 +35,15 @@ body{min-height:100vh;display:grid;place-items:center;padding:24px 16px;backgrou
 .button:hover{filter:brightness(1.1)}.button:active{transform:scale(.985)}.code{margin:14px 0 0;font-size:12.5px;color:var(--fg3)}.code b{font-family:ui-monospace,Consolas,monospace;letter-spacing:.12em;color:var(--fg2)}
 .secondary{display:inline-block;margin-top:18px;font-size:13px;color:#0a84ff;text-decoration:none}.secondary:hover{text-decoration:underline}
 </style></head><body><div class="wall" aria-hidden="true"><span></span><span></span></div><main class="card">${body}</main></body></html>`;
-  return new Response(html, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  return new Response(html, {
+    status,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // Static markup and inline styles only: nothing else may load or run.
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+    },
+  });
 }

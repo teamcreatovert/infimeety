@@ -1,8 +1,10 @@
 import { COLORS, DOWNLOAD_URL, esc, landingPage } from '../../../src/landing';
+import { allow, clientIp } from '../../../src/limits';
 import { invitePreview, type Env } from '../../../src/util';
 
 /** https://infimeety.pages.dev/invite/CODE: preview the channel and open it in the app. */
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
+  if (!allow(`preview|${clientIp(ctx.request)}`, 200)) return new Response('Too many requests. Wait a minute and try again.', { status: 429, headers: { 'Retry-After': '60' } });
   const preview = await invitePreview(ctx.env, String(ctx.params.code ?? ''));
   const [a, b] = COLORS[preview?.color ?? 'blue'] ?? COLORS.blue;
 

@@ -167,11 +167,36 @@ export async function createSession(env: Env, userId: string): Promise<string> {
   return token;
 }
 
+/** A session nobody has used for this long is signed out. */
+const SESSION_IDLE = 90 * 24 * 3600_000;
+const DAY = 24 * 3600_000;
+
 export async function userFromToken(env: Env, token: string | null | undefined): Promise<UserRow | null> {
   if (!token || token.length > 128) return null;
-  return env.DB.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?')
-    .bind(await sha256(token))
-    .first<UserRow>();
+  const hash = await sha256(token);
+  let row: (UserRow & { session_created: number; session_seen: number | null }) | null;
+  try {
+    row = await env.DB.prepare(
+      'SELECT u.*, s.created_at AS session_created, s.last_seen_at AS session_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?',
+    )
+      .bind(hash)
+      .first();
+  } catch (err) {
+    // Deployed before `npm run db:migrate:remote` added last_seen_at: keep everyone signed in.
+    if (!/no such column/i.test(String(err))) throw err;
+    return env.DB.prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?').bind(hash).first<UserRow>();
+  }
+  if (!row) return null;
+  const { session_created, session_seen, ...user } = row;
+  const now = Date.now();
+  const seen = session_seen ?? session_created;
+  if (now - seen > SESSION_IDLE) {
+    await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(hash).run();
+    return null;
+  }
+  // Note activity about once a day (not on every request).
+  if (now - seen > DAY) await env.DB.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').bind(now, hash).run();
+  return user;
 }
 
 /**
@@ -211,7 +236,7 @@ export function callbackPage(ok: boolean, detail: string, heading?: string) {
         background:${ok ? 'linear-gradient(135deg,#34c759,#30d158)' : 'linear-gradient(135deg,#ff453a,#ff375f)'}}
   h1{font-size:22px;font-weight:600;letter-spacing:-.02em;margin:0 0 8px}
   p{margin:0;color:rgba(245,245,247,.6);font-size:15px;line-height:1.45}
-</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${title}</h1><p>${escapeHtml(body)}</p></div>
+</style></head><body><div class="card"><div class="icon">${ok ? '✓' : '!'}</div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p></div>
 <script>${WEB_RETURN_SCRIPT}</script></body></html>`;
 }
 
@@ -221,6 +246,17 @@ export function callbackPage(ok: boolean, detail: string, heading?: string) {
  * Sign-ins from the desktop app never set the mark, so they see this page as before.
  */
 const WEB_RETURN_SCRIPT = `try{var t=+localStorage.getItem('infimeety.webSignInReturn');if(t){localStorage.removeItem('infimeety.webSignInReturn');if(Date.now()-t<9e5)location.replace('/web/')}}catch(e){}`;
+
+let csp: Promise<string> | null = null;
+
+/** The sign-in pages' policy: nothing loads, and only their own little script runs. */
+export function callbackCsp() {
+  csp ??= crypto.subtle.digest('SHA-256', new TextEncoder().encode(WEB_RETURN_SCRIPT)).then((hash) => {
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+    return `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${b64}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+  });
+  return csp;
+}
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

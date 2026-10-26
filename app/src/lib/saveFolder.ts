@@ -61,9 +61,16 @@ async function grantedFolder(): Promise<FileSystemDirectoryHandle | null> {
  */
 export async function startReceive(file: { name: string; mime: string; size: number }, opts: { folder: boolean; handOver: boolean }): Promise<ReceiveTarget | null> {
   if (isTauri) {
-    const dir = useSettings.getState().saveFolder ?? (await chooseSaveFolder());
-    if (!dir) return null;
-    const t = await invoke<{ id: string; path: string }>('media_receive_open', { dir, name: file.name, size: file.size, folder: opts.folder });
+    // The app saves into the folder last picked in the system dialog; it asks if there's none yet.
+    const open = () => invoke<{ id: string; path: string }>('media_receive_open', { name: file.name, size: file.size, folder: opts.folder });
+    let t: { id: string; path: string };
+    try {
+      t = await open();
+    } catch (err) {
+      if (err !== 'no_folder') throw err;
+      if (!(await chooseSaveFolder())) return null;
+      t = await open();
+    }
     return {
       where: t.path,
       write: (offset, data) => invoke<void>('media_receive_write', data, { headers: { 'x-receive': t.id, 'x-offset': String(offset) } }),

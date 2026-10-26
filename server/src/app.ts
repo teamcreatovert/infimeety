@@ -4,6 +4,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
 import {
   authorizeUrl,
+  callbackCsp,
   callbackPage,
   createSession,
   exchangeCode,
@@ -24,6 +25,7 @@ import {
   sweepMeetings,
   waitingGuests,
 } from './meetings';
+import { allow, clientIp } from './limits';
 import { iceServers, turnStatus } from './turn';
 import {
   type Env,
@@ -66,7 +68,38 @@ const corsMw = cors({
 // WebSocket upgrade responses have immutable headers, so CORS only wraps plain HTTP routes.
 app.use('*', (c, next) => (c.req.path.endsWith('/ws') ? next() : corsMw(c, next)));
 
+/** Security headers on every plain HTTP response (the API's JSON and its few HTML pages). */
+app.use('*', async (c, next) => {
+  await next();
+  if (c.req.path.endsWith('/ws')) return;
+  const h = c.res.headers;
+  const html = h.get('Content-Type')?.startsWith('text/html');
+  const csp = h.has('Content-Security-Policy') ? null : html ? await callbackCsp() : "default-src 'none'; frame-ancestors 'none'";
+  try {
+    h.set('X-Content-Type-Options', 'nosniff');
+    h.set('Referrer-Policy', 'no-referrer');
+    h.set('X-Frame-Options', 'DENY');
+    h.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    if (csp) h.set('Content-Security-Policy', csp);
+  } catch {
+    /* a response with fixed headers (none today) keeps its own */
+  }
+});
+
+/** Too many requests from one address for this kind of request (see limits.ts). */
+const limit = (bucket: string, max: number, windowMs = 60_000) =>
+  createMiddleware<App>(async (c, next) => {
+    if (allow(`${bucket}|${clientIp(c.req.raw)}`, max, windowMs)) return next();
+    c.header('Retry-After', String(Math.ceil(windowMs / 1000)));
+    return c.json({ error: 'rate_limited' }, 429);
+  });
+
+// A ceiling for everything, far above what the app itself ever sends.
+app.use('*', limit('all', 3000));
+
 app.onError((err, c) => {
+  // A body that isn't JSON is the caller's mistake, not ours.
+  if (err instanceof SyntaxError) return c.json({ error: 'bad_request' }, 400);
   console.error(err);
   return c.json({ error: 'internal_error' }, 500);
 });
@@ -168,6 +201,7 @@ app.get('/auth/providers', (c) =>
 
 /** Step 1: the app opens this in the system browser with a challenge = sha256(verifier). */
 app.get('/auth/:provider/start', async (c) => {
+  if (!allow(`start|${clientIp(c.req.raw)}`, 60)) return c.html(callbackPage(false, 'Too many sign-in attempts. Wait a minute and try again.'), 429);
   const provider = c.req.param('provider');
   const challenge = c.req.query('challenge') ?? '';
   if (!isProvider(provider) || !providerEnabled(c.env, provider)) return c.html(callbackPage(false, 'This sign-in method is not configured.'), 400);
@@ -227,7 +261,7 @@ app.get('/auth/:provider/callback', async (c) => {
 });
 
 /** Step 3: the app polls with its verifier until the session token is ready. */
-app.post('/auth/redeem', async (c) => {
+app.post('/auth/redeem', limit('redeem', 600), async (c) => {
   const { verifier } = await c.req.json<{ verifier?: string }>();
   if (!verifier || verifier.length < 32) return c.json({ error: 'bad_request' }, 400);
   const challenge = await sha256(verifier);
@@ -244,7 +278,7 @@ app.post('/auth/redeem', async (c) => {
 });
 
 /** Start connecting another sign-in method to the current account. Returns the provider URL to open. */
-app.post('/auth/:provider/link', auth, async (c) => {
+app.post('/auth/:provider/link', limit('link', 20), auth, async (c) => {
   const provider = c.req.param('provider');
   const { challenge } = await c.req.json<{ challenge?: string }>();
   if (!isProvider(provider) || !providerEnabled(c.env, provider)) return c.json({ error: 'not_configured' }, 400);
@@ -268,7 +302,7 @@ app.delete('/me/identities/:provider', auth, async (c) => {
 });
 
 /** Local testing only — enabled with DEV_LOGIN=true in .dev.vars. */
-app.post('/auth/dev', async (c) => {
+app.post('/auth/dev', limit('dev', 60), async (c) => {
   if (c.env.DEV_LOGIN !== 'true') return c.json({ error: 'disabled' }, 404);
   const { name } = await c.req.json<{ name?: string }>();
   const clean = (name ?? '').trim().slice(0, 32) || 'Tester';
@@ -298,7 +332,7 @@ app.get('/me', guestOk, async (c) => {
 
 const USERNAME = /^[a-z0-9_.]{3,24}$/;
 
-app.get('/me/username-available', auth, async (c) => {
+app.get('/me/username-available', limit('username', 120), auth, async (c) => {
   const u = (c.req.query('u') ?? '').toLowerCase();
   if (!USERNAME.test(u)) return c.json({ available: false, reason: 'invalid' });
   const row = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(u).first<{ id: string }>();
@@ -337,10 +371,11 @@ app.patch('/me', auth, async (c) => {
 const AVATAR_TYPES = /^image\/(png|jpeg|gif|webp)$/;
 
 /** Custom avatars are the one media exception: they must be visible while the owner is offline. */
-app.put('/me/avatar', auth, async (c) => {
+app.put('/me/avatar', limit('avatar', 10), auth, async (c) => {
   const user = c.get('user');
   const type = c.req.header('Content-Type') ?? '';
   if (!AVATAR_TYPES.test(type)) return c.json({ error: 'unsupported_type' }, 415);
+  if (Number(c.req.header('Content-Length') ?? 0) > 4 * 1024 * 1024) return c.json({ error: 'too_large' }, 413);
   const data = await c.req.arrayBuffer();
   if (data.byteLength > 4 * 1024 * 1024) return c.json({ error: 'too_large' }, 413);
 
@@ -363,6 +398,8 @@ app.get('/avatars/:key', async (c) => {
       'Content-Type': metadata?.type ?? 'image/png',
       'Cache-Control': 'public, max-age=31536000, immutable',
       'Access-Control-Allow-Origin': '*',
+      // Only ever an image: never run as a page, whatever the bytes are.
+      'Content-Security-Policy': "default-src 'none'; sandbox",
     },
   });
 });
@@ -422,7 +459,7 @@ const requireRole = (min: 'member' | 'admin' | 'owner') =>
 
 app.get('/channels', guestOk, async (c) => c.json(await loadChannels(c.env, c.get('user').id)));
 
-app.post('/channels', auth, async (c) => {
+app.post('/channels', limit('create', 20), auth, async (c) => {
   const user = c.get('user');
   const body = await c.req.json<{ name?: string; emoji?: string; color?: string }>();
   const name = (body.name ?? '').trim().slice(0, 40);
@@ -449,16 +486,17 @@ app.post('/channels', auth, async (c) => {
 });
 
 /** Public invite preview for invite links and in-chat invite cards. */
-app.get('/invites/:code', async (c) => {
+app.get('/invites/:code', limit('preview', 200), async (c) => {
   const preview = await invitePreview(c.env, c.req.param('code'));
   return preview ? c.json(preview) : c.json({ error: 'invalid_code' }, 404);
 });
 
-app.post('/channels/join', auth, async (c) => {
+app.post('/channels/join', limit('join', 60), auth, async (c) => {
   const user = c.get('user');
   const { code } = await c.req.json<{ code?: string }>();
   const clean = (code ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const ch = await c.env.DB.prepare('SELECT id FROM channels WHERE invite_code = ?').bind(clean).first<{ id: string }>();
+  // Only spaces have shareable invites; DMs and meetings have their own ways in.
+  const ch = await c.env.DB.prepare("SELECT id FROM channels WHERE invite_code = ? AND kind = 'space'").bind(clean).first<{ id: string }>();
   if (!ch) return c.json({ error: 'invalid_code' }, 404);
   const res = await c.env.DB.prepare("INSERT OR IGNORE INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)")
     .bind(ch.id, user.id, Date.now())
@@ -606,7 +644,7 @@ app.get('/friends', auth, async (c) => {
 });
 
 /** Send a friend request by @username. If they already asked you, this accepts it. */
-app.post('/friends', auth, async (c) => {
+app.post('/friends', limit('friend', 30), auth, async (c) => {
   const me = c.get('user');
   const { username } = await c.req.json<{ username?: string }>();
   const handle = (username ?? '').trim().replace(/^@/, '').toLowerCase();
@@ -696,7 +734,7 @@ app.post('/dms', auth, async (c) => {
 // ─── Meetings ──────────────────────────────────────────────────────────────────
 
 /** Start a quick meeting: a short-lived channel with one call and one chat, shared by link. */
-app.post('/meetings', auth, async (c) => {
+app.post('/meetings', limit('create', 20), auth, async (c) => {
   const user = c.get('user');
   const id = newId();
   const now = Date.now();
@@ -716,13 +754,13 @@ app.post('/meetings', auth, async (c) => {
 });
 
 /** Public preview for the meeting link page and the app's "Join?" sheet. */
-app.get('/meetings/:code', async (c) => {
+app.get('/meetings/:code', limit('preview', 200), async (c) => {
   const preview = await meetingPreview(c.env, c.req.param('code'));
   return preview ? c.json(preview) : c.json({ error: 'meeting_ended' }, 404);
 });
 
 /** Infimeety users walk straight in, unless the host removed them earlier. */
-app.post('/meetings/:code/join', auth, async (c) => {
+app.post('/meetings/:code/join', limit('join', 60), auth, async (c) => {
   const user = c.get('user');
   const meeting = await findMeeting(c.env, c.req.param('code'));
   if (!meeting) return c.json({ error: 'meeting_ended' }, 404);
@@ -742,7 +780,7 @@ app.post('/meetings/:code/join', auth, async (c) => {
  * A browser guest asks to join. They get a guest account that only exists inside this
  * meeting and wait in the lobby until the host or a co-host lets them in.
  */
-app.post('/meetings/:code/guests', async (c) => {
+app.post('/meetings/:code/guests', limit('guest', 60), async (c) => {
   const meeting = await findMeeting(c.env, c.req.param('code'));
   if (!meeting) return c.json({ error: 'meeting_ended' }, 404);
   const { name } = await c.req.json<{ name?: string }>();

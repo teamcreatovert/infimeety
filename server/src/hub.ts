@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { ClientMsg, Message, PartyFile, PartyState, Role, ServerMsg, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { ClientMsg, Message, PartyFile, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
 
@@ -40,6 +41,7 @@ export class ChannelHub extends DurableObject<Env> {
   /** Watch parties by voice room. */
   private parties = new Map<string, PartyState>();
   private lastRequest = new Map<string, number>();
+  private rates = new Buckets();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -187,6 +189,11 @@ export class ChannelHub extends DurableObject<Env> {
       return;
     }
     const me = this.peer(ws);
+    if (!msg || typeof msg !== 'object') return;
+    if (!this.rates.take(me.peerId, rateOf(msg.t))) {
+      if (msg.t === 'chat.send') this.send(ws, { t: 'error', message: 'You’re sending messages too fast. Wait a moment.' });
+      return;
+    }
 
     switch (msg.t) {
       case 'chat.send':
@@ -198,7 +205,7 @@ export class ChannelHub extends DurableObject<Env> {
       case 'chat.react':
         return this.chatReact(me, msg.id, msg.emoji);
       case 'typing':
-        return this.broadcast({ t: 'typing', roomId: String(msg.roomId), userId: me.userId }, ws);
+        return this.broadcast({ t: 'typing', roomId: String(msg.roomId).slice(0, 32), userId: me.userId }, ws);
 
       case 'voice.join': {
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
@@ -213,7 +220,7 @@ export class ChannelHub extends DurableObject<Env> {
             deafened: !!s.deafened,
             camera: !!s.camera,
             screen: !!s.screen,
-            streams: s.streams ?? {},
+            streams: streamIds(s.streams),
             forceMuted: false,
             joinedAt: Date.now(),
           },
@@ -232,7 +239,7 @@ export class ChannelHub extends DurableObject<Env> {
         if (typeof s.deafened === 'boolean') v.deafened = s.deafened;
         if (typeof s.camera === 'boolean') v.camera = s.camera;
         if (typeof s.screen === 'boolean') v.screen = s.screen;
-        if (s.streams && typeof s.streams === 'object') v.streams = s.streams;
+        if (s.streams && typeof s.streams === 'object') v.streams = streamIds(s.streams);
         this.save(ws, { ...me, voice: v });
         return this.broadcastVoice();
       }
@@ -555,6 +562,7 @@ export class ChannelHub extends DurableObject<Env> {
 
   private dropped(ws: WebSocket) {
     const me = this.peer(ws);
+    this.rates.forget(me.peerId);
     const stillOnline = this.sockets(ws).some((s) => this.peer(s).userId === me.userId);
     if (!stillOnline) this.broadcast({ t: 'presence', online: this.online().filter((u) => u !== me.userId) }, ws);
     if (me.voice) this.broadcastVoice(ws);
@@ -578,6 +586,44 @@ export class ChannelHub extends DurableObject<Env> {
       }
     }
   }
+}
+
+/** Which allowance a realtime message draws on. */
+function rateOf(t: unknown): SocketRate {
+  switch (t) {
+    case 'chat.send':
+    case 'chat.edit':
+    case 'chat.delete':
+      return 'chat';
+    case 'chat.react':
+      return 'react';
+    case 'typing':
+      return 'typing';
+    case 'rtc':
+      return 'rtc';
+    case 'media.request':
+    case 'media.revoked':
+      return 'media';
+    case 'party.set':
+    case 'party.request':
+    case 'party.cohost':
+    case 'party.status':
+    case 'clock':
+      return 'party';
+    default:
+      return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
+  }
+}
+
+/** A participant's announced stream ids: short strings only. */
+function streamIds(input: unknown): StreamIds {
+  const out: StreamIds = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const k of ['mic', 'cam', 'screen'] as const) {
+    const v = (input as Record<string, unknown>)[k];
+    if (typeof v === 'string' && v.length <= 64) out[k] = v;
+  }
+  return out;
 }
 
 /** A party's file, as the sender describes it (metadata only). */

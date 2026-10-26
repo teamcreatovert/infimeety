@@ -139,5 +139,16 @@ pub fn unpack(archive: &Path, target: &Path) -> io::Result<()> {
     let mut tar = tar::Archive::new(fs::File::open(archive)?);
     tar.set_preserve_mtime(false);
     tar.set_preserve_permissions(false);
-    tar.unpack(target)
+    for entry in tar.entries()? {
+        let mut entry = entry?;
+        // A copy is plain files and folders. Anything else (links, devices) is skipped: a link
+        // from a friend's archive could point anywhere on this computer.
+        let kind = entry.header().entry_type();
+        if !kind.is_file() && !kind.is_dir() {
+            continue;
+        }
+        // Refuses paths that would land outside `target` ("..", absolute paths).
+        entry.unpack_in(target)?;
+    }
+    Ok(())
 }

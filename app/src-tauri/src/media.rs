@@ -54,6 +54,9 @@ pub struct Registry {
     store: PathBuf,
     folders_store: PathBuf,
     pasted_dir: PathBuf,
+    /// Where copies are saved: only ever a folder the user picked in the system dialog.
+    save_folder: Mutex<Option<PathBuf>>,
+    save_folder_store: PathBuf,
 }
 
 impl Registry {
@@ -63,6 +66,8 @@ impl Registry {
         fs::create_dir_all(&pasted_dir)?;
         let store = dir.join("shared-files.json");
         let folders_store = dir.join("shared-folders.json");
+        let save_folder_store = dir.join("save-folder.json");
+        let save_folder: Option<PathBuf> = fs::read(&save_folder_store).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok());
         let files: HashMap<String, SharedFile> = fs::read(&store)
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
@@ -84,6 +89,8 @@ impl Registry {
             store,
             folders_store,
             pasted_dir,
+            save_folder: Mutex::new(save_folder),
+            save_folder_store,
         })
     }
 
@@ -142,6 +149,13 @@ impl Registry {
             self.persist_folders();
         }
         added
+    }
+
+    fn set_save_folder(&self, path: PathBuf) {
+        if let Ok(bytes) = serde_json::to_vec(&path) {
+            let _ = fs::write(&self.save_folder_store, bytes);
+        }
+        *self.save_folder.lock().unwrap() = Some(path);
     }
 
     fn get(&self, id: &str) -> Option<SharedFile> {
@@ -277,12 +291,14 @@ pub fn media_reveal(app: AppHandle, registry: State<'_, Registry>, id: String) -
 
 /// The user picks the folder copies are saved to (asked once, changeable in Settings).
 #[tauri::command]
-pub async fn media_choose_folder(app: AppHandle, title: String) -> Result<Option<String>, String> {
+pub async fn media_choose_folder(app: AppHandle, registry: State<'_, Registry>, title: String) -> Result<Option<String>, String> {
     let mut dialog = app.dialog().file().set_title(title);
     if let Ok(downloads) = app.path().download_dir() {
         dialog = dialog.set_directory(downloads);
     }
-    Ok(dialog.blocking_pick_folder().and_then(|p| p.into_path().ok()).map(|p| p.to_string_lossy().into_owned()))
+    let Some(path) = dialog.blocking_pick_folder().and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    registry.set_save_folder(path.clone());
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 struct Receiving {
@@ -332,11 +348,12 @@ fn unique(dir: &Path, name: &str) -> PathBuf {
     (2..10_000).map(|n| dir.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
 }
 
-/// Starts receiving a copy of `size` bytes into `dir`. A folder arrives as an archive and is
-/// unpacked when complete.
+/// Starts receiving a copy of `size` bytes into the save folder. A folder arrives as an archive
+/// and is unpacked when complete. The folder is never the page's choice, only the user's (in
+/// the system dialog), so nothing in the webview can make the app write anywhere else.
 #[tauri::command]
-pub async fn media_receive_open(receivers: State<'_, Receivers>, dir: String, name: String, size: u64, folder: bool) -> Result<ReceiveTarget, String> {
-    let dir = PathBuf::from(dir);
+pub async fn media_receive_open(registry: State<'_, Registry>, receivers: State<'_, Receivers>, name: String, size: u64, folder: bool) -> Result<ReceiveTarget, String> {
+    let dir = registry.save_folder.lock().unwrap().clone().ok_or("no_folder")?;
     fs::create_dir_all(&dir).map_err(|e| format!("Can't save to that folder: {e}"))?;
     let target = unique(&dir, &clean_name(&name));
     let part_name = format!("{}.infimeety-part", target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());

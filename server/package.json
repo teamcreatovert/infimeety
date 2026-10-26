@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "pages:build": "npm --prefix ../app run build:web",
     "pages:deploy": "npm run pages:build && cd pages && wrangler pages deploy --branch main --commit-dirty=true",
-    "deploy:all": "wrangler deploy && npm run pages:deploy"
+    "deploy:all": "npm run db:migrate:remote && wrangler deploy && npm run pages:deploy"
   },
   "dependencies": {
     "hono": "^4.13.14"
@@ -19,5 +19,8 @@
     "@cloudflare/workers-types": "^5.20261025.1",
     "typescript": "~5.9",
     "wrangler": "^4.152.0"
+  },
+  "overrides": {
+    "undici": "^7.30.1"
   }
 }
