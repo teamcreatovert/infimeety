@@ -13,6 +13,7 @@ import {
   PinOff,
   Send,
   Settings,
+  Check,
   ShieldAlert,
   ShieldCheck,
   StickyNote,
@@ -23,12 +24,13 @@ import {
   X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { PublicUser } from '../../../../shared/protocol';
+import { canModerateRole, outranks, type PublicUser, type Role } from '../../../../shared/protocol';
 import { callFriend, messageFriend } from '../home/FriendsPage';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, SubMenu } from '../ui/overlay';
 import { Slider, Switch } from '../ui/primitives';
 import { acceptFriend, addFriend, removeFriend, useFriendStatus, usePerson } from './person';
+import { api } from '@/lib/api';
 import { inviteUrl } from '@/lib/invite';
 import { getHub, moveVoice, sendChat } from '@/lib/realtime';
 import { voice } from '@/lib/voice/engine';
@@ -111,6 +113,7 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
           {people && <MenuSeparator />}
           {people}
           {user && !guestViewer && <FriendItems user={user} close={close} />}
+          <RoleItems channelId={context.channelId} userId={userId} close={close} />
           <Moderation channelId={context.channelId} peerId={context.peerId} userId={userId} close={close} />
         </>
       )}
@@ -125,6 +128,7 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
         <>
           {people}
           {!self && user && !guestViewer && <FriendItems user={user} close={close} />}
+          {!self && context.channelId && <RoleItems channelId={context.channelId} userId={userId} close={close} />}
         </>
       )}
     </>
@@ -220,14 +224,51 @@ function PeerVoice({ channelId, peerId, userId }: { channelId: string; peerId: s
   );
 }
 
+// Admins: settings, rooms and invites. Moderators: mute, move and remove members, delete messages.
+const ROLES: { role: Role; label: string }[] = [
+  { role: 'admin', label: 'Admin' },
+  { role: 'moderator', label: 'Moderator' },
+  { role: 'member', label: 'Member' },
+];
+
+/** Owners: give someone in the channel a role. */
+function RoleItems({ channelId, userId, close }: { channelId: string; userId: string; close: Close }) {
+  const channel = useChannels((s) => s.channels.find((c) => c.id === channelId));
+  const member = useChannels((s) => s.members[channelId]?.find((m) => m.id === userId));
+  if (channel?.kind !== 'space' || channel.role !== 'owner' || !member || member.role === 'owner' || member.guest) return null;
+  const set = async (role: Role) => {
+    close();
+    if (role === member.role) return;
+    try {
+      await api(`/channels/${channelId}/members/${userId}`, { method: 'PATCH', json: { role } });
+      await useChannels.getState().loadMembers(channelId);
+      toast({ kind: 'success', title: role === 'member' ? `${member.name} is a member again` : `${member.name} is now ${role === 'admin' ? 'an admin' : 'a moderator'}` });
+    } catch {
+      toast({ kind: 'error', title: 'Couldn’t change their role' });
+    }
+  };
+  return (
+    <>
+      <MenuSeparator />
+      <SubMenu icon={<ShieldCheck size={14} />} label="Role">
+        {ROLES.map((r) => (
+          <MenuItem key={r.role} trailing={member.role === r.role ? <Check size={13} /> : undefined} onClick={() => void set(r.role)}>
+            {r.label}
+          </MenuItem>
+        ))}
+      </SubMenu>
+    </>
+  );
+}
+
 function Moderation({ channelId, peerId, userId, close }: { channelId: string; peerId: string; userId: string; close: Close }) {
   const myRole = useChannels((s) => s.channels.find((c) => c.id === channelId)?.role);
   const meeting = useChannels((s) => s.channels.find((c) => c.id === channelId)?.kind === 'meeting');
   const target = useChannels((s) => s.members[channelId]?.find((m) => m.id === userId));
   const targetRole = target?.role;
   const participant = useChannels((s) => s.voice[channelId]?.participants.find((p) => p.peerId === peerId));
-  // Mirrors the hub's rule: owners moderate anyone but themselves, admins moderate members.
-  const canModerate = !!participant && (myRole === 'owner' || (myRole === 'admin' && targetRole === 'member'));
+  // The hub's rule: moderators and up act on people with a lower role.
+  const canModerate = !!participant && canModerateRole(myRole) && outranks(myRole, targetRole);
   if (!canModerate) return null;
   const send = (msg: Parameters<NonNullable<ReturnType<typeof getHub>>['send']>[0]) => getHub(channelId)?.send(msg);
   const meetingAction = (run: () => Promise<void>, failed: string) => {

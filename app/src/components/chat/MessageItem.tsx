@@ -76,7 +76,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
           <button
             aria-label={`${author?.name ?? 'Someone'}'s profile`}
             onClick={(e) => openProfile(e, msg.userId)}
-            onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member' })}
+            onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member', channelId: channel.id })}
             className="block rounded-full transition-transform active:scale-95"
           >
             <Avatar user={author} size={36} />
@@ -97,7 +97,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
           <div className="flex items-baseline gap-2">
             <button
               onClick={(e) => openProfile(e, msg.userId)}
-              onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member' })}
+              onContextMenu={(e) => openUserMenu(e, msg.userId, { kind: 'member', channelId: channel.id })}
               className="text-[13.5px] font-semibold tracking-[-0.01em] hover:underline"
             >
               {author?.name ?? 'Someone'}

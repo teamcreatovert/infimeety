@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
-import { Camera, Copy, Crown, ImageMinus, ImageUp, RefreshCw, ShieldCheck, Smile, Trash2, UserMinus, X } from 'lucide-react';
+import { Camera, Copy, Crown, ImageMinus, ImageUp, RefreshCw, Shield, ShieldCheck, Smile, Trash2, UserMinus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { Member, Role } from '../../../../shared/protocol';
+import { outranks, type Member, type Role } from '../../../../shared/protocol';
 import { prepareAvatar } from '../auth/AvatarEditor';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { Avatar } from '../ui/Avatar';
@@ -86,7 +86,7 @@ export function ChannelSettingsModal() {
     close();
   };
 
-  const rank = { owner: 0, admin: 1, member: 2 };
+  const rank = { owner: 0, admin: 1, moderator: 2, member: 3 };
 
   return (
     <Modal open={!!id} onClose={close} width={600}>
@@ -160,7 +160,7 @@ export function ChannelSettingsModal() {
             .sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name))
             .map((m) => {
               const self = m.id === me?.id;
-              const canKick = !self && m.role !== 'owner' && (isOwner || m.role === 'member');
+              const canKick = !self && outranks(channel.role, m.role);
               return (
                 <div key={m.id} className="flex items-center gap-3 px-3.5 py-2">
                   <Avatar user={m} size={30} />
@@ -169,6 +169,7 @@ export function ChannelSettingsModal() {
                       {m.name}
                       {m.role === 'owner' && <Crown size={12} className="text-[#ffd60a]" />}
                       {m.role === 'admin' && <ShieldCheck size={12} className="text-accent" />}
+                      {m.role === 'moderator' && <Shield size={12} className="text-success" />}
                     </div>
                     <div className="text-[11.5px] text-fg-3">@{m.username}</div>
                   </div>
@@ -177,6 +178,7 @@ export function ChannelSettingsModal() {
                       value={m.role}
                       options={[
                         { value: 'member', label: 'Member' },
+                        { value: 'moderator', label: 'Moderator' },
                         { value: 'admin', label: 'Admin' },
                       ]}
                       onChange={(r) => void setRole(m.id, r)}

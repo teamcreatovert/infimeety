@@ -155,7 +155,8 @@ function RailItem({ channel, active, onSelect }: { channel: Channel; active: boo
           {(inVoiceHere || liveHere) && (
             <span
               className="absolute -bottom-1 -right-1 grid h-[18px] w-[18px] place-items-center rounded-full shadow-[0_0_0_2.5px_var(--ring-bg)]"
-              style={{ background: inVoiceHere ? 'var(--success)' : 'var(--fill-3)' }}
+              // Solid, so it reads on top of a channel picture: green while you're in, grey while others are.
+              style={{ background: inVoiceHere ? 'var(--success)' : '#8e8e93' }}
             >
               <span className="flex h-2 items-end gap-[1.5px]">
                 {[0.5, 1, 0.7].map((h, i) => (

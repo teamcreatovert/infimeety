@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import { DEFAULT_PARTY_SETTINGS } from '../../shared/protocol';
-import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS, SOUND_CLIP_MAX, canModerateRole, outranks } from '../../shared/protocol';
+import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
@@ -264,7 +264,7 @@ export class ChannelHub extends DurableObject<Env> {
         return this.broadcastVoice();
       }
       case 'voice.roomMute': {
-        if (!isAdmin(me.role) || (await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        if (!canModerateRole(me.role) || (await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
         if (msg.muted) this.mutedRooms.add(msg.roomId);
         else this.mutedRooms.delete(msg.roomId);
         await this.ctx.storage.put('mutedRooms', [...this.mutedRooms]);
@@ -282,6 +282,15 @@ export class ChannelHub extends DurableObject<Env> {
         if (!target || !this.canModerate(me, this.peer(target)) || !this.peer(target).voice) return;
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
+      }
+      case 'sound.play': {
+        // Soundboard: relayed live to the others in your voice room, never stored. Muted people stay quiet.
+        const v = me.voice;
+        if (!v || v.forceMuted || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) return;
+        const sound = cleanSound(msg.sound);
+        if (!sound) return;
+        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound', peerId: me.peerId, userId: me.userId, sound });
+        return;
       }
 
       case 'rtc': {
@@ -425,7 +434,7 @@ export class ChannelHub extends DurableObject<Env> {
 
   private async chatDelete(me: Peer, id: string) {
     const msg = await this.findMessage(id, me.channelId);
-    if (!msg || (msg.userId !== me.userId && !isAdmin(me.role))) return;
+    if (!msg || (msg.userId !== me.userId && !canModerateRole(me.role))) return;
     await this.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(msg.id).run();
     this.broadcast({ t: 'chat.deleted', id: msg.id, roomId: msg.roomId });
   }
@@ -596,9 +605,9 @@ export class ChannelHub extends DurableObject<Env> {
     return row?.kind ?? null;
   }
 
+  /** Moderators and up act on lower roles only: owners on anyone, admins on moderators and members, moderators on members. */
   private canModerate(me: Peer, target: Peer) {
-    if (!isAdmin(me.role) || target.role === 'owner') return false;
-    return me.role === 'owner' || target.role !== 'admin';
+    return canModerateRole(me.role) && outranks(me.role, target.role);
   }
 
   private peer(ws: WebSocket): Peer {
@@ -627,7 +636,7 @@ export class ChannelHub extends DurableObject<Env> {
       const p = this.peer(s);
       if (!p.voice || p.userId === exceptUser) continue;
       const { forceMuted, ...v } = p.voice;
-      const roomMuted = this.mutedRooms.has(v.roomId) && !isAdmin(p.role);
+      const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted });
     }
     return { participants, mutedRooms: [...this.mutedRooms] };
@@ -692,6 +701,8 @@ function rateOf(t: unknown): SocketRate {
     case 'party.status':
     case 'clock':
       return 'party';
+    case 'sound.play':
+      return 'sound';
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }
@@ -730,4 +741,21 @@ function cleanFile(f: unknown): PartyFile | null {
     mime: typeof mime === 'string' && /^[\w.+-]{1,40}\/[\w.+-]{1,100}$/.test(mime) ? mime : 'application/octet-stream',
     size: Math.floor(size),
   };
+}
+
+/** A soundboard sound as sent: one of the app's own, or a small audio clip. */
+function cleanSound(s: unknown): SoundRef | null {
+  const x = s as Record<string, unknown> | null;
+  if (!x || typeof x !== 'object') return null;
+  if (x.kind === 'builtin' && typeof x.id === 'string' && /^[a-z-]{1,24}$/.test(x.id)) return { kind: 'builtin', id: x.id };
+  if (
+    x.kind === 'clip' &&
+    typeof x.data === 'string' &&
+    x.data.length <= SOUND_CLIP_MAX &&
+    /^[A-Za-z0-9+/]+=*$/.test(x.data) &&
+    typeof x.mime === 'string' &&
+    /^audio\/[\w.+-]{1,40}$/.test(x.mime)
+  )
+    return { kind: 'clip', name: String(x.name ?? 'Sound').slice(0, 32), emoji: String(x.emoji ?? '🔊').slice(0, 8), mime: x.mime, data: x.data };
+  return null;
 }

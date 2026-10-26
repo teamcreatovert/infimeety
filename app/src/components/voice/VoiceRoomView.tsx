@@ -754,7 +754,7 @@ function Dock({
       )}
       {isAdmin && (
         <DockButton
-          label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins can still talk)'}
+          label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins and moderators can still talk)'}
           state={roomMuted ? 'off' : 'normal'}
           onClick={toggleRoomMute}
         >

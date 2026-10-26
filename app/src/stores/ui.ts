@@ -11,7 +11,7 @@ export interface Toast {
 export type SettingsTab = 'account' | 'voice' | 'screen' | 'files' | 'appearance' | 'sounds' | 'desktop' | 'updates';
 
 /** Where someone was right-clicked; decides which actions their menu offers. */
-export type UserMenuContext = { kind: 'voice'; channelId: string; peerId: string } | { kind: 'dm'; channelId: string } | { kind: 'member' };
+export type UserMenuContext = { kind: 'voice'; channelId: string; peerId: string } | { kind: 'dm'; channelId: string } | { kind: 'member'; channelId?: string };
 
 interface UIState {
   settingsTab: SettingsTab | null;

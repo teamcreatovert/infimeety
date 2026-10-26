@@ -1,4 +1,4 @@
-import { Crown, ShieldCheck, UserPlus } from 'lucide-react';
+import { Crown, Shield, ShieldCheck, UserPlus } from 'lucide-react';
 import type { Channel, Member } from '../../../../shared/protocol';
 import { acceptFriend, addFriend } from '../people/person';
 import { Avatar } from '../ui/Avatar';
@@ -17,7 +17,7 @@ export function MemberList({ channel }: { channel: Channel }) {
   const voice = useChannels((s) => s.voice[channel.id]);
   const online = new Set(onlineIds);
   const inVoice = new Set(voice?.participants.map((p) => p.userId));
-  const rank = { owner: 0, admin: 1, member: 2 };
+  const rank = { owner: 0, admin: 1, moderator: 2, member: 3 };
   const sorted = [...members].sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name));
   const on = sorted.filter((m) => online.has(m.id));
   const off = sorted.filter((m) => !online.has(m.id));
@@ -26,13 +26,13 @@ export function MemberList({ channel }: { channel: Channel }) {
     <div className="scroll h-full w-[248px] px-2.5 pb-4 pt-3" style={{ scrollbarGutter: 'auto' }}>
       <Group title={`Online — ${on.length}`}>
         {on.map((m) => (
-          <MemberRow key={m.id} m={m} online inVoice={inVoice.has(m.id)} />
+          <MemberRow key={m.id} m={m} channelId={channel.id} online inVoice={inVoice.has(m.id)} />
         ))}
       </Group>
       {off.length > 0 && (
         <Group title={`Offline — ${off.length}`}>
           {off.map((m) => (
-            <MemberRow key={m.id} m={m} online={false} inVoice={false} />
+            <MemberRow key={m.id} m={m} channelId={channel.id} online={false} inVoice={false} />
           ))}
         </Group>
       )}
@@ -49,12 +49,12 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function MemberRow({ m, online, inVoice }: { m: Member; online: boolean; inVoice: boolean }) {
+function MemberRow({ m, channelId, online, inVoice }: { m: Member; channelId: string; online: boolean; inVoice: boolean }) {
   return (
     <div
       role="button"
       onClick={(e) => openProfile(e, m.id)}
-      onContextMenu={(e) => openUserMenu(e, m.id, { kind: 'member' })}
+      onContextMenu={(e) => openUserMenu(e, m.id, { kind: 'member', channelId })}
       className="group/member flex cursor-pointer items-center gap-2.5 rounded-[9px] px-2 py-1.5 transition-colors hover:bg-fill-1"
       style={{ opacity: online ? 1 : 0.45 }}
     >
@@ -70,6 +70,11 @@ function MemberRow({ m, online, inVoice }: { m: Member; online: boolean; inVoice
           {m.role === 'admin' && (
             <Tooltip label="Admin">
               <ShieldCheck size={12} className="shrink-0 text-accent" />
+            </Tooltip>
+          )}
+          {m.role === 'moderator' && (
+            <Tooltip label="Moderator">
+              <Shield size={12} className="shrink-0 text-success" />
             </Tooltip>
           )}
         </div>

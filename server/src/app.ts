@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
+import { canModerateRole, outranks } from '../../shared/protocol';
 import type { Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
 import {
   authorizeUrl,
@@ -447,10 +448,11 @@ async function loadChannels(env: Env, userId: string, onlyId?: string) {
   });
 }
 
-const requireRole = (min: 'member' | 'admin' | 'owner') =>
+const requireRole = (min: 'member' | 'moderator' | 'admin' | 'owner') =>
   createMiddleware<App & { Variables: { role: Role } }>(async (c, next) => {
     const role = await memberRole(c.env, c.req.param('id')!, c.get('user').id);
     if (!role) return c.json({ error: 'not_found' }, 404);
+    if (min === 'moderator' && !canModerateRole(role)) return c.json({ error: 'forbidden' }, 403);
     if (min === 'admin' && !isAdmin(role)) return c.json({ error: 'forbidden' }, 403);
     if (min === 'owner' && role !== 'owner') return c.json({ error: 'forbidden' }, 403);
     c.set('role', role);
@@ -587,24 +589,25 @@ app.get('/channels/:id/members', guestOk, requireRole('member'), async (c) => {
 
 app.patch('/channels/:id/members/:userId', auth, requireRole('owner'), async (c) => {
   const { role } = await c.req.json<{ role?: Role }>();
-  if (role !== 'admin' && role !== 'member') return c.json({ error: 'bad_role' }, 400);
+  if (role !== 'admin' && role !== 'moderator' && role !== 'member') return c.json({ error: 'bad_role' }, 400);
   const id = c.req.param('id');
   const target = c.req.param('userId');
   if (target === c.get('user').id) return c.json({ error: 'cannot_change_self' }, 400);
   // Meeting co-hosts must have an account; browser guests can't run a meeting.
   const guest = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ? AND guest_of IS NOT NULL').bind(target).first();
-  if (guest && role === 'admin') return c.json({ error: 'guest' }, 400);
+  if (guest && role !== 'member') return c.json({ error: 'guest' }, 400);
   await c.env.DB.prepare('UPDATE channel_members SET role = ? WHERE channel_id = ? AND user_id = ?').bind(role, id, target).run();
   c.executionCtx.waitUntil(hub(c.env, id).setRole(target, role));
   return c.json({ ok: true });
 });
 
-app.delete('/channels/:id/members/:userId', auth, requireRole('admin'), async (c) => {
+app.delete('/channels/:id/members/:userId', auth, requireRole('moderator'), async (c) => {
   const id = c.req.param('id');
   const target = c.req.param('userId');
   const targetRole = await memberRole(c.env, id, target);
   if (!targetRole) return c.json({ error: 'not_found' }, 404);
-  if (targetRole === 'owner' || (targetRole === 'admin' && c.get('role') !== 'owner')) return c.json({ error: 'forbidden' }, 403);
+  // Only people with a lower role: moderators remove members, admins also moderators.
+  if (!outranks(c.get('role'), targetRole)) return c.json({ error: 'forbidden' }, 403);
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id = ?').bind(id, target),
     // Someone removed from a meeting can't come back to it.

@@ -43,7 +43,7 @@ import { useVoice } from '@/stores/voice';
 export function Sidebar({ channel }: { channel: Channel }) {
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [adding, setAdding] = useState<Room['kind'] | null>(null);
-  const isAdmin = channel.role !== 'member';
+  const isAdmin = channel.role === 'owner' || channel.role === 'admin';
   const text = channel.rooms.filter((r) => r.kind === 'text');
   const voiceRooms = channel.rooms.filter((r) => r.kind === 'voice');
   const ui = useUI((s) => s.set);
@@ -201,7 +201,7 @@ function RoomButton({
 }) {
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const isAdmin = channel.role !== 'member';
+  const isAdmin = channel.role === 'owner' || channel.role === 'admin';
   const openMenu = (e: React.MouseEvent) => {
     if (!isAdmin) return;
     e.preventDefault();
