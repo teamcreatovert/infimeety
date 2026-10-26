@@ -9,7 +9,8 @@ import { spring } from '@/lib/motion';
 
 /**
  * The who's-talking overlay: a transparent, click-through window floating over games and
- * other apps during a call. Pills slide in from the screen edge while someone speaks.
+ * other apps during a call. Everyone in the call has a pill, dimmed until they speak (or, set to
+ * "Who's talking", pills slide in from the screen edge only while someone speaks).
  */
 export function Overlay() {
   const [state, setState] = useState<OverlayState | null>(null);
@@ -33,7 +34,7 @@ export function Overlay() {
             key={p.peerId}
             layout
             initial={{ opacity: 0, x: right ? 14 : -14, scale: 0.94 }}
-            animate={{ opacity: everyone && !p.speaking ? 0.62 : 1, x: 0, scale: 1 }}
+            animate={{ opacity: everyone && !p.speaking ? 0.5 : 1, x: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.2 } }}
             transition={spring}
             className="flex h-9 max-w-full items-center gap-2 rounded-full py-1 pl-1 pr-3.5"

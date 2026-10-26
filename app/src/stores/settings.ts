@@ -31,6 +31,8 @@ export const SCREEN_PRESETS = {
 export type ScreenQuality = keyof typeof SCREEN_PRESETS;
 
 export type OverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+/** Strong: RNNoise on your device (like Krisp). Standard: the browser's own, lighter filter. */
+export type NoiseFilter = 'strong' | 'standard' | 'off';
 
 export interface SettingsState {
   theme: 'system' | 'dark' | 'light';
@@ -43,7 +45,7 @@ export interface SettingsState {
   outputDeviceId: string;
   cameraDeviceId: string;
   echoCancellation: boolean;
-  noiseSuppression: boolean;
+  noiseFilter: NoiseFilter;
   autoGainControl: boolean;
 
   soundsEnabled: boolean;
@@ -105,7 +107,7 @@ export const useSettings = create<SettingsState>()(
       outputDeviceId: 'default',
       cameraDeviceId: 'default',
       echoCancellation: true,
-      noiseSuppression: true,
+      noiseFilter: 'strong',
       autoGainControl: true,
 
       soundsEnabled: true,
@@ -127,7 +129,7 @@ export const useSettings = create<SettingsState>()(
 
       closeToTray: true,
       overlay: true,
-      overlayShow: 'speaking',
+      overlayShow: 'everyone',
       overlayCorner: 'top-left',
 
       pinnedDms: [],
@@ -146,6 +148,18 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'infimeety.settings',
+      version: 1,
+      migrate: (stored, version) => {
+        const s = (stored ?? {}) as Record<string, unknown>;
+        if (version < 1) {
+          // The on/off "noise suppression" became a choice, with strong on by default.
+          s.noiseFilter = s.noiseSuppression === false ? 'off' : 'strong';
+          delete s.noiseSuppression;
+          // The overlay now shows everyone in the call, with the quiet ones dimmed.
+          s.overlayShow = 'everyone';
+        }
+        return s as unknown as SettingsState;
+      },
       // Functions don't survive JSON anyway; listing them keeps the stored shape obvious.
       partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, toggleLocalMute: _c, toggleDmPin: _d, setDmClosed: _e, toggleChatMute: _f, setNote: _g, ...rest }) => rest,
     },

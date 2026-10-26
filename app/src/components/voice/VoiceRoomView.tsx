@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   AudioLines,
+  AudioWaveform,
   ChevronDown,
   ChevronUp,
   Clapperboard,
@@ -631,6 +632,8 @@ function Dock({
   const compact = useCompact();
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
+  const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
+  const toggleNoise = () => useSettings.getState().set({ noiseFilter: noiseOn ? 'off' : 'strong' });
   const isAdmin = channel.role !== 'member';
   const sharer = participants.find((p) => p.screen && p.peerId !== myPeer) ?? participants.find((p) => p.screen);
   const micOff = muted || deafened || serverMuted;
@@ -681,6 +684,9 @@ function Dock({
         <Popover open={!!moreMenu} anchor={moreMenu} onClose={() => setMoreMenu(null)} side="top" align="end" offset={12} className="w-[240px] p-1.5">
           <MenuItem icon={deafened ? <Headphones size={15} /> : <HeadphoneOff size={15} />} onClick={() => (setMoreMenu(null), voice.toggleDeafen())}>
             {deafened ? 'Undeafen' : 'Deafen (mute everyone for me)'}
+          </MenuItem>
+          <MenuItem icon={<AudioWaveform size={15} />} onClick={() => (setMoreMenu(null), toggleNoise())}>
+            {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
           {sharer && (
             <MenuItem icon={<Clapperboard size={15} />} onClick={() => (setMoreMenu(null), toggleWatch())}>

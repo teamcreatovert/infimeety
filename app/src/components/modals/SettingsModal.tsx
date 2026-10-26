@@ -15,9 +15,10 @@ import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useUpdater } from '@/lib/updater';
+import { denoise, type Denoised } from '@/lib/voice/denoise';
 import { listDevices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
-import { ACCENTS, SCREEN_PRESETS, WALLPAPERS, useSettings, type Accent, type ScreenQuality, type Wallpaper } from '@/stores/settings';
+import { ACCENTS, SCREEN_PRESETS, WALLPAPERS, useSettings, type Accent, type NoiseFilter, type ScreenQuality, type Wallpaper } from '@/stores/settings';
 import { toast, useUI, type SettingsTab } from '@/stores/ui';
 
 const TABS: { id: SettingsTab; label: string; icon: ReactNode; tint: string }[] = [
@@ -202,6 +203,12 @@ function ConnectedAccounts({ me }: { me: Me }) {
   );
 }
 
+const NOISE_DETAIL: Record<NoiseFilter, string> = {
+  strong: 'Filters out fans, typing, traffic and barking, on your device. Only your voice gets through.',
+  standard: 'Your device’s built-in filter. Lighter, and lets more noise through.',
+  off: 'Everything your mic hears is sent. Best for music.',
+};
+
 function VoiceTab() {
   const s = useSettings();
   const [devices, setDevices] = useState<Awaited<ReturnType<typeof listDevices>> | null>(null);
@@ -213,26 +220,30 @@ function VoiceTab() {
     void listDevices().then(setDevices);
   }, []);
 
-  // Live mic meter while this tab is open.
+  // Live mic meter while this tab is open, after noise suppression (so you can see the noise go).
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let cleaned: Denoised | null = null;
     let raf = 0;
     let ctx: AudioContext | null = null;
+    let gone = false;
     void navigator.mediaDevices
       .getUserMedia({
         audio: {
           deviceId: s.inputDeviceId !== 'default' ? { exact: s.inputDeviceId } : undefined,
           echoCancellation: s.echoCancellation,
-          noiseSuppression: s.noiseSuppression,
+          noiseSuppression: s.noiseFilter === 'standard',
           autoGainControl: s.autoGainControl,
         },
       })
-      .then((st) => {
+      .then(async (st) => {
         stream = st;
+        cleaned = s.noiseFilter === 'strong' ? await denoise(st) : null;
+        if (gone) return cleaned?.stop();
         ctx = new AudioContext();
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
-        ctx.createMediaStreamSource(st).connect(analyser);
+        ctx.createMediaStreamSource(cleaned?.stream ?? st).connect(analyser);
         const data = new Float32Array(analyser.fftSize);
         const loop = () => {
           analyser.getFloatTimeDomainData(data);
@@ -245,11 +256,13 @@ function VoiceTab() {
       })
       .catch(() => {});
     return () => {
+      gone = true;
       cancelAnimationFrame(raf);
+      cleaned?.stop();
       stream?.getTracks().forEach((t) => t.stop());
       void ctx?.close();
     };
-  }, [s.inputDeviceId, s.echoCancellation, s.noiseSuppression, s.autoGainControl]);
+  }, [s.inputDeviceId, s.echoCancellation, s.noiseFilter, s.autoGainControl]);
 
   useEffect(() => () => preview?.getTracks().forEach((t) => t.stop()), [preview]);
   useEffect(() => {
@@ -280,8 +293,18 @@ function VoiceTab() {
             ))}
           </div>
         </Row>
-        <Row label="Noise suppression" detail="Removes background noise like fans and keyboards">
-          <Switch checked={s.noiseSuppression} onChange={(v) => s.set({ noiseSuppression: v })} />
+        <Row label="Noise suppression" detail={NOISE_DETAIL[s.noiseFilter]}>
+          <Segmented
+            id="noise-filter"
+            className="w-[240px]"
+            value={s.noiseFilter}
+            onChange={(v) => s.set({ noiseFilter: v })}
+            options={[
+              { value: 'strong', label: 'Strong' },
+              { value: 'standard', label: 'Standard' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
         </Row>
         <Row label="Echo cancellation">
           <Switch checked={s.echoCancellation} onChange={(v) => s.set({ echoCancellation: v })} />

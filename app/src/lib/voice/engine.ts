@@ -7,6 +7,7 @@ import { sounds } from '@/lib/sounds';
 import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
 import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
+import { denoise, resumeDenoise, type Denoised } from './denoise';
 import { Peer, VOICE_BITRATE, type Signal } from './peer';
 import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
 
@@ -87,7 +88,10 @@ class VoiceEngine {
 
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** The mic as sent: cleaned by `denoiser` when strong noise suppression is on, else `micRaw`. */
   private mic: MediaStream | null = null;
+  private micRaw: MediaStream | null = null;
+  private denoiser: Denoised | null = null;
   private micMeter: { source: MediaStreamAudioSourceNode; analyser: AnalyserNode; data: Float32Array<ArrayBuffer> } | null = null;
   private cam: MediaStream | null = null;
   private screen: MediaStream | null = null;
@@ -145,7 +149,7 @@ class VoiceEngine {
       if (
         s.inputDeviceId !== prev.inputDeviceId ||
         s.echoCancellation !== prev.echoCancellation ||
-        s.noiseSuppression !== prev.noiseSuppression ||
+        s.noiseFilter !== prev.noiseFilter ||
         s.autoGainControl !== prev.autoGainControl
       ) void this.restartMic();
     });
@@ -156,10 +160,11 @@ class VoiceEngine {
     this.hub?.send({ t: 'voice.leave' });
     for (const id of [...this.peers.keys()]) this.closePeer(id);
     this.participants.clear();
-    this.stopTracks(this.mic);
+    this.closeMic({ mic: this.mic, raw: this.micRaw, denoiser: this.denoiser });
     this.stopTracks(this.cam);
     this.stopTracks(this.screen);
-    this.mic = this.cam = this.screen = null;
+    this.mic = this.micRaw = this.cam = this.screen = null;
+    this.denoiser = null;
     this.systemAudio?.stop();
     this.systemAudio = null;
     this.micMeter?.source.disconnect();
@@ -395,15 +400,15 @@ class VoiceEngine {
 
   async restartMic() {
     if (!this.inCall) return;
-    const old = this.mic;
+    const old = { mic: this.mic, raw: this.micRaw, denoiser: this.denoiser };
     await this.openMic();
     const track = this.mic?.getAudioTracks()[0] ?? null;
     for (const peer of this.peers.values()) {
-      const sender = peer.pc.getSenders().find((s) => s.track?.kind === 'audio' && old?.getTracks().includes(s.track));
+      const sender = peer.pc.getSenders().find((s) => s.track?.kind === 'audio' && old.mic?.getTracks().includes(s.track));
       if (sender) await sender.replaceTrack(track).catch(() => {});
       else if (track) peer.pc.addTrack(track, this.micOut);
     }
-    if (old !== this.mic) this.stopTracks(old);
+    if (old.mic !== this.mic) this.closeMic(old);
     this.pushState();
   }
 
@@ -438,6 +443,7 @@ class VoiceEngine {
       // Mobile browsers only start (or restart, after a phone call) audio from a tap.
       const unlock = () => {
         if (ctx.state !== 'running' && this.inCall) void ctx.resume().catch(() => {});
+        if (this.inCall) resumeDenoise();
       };
       for (const type of ['pointerdown', 'touchend', 'keydown'] as const) window.addEventListener(type, unlock, { capture: true, passive: true });
     }
@@ -457,24 +463,32 @@ class VoiceEngine {
     const s = useSettings.getState();
     const base: MediaTrackConstraints = {
       echoCancellation: s.echoCancellation,
-      noiseSuppression: s.noiseSuppression,
+      // Strong suppression replaces the browser's own filter: both at once muffle voices.
+      noiseSuppression: s.noiseFilter === 'standard',
       autoGainControl: s.autoGainControl,
       channelCount: 1,
     };
+    let raw: MediaStream;
     try {
-      this.mic = await navigator.mediaDevices.getUserMedia({
+      raw = await navigator.mediaDevices.getUserMedia({
         audio: { ...base, deviceId: s.inputDeviceId !== 'default' ? { exact: s.inputDeviceId } : undefined },
       });
     } catch {
       try {
-        this.mic = await navigator.mediaDevices.getUserMedia({ audio: base });
+        raw = await navigator.mediaDevices.getUserMedia({ audio: base });
       } catch {
-        this.mic = null;
+        this.mic = this.micRaw = null;
+        this.denoiser = null;
         useVoice.setState({ micAvailable: false, muted: true });
         toast({ kind: 'error', title: 'Microphone unavailable', body: 'You joined muted. Check Settings → Voice & Video.' });
         return;
       }
     }
+    this.micRaw = raw;
+    this.denoiser = s.noiseFilter === 'strong' ? await denoise(raw) : null;
+    // Strong suppression can't run on this device: the browser's own filter instead.
+    if (s.noiseFilter === 'strong' && !this.denoiser) void raw.getAudioTracks()[0]?.applyConstraints({ ...base, noiseSuppression: true }).catch(() => {});
+    this.mic = this.denoiser?.stream ?? raw;
     useVoice.setState({ micAvailable: true });
     this.micMeter?.source.disconnect();
     this.micMeter = null;
@@ -497,6 +511,13 @@ class VoiceEngine {
     const { muted, deafened, serverMuted } = useVoice.getState();
     const on = !muted && !deafened && !serverMuted;
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = on));
+    this.micRaw?.getAudioTracks().forEach((t) => (t.enabled = on));
+  }
+
+  private closeMic({ mic, raw, denoiser }: { mic: MediaStream | null; raw: MediaStream | null; denoiser: Denoised | null }) {
+    denoiser?.stop();
+    this.stopTracks(raw);
+    this.stopTracks(mic);
   }
 
   private createPeer(peerId: string) {

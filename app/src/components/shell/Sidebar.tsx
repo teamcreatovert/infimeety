@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AudioLines,
+  AudioWaveform,
   ChevronDown,
   Ellipsis,
   Hash,
@@ -36,6 +37,7 @@ import { spring } from '@/lib/motion';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useActiveRoom, useChannels } from '@/stores/channels';
+import { useSettings } from '@/stores/settings';
 import { useMessages } from '@/stores/messages';
 import { openUserMenu, showMain, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
@@ -413,6 +415,7 @@ export function VoicePanel() {
                   {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : channel.kind === 'meeting' ? channel.name : `${room.name} · ${channel.name}`}
                 </button>
               </div>
+              <NoiseToggle />
               <IconButton label="Disconnect" tone="danger" onClick={() => voice.leave()}>
                 <PhoneOff size={15} />
               </IconButton>
@@ -429,6 +432,23 @@ export function VoicePanel() {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** One click for noise suppression, like Discord's Krisp button: strong when on. */
+function NoiseToggle() {
+  const on = useSettings((s) => s.noiseFilter !== 'off');
+  return (
+    <IconButton
+      label={on ? 'Noise suppression is on' : 'Noise suppression is off'}
+      active={on}
+      onClick={() => useSettings.getState().set({ noiseFilter: on ? 'off' : 'strong' })}
+    >
+      <span className="relative grid place-items-center">
+        <AudioWaveform size={15} />
+        {!on && <span className="absolute h-[19px] w-[1.5px] rotate-45 rounded-full bg-current" />}
+      </span>
+    </IconButton>
   );
 }
 
