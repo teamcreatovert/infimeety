@@ -14,6 +14,7 @@ import { isMac, isTauri } from '@/lib/platform';
 import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
+import { OPEN_LIMIT } from '@/lib/party';
 import { useUpdater } from '@/lib/updater';
 import { listDevices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -35,10 +36,10 @@ export function SettingsModal() {
   const tab = useUI((s) => s.settingsTab);
   const close = () => useUI.getState().set({ settingsTab: null });
   return (
-    <Modal open={!!tab} onClose={close} width={820}>
+    <Modal open={!!tab} onClose={close} width={960}>
       {/* Phones: the tabs become a scrolling row above the page. */}
-      <div className="flex h-[580px] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
-        <nav className="hairline-r flex w-[214px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
+      <div className="flex h-[min(680px,calc(100dvh-48px))] compact:h-[calc(100dvh-24px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] compact:flex-col">
+        <nav className="hairline-r flex w-[230px] shrink-0 flex-col gap-0.5 bg-fill-1 p-2.5 pt-4 compact:w-auto compact:flex-row compact:overflow-x-auto compact:pr-12 compact:pt-2.5 compact:[scrollbar-width:none]">
           <div className="mb-2 px-2.5 font-display text-[18px] font-bold tracking-[-0.02em] compact:hidden">Settings</div>
           {TABS.filter((t) => isTauri || (t.id !== 'desktop' && t.id !== 'updates')).map((t) => (
             <button
@@ -330,7 +331,11 @@ function ScreenTab() {
       </Group>
       <Group title="Watching together">
         <div className="space-y-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-fg-2">
-          <p>Share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Friends’ faces float as bubbles you can drag anywhere.</p>
+          <p>
+            Have the movie file? Start a <b>watch party</b> from the call (the popcorn button). Everyone copies the file straight from you and plays their own copy in perfect sync, with
+            subtitles. Above {OPEN_LIMIT} people, only you and the co-hosts you pick control playback; everyone else can ask.
+          </p>
+          <p>Or share your entire screen with sound on, open the movie, and everyone sees and hears it in watch mode. Chat and everyone’s faces sit in a panel beside it, or switch to Mini or Full screen.</p>
           <p className="text-fg-3">
             Netflix, Disney+ and other DRM-protected sites can appear black when captured. In your browser, turn off <i>Use graphics acceleration</i> (Settings → System), restart it, and share again.
           </p>

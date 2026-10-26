@@ -1,5 +1,6 @@
 import type { Attachment, RtcPayload } from '../../../shared/protocol';
 import { randomId } from './api';
+import { localCopyOf } from './copies';
 import type { HubClient } from './hub';
 import { localMedia, type ReceiveTarget, type SharedFile } from './platform';
 import { allHubs } from './realtime';
@@ -288,7 +289,10 @@ function receive(reqId: string, laneNo: number, dc: RTCDataChannel) {
 
 export async function onMediaRequest(hub: HubClient, msg: { from: string; attachmentId: string; reqId: string; lanes?: number }) {
   if (!localMedia.available) return;
-  const file = await localMedia.stat(msg.attachmentId).catch(() => null);
+  // A watch party host who re-picked their movie serves it under the party's file id.
+  const standIn = localCopyOf(msg.attachmentId);
+  const file =
+    (await localMedia.stat(msg.attachmentId).catch(() => null)) ?? (standIn ? await localMedia.stat(standIn).catch(() => null) : null);
   if (!file) {
     const missing = await localMedia.missing().catch(() => [] as string[]);
     const gone = missing.includes(msg.attachmentId);

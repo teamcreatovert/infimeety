@@ -154,7 +154,7 @@ function fileIcon(att: Attachment) {
 }
 
 /** "12.4 MB/s · 1 min left" */
-function pace(speed: number | undefined, left: number) {
+export function pace(speed: number | undefined, left: number) {
   if (!speed) return '';
   const secs = left / speed;
   const eta = secs < 60 ? `${Math.max(1, Math.round(secs))} s left` : secs < 3600 ? `${Math.round(secs / 60)} min left` : `${(secs / 3600).toFixed(1)} h left`;

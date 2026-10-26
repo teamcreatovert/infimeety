@@ -1,24 +1,22 @@
 import clsx from 'clsx';
-import { animate, AnimatePresence, LayoutGroup, motion, useMotionValue } from 'motion/react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   AudioLines,
   ChevronDown,
   ChevronUp,
   Clapperboard,
   Ellipsis,
-  Expand,
   HeadphoneOff,
   Headphones,
   MessageSquareText,
   Mic,
   MicOff,
-  Minimize2,
   MonitorPlay,
   Phone,
   PhoneOff,
+  Popcorn,
   ScreenShare,
   ScreenShareOff,
-  Shrink,
   Users,
   Video,
   VideoOff,
@@ -34,12 +32,15 @@ import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
+import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests } from './Party';
 import { StreamVideo } from './StreamVideo';
+import { WatchStage, type WatchLayout } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
+import { startParty, useParty } from '@/lib/party';
 import { getHub } from '@/lib/realtime';
-import { useCompact } from '@/lib/responsive';
+import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
@@ -89,6 +90,7 @@ function Lobby({ channel, room }: { channel: Channel; room: Room }) {
   const participants = useRoomParticipants(channel.id, room.id);
   const users = useChannels((s) => s.users);
   const voiceChat = useUI((s) => s.voiceChat);
+  const party = useParty((s) => s.parties[room.id]);
   const names = participants.map((p) => users[p.userId]?.name ?? 'Someone');
   const who =
     names.length === 0
@@ -121,6 +123,14 @@ function Lobby({ channel, room }: { channel: Channel; room: Room }) {
             </motion.div>
             <h2 className="mt-6 font-display text-[28px] font-bold tracking-[-0.03em]">{room.name}</h2>
             <p className="mt-1.5 text-[14px] text-fg-2">{who}</p>
+            {party && (
+              <p className="mt-3 flex max-w-full items-center gap-1.5 rounded-full bg-fill-2 px-3 py-1 text-[12.5px] text-fg-2">
+                <Popcorn size={14} className="shrink-0 text-accent" />
+                <span className="truncate">
+                  Watch party: <span className="font-medium text-fg">{party.file.name}</span>
+                </span>
+              </p>
+            )}
             {participants.length > 0 && (
               <div className="mt-4 flex -space-x-2">
                 {participants.slice(0, 6).map((p) => (
@@ -160,7 +170,7 @@ export function ChatToggle() {
   );
 }
 
-export function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean; channel: Channel; room: Room; overlay?: boolean }) {
+export function VoiceChatPanel({ open, channel, room }: { open: boolean; channel: Channel; room: Room }) {
   const compact = useCompact();
   const close = () => useUI.getState().set({ voiceChat: false });
   // Phones: the chat covers the call as a sheet; the call keeps running underneath.
@@ -197,7 +207,7 @@ export function VoiceChatPanel({ open, channel, room, overlay }: { open: boolean
           animate={{ width: 360, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 380, damping: 40 }}
-          className={clsx('shrink-0 overflow-hidden', overlay ? 'glass-side hairline-l' : 'hairline-l')}
+          className="shrink-0 overflow-hidden hairline-l"
         >
           <div className="flex h-full w-[360px] flex-col">
             <div data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-4">
@@ -231,6 +241,9 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const focusedPeer = useUI((s) => s.focusedPeer);
   const voiceChat = useUI((s) => s.voiceChat);
   const immersive = useUI((s) => s.immersive);
+  const watchLayout = useUI((s) => s.watchLayout);
+  const partyView = useUI((s) => s.partyView);
+  const party = useParty((s) => s.parties[room.id]);
   const myPeer = voice.peerId;
 
   const camOf = (p: VoiceParticipant) => (p.peerId === myPeer ? localCam : remote[p.peerId]?.cam) ?? undefined;
@@ -242,6 +255,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     ...participants.map((p) => ({ key: p.peerId, kind: 'user' as const, p })),
   ];
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
+  const watchingParty = !!party && partyView && !focused;
+  const watching = !!focused || watchingParty;
 
   // When a friend is sharing (e.g. a movie) — or starts to — jump straight into watch mode.
   const sharers = participants.filter((p) => p.screen && p.peerId !== myPeer).map((p) => p.peerId);
@@ -252,13 +267,22 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     prevSharers.current = sharers;
   }, [sharers.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A watch party starting (or running when we arrive) takes everyone to it.
+  useEffect(() => {
+    if (party?.id) useUI.getState().set({ partyView: true, focusedPeer: null });
+  }, [party?.id]);
+
   // Drop watch mode only when the focused sharer actually stopped (not on a stale render).
   useEffect(() => {
     const fp = useUI.getState().focusedPeer;
-    const stillSharing = !!fp && participants.some((p) => p.peerId === fp && p.screen);
-    if (fp && !stillSharing) useUI.getState().set({ focusedPeer: null });
-    if (!stillSharing && immersive) void setImmersive(false);
-  }, [participants, immersive]);
+    if (fp && !participants.some((p) => p.peerId === fp && p.screen)) useUI.getState().set({ focusedPeer: null });
+  }, [participants]);
+
+  useEffect(() => {
+    if (!watching && useUI.getState().immersive) void setImmersive(false);
+    // Watching opens the side panel (chat and people) next to the picture.
+    if (watching && !isCompactNow()) useUI.getState().set({ voiceChat: true });
+  }, [watching]);
 
   // Cinema behaviour: controls fade out after a moment of stillness.
   const [idle, setIdle] = useState(false);
@@ -266,59 +290,124 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const wake = () => {
     setIdle(false);
     clearTimeout(idleTimer.current);
-    if (focused) idleTimer.current = setTimeout(() => setIdle(true), 2600);
+    if (watching) idleTimer.current = setTimeout(() => setIdle(true), 2800);
   };
   useEffect(() => {
     wake();
     return () => clearTimeout(idleTimer.current);
-  }, [focused?.peerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watching, focused?.peerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && useUI.getState().immersive) void setImmersive(false);
     };
+    // The browser leaves full screen on its own (Esc): follow it.
+    const onFullscreen = () => !document.fullscreenElement && useUI.getState().immersive && void setImmersive(false);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', onFullscreen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', onFullscreen);
+    };
   }, []);
 
-  const hideChrome = !!focused && idle;
+  // A paused movie keeps its controls up.
+  const hideChrome = watching && idle && !(watchingParty && !party.playing);
   const audioBlocked = useVoice((s) => s.audioBlocked);
+  const soundPrompt = (
+    <AnimatePresence>
+      {audioBlocked && (
+        <motion.button
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={spring}
+          className="absolute left-1/2 top-[62px] z-40 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg"
+        >
+          <Volume2 size={15} /> Tap to turn on sound
+        </motion.button>
+      )}
+    </AnimatePresence>
+  );
+
+  if (watching) {
+    const sharerUser = focused ? users[focused.userId] : undefined;
+    const setLayout = (layout: WatchLayout) => {
+      if (layout === 'full') return void setImmersive(true);
+      useUI.getState().set({ watchLayout: layout });
+      if (useUI.getState().immersive) void setImmersive(false);
+    };
+    const exit = () => {
+      useUI.getState().set(focused ? { focusedPeer: null } : { partyView: false });
+      if (useUI.getState().immersive) void setImmersive(false);
+    };
+    return (
+      // Touch has no hover: a tap brings the controls back.
+      <div className="relative h-full min-h-0" onMouseMove={wake} onPointerDown={wake}>
+        <WatchStage
+          channel={channel}
+          chatRoom={chatRoom}
+          layout={immersive ? 'full' : watchLayout}
+          onLayout={setLayout}
+          idle={hideChrome}
+          badge={
+            focused ? (
+              <>
+                <span className="shrink-0 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide">LIVE</span>
+                <Avatar user={sharerUser} size={24} className="shrink-0 compact:hidden" />
+              </>
+            ) : (
+              <PartyBadge />
+            )
+          }
+          title={focused ? (focused.peerId === myPeer ? 'You’re sharing your screen' : `${sharerUser?.name ?? 'Someone'}’s screen`) : party!.file.name}
+          headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : <PartyHeaderInfo roomId={room.id} party={party!} />}
+          media={
+            focused ? (
+              <ScreenMedia stream={screenOf(focused)} />
+            ) : (
+              <PartyMedia roomId={room.id} party={party!} chromeHidden={hideChrome} />
+            )
+          }
+          controls={watchingParty ? <PartyControls roomId={room.id} party={party} /> : undefined}
+          overlay={
+            <>
+              {soundPrompt}
+              {watchingParty && <PartyRequests roomId={room.id} />}
+            </>
+          }
+          dock={(floating) => <Dock channel={channel} room={room} participants={participants} hidden={floating && hideChrome} myPeer={myPeer} watching />}
+          exitLabel="Exit watch mode"
+          onExit={exit}
+          people={participants}
+          users={users}
+          camOf={camOf}
+          speakingOf={speakingOf}
+          myPeer={myPeer}
+          extra={watchingParty ? (p) => <PartyPersonExtra roomId={room.id} party={party} p={p} /> : undefined}
+        />
+      </div>
+    );
+  }
 
   return (
-    // Touch has no hover: a tap brings the controls back in watch mode.
-    <div className="relative flex h-full min-h-0" onMouseMove={wake} onPointerDown={wake}>
-      <div className={clsx('relative flex min-w-0 flex-1 flex-col', focused && 'bg-[var(--stage)]')} style={{ cursor: hideChrome ? 'none' : undefined }}>
-        {focused ? (
-          <TheaterHeader channel={channel} sharer={focused} user={users[focused.userId]} hidden={hideChrome} isMe={focused.peerId === myPeer} />
-        ) : (
-          <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5 compact:gap-1.5 compact:px-3">
-            <MobileBack />
-            <AudioLines size={18} className="shrink-0 text-success" />
-            <h1 data-tauri-drag-region className="min-w-0 truncate font-display text-[15px] font-semibold tracking-[-0.015em]">
-              {stageTitle(channel, room)}
-            </h1>
-            <span data-tauri-drag-region className="shrink-0 whitespace-nowrap text-[12px] text-fg-3 compact:hidden">
-              {participants.length} {participants.length === 1 ? 'person' : 'people'}
-            </span>
-            <div data-tauri-drag-region className="flex-1 self-stretch" />
-            {extras}
-            <ChatToggle />
-          </header>
-        )}
+    <div className="relative flex h-full min-h-0">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5 compact:gap-1.5 compact:px-3">
+          <MobileBack />
+          <AudioLines size={18} className="shrink-0 text-success" />
+          <h1 data-tauri-drag-region className="min-w-0 truncate font-display text-[15px] font-semibold tracking-[-0.015em]">
+            {stageTitle(channel, room)}
+          </h1>
+          <span data-tauri-drag-region className="shrink-0 whitespace-nowrap text-[12px] text-fg-3 compact:hidden">
+            {participants.length} {participants.length === 1 ? 'person' : 'people'}
+          </span>
+          <div data-tauri-drag-region className="flex-1 self-stretch" />
+          {extras}
+          <ChatToggle />
+        </header>
 
-        <AnimatePresence>
-          {audioBlocked && (
-            <motion.button
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={spring}
-              className="absolute left-1/2 top-[62px] z-40 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg"
-            >
-              <Volume2 size={15} /> Tap to turn on sound
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {soundPrompt}
 
         <div className="relative min-h-0 flex-1">
           {status === 'connecting' && participants.length === 0 ? (
@@ -330,25 +419,14 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
                 </span>
               </div>
             </div>
-          ) : focused ? (
-            <Theater
-              channelId={channel.id}
-              focused={focused}
-              stream={screenOf(focused)}
-              participants={participants}
-              users={users}
-              camOf={camOf}
-              speakingOf={speakingOf}
-              myPeer={myPeer}
-            />
           ) : (
             <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
         </div>
 
-        <Dock channel={channel} room={room} participants={participants} hidden={hideChrome} myPeer={myPeer} />
+        <Dock channel={channel} room={room} participants={participants} hidden={false} myPeer={myPeer} watching={false} />
       </div>
-      <VoiceChatPanel open={voiceChat} channel={channel} room={chatRoom} overlay={!!focused} />
+      <VoiceChatPanel open={voiceChat} channel={channel} room={chatRoom} />
     </div>
   );
 }
@@ -485,76 +563,11 @@ function TileView({
   );
 }
 
-// ─── Theater (watch together) ────────────────────────────────────────────────
+// ─── Watching a shared screen ────────────────────────────────────────────────
 
-function TheaterHeader({ channel, sharer, user, hidden, isMe }: { channel: Channel; sharer: VoiceParticipant; user?: PublicUser; hidden: boolean; isMe: boolean }) {
-  const streamVolume = useSettings((s) => s.streamVolumes[sharer.userId] ?? 1);
-  const immersive = useUI((s) => s.immersive);
-  const bubblesHidden = useUI((s) => s.bubblesHidden);
+function ScreenMedia({ stream }: { stream?: MediaStream }) {
   return (
-    <motion.header
-      data-tauri-drag-region
-      animate={{ opacity: hidden ? 0 : 1, y: hidden ? -8 : 0 }}
-      transition={spring}
-      className="absolute inset-x-0 top-0 z-30 flex h-[60px] items-center gap-3 bg-gradient-to-b from-black/70 to-transparent px-5 text-white compact:h-[52px] compact:gap-2 compact:px-3"
-      style={{ pointerEvents: hidden ? 'none' : 'auto' }}
-    >
-      <span className="shrink-0 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide">LIVE</span>
-      <Avatar user={user} size={24} className="shrink-0 compact:hidden" />
-      <span data-tauri-drag-region className="min-w-0 truncate text-[13.5px] font-semibold">
-        {isMe ? 'You’re sharing your screen' : `${user?.name ?? 'Someone'}’s screen`}
-      </span>
-      {/* Phones use their volume buttons. */}
-      {!isMe && sharer.streams && (
-        <div className="ml-2 flex w-[150px] shrink-0 items-center gap-2 compact:hidden">
-          <Volume2 size={14} className="shrink-0 opacity-80" />
-          <Slider value={streamVolume} min={0} max={2} onChange={(v) => useSettings.getState().setStreamVolume(sharer.userId, v)} />
-        </div>
-      )}
-      <div data-tauri-drag-region className="flex-1 self-stretch" />
-      <HeaderButton label={bubblesHidden ? 'Show people' : 'Hide people'} onClick={() => useUI.getState().set({ bubblesHidden: !bubblesHidden })} active={!bubblesHidden}>
-        <Users size={16} />
-      </HeaderButton>
-      <HeaderButton label={useUI.getState().voiceChat ? 'Hide chat' : 'Show chat'} onClick={() => useUI.getState().set({ voiceChat: !useUI.getState().voiceChat })}>
-        <MessageSquareText size={16} />
-      </HeaderButton>
-      <HeaderButton label={immersive ? 'Exit full screen' : 'Full screen'} onClick={() => void setImmersive(!immersive)}>
-        {immersive ? <Shrink size={16} /> : <Expand size={16} />}
-      </HeaderButton>
-      <HeaderButton label="Exit watch mode" onClick={() => (useUI.getState().set({ focusedPeer: null }), immersive && void setImmersive(false))}>
-        <Minimize2 size={16} />
-      </HeaderButton>
-      <span className="sr-only">{channel.name}</span>
-    </motion.header>
-  );
-}
-
-function HeaderButton({ label, onClick, active, children }: { label: string; onClick: () => void; active?: boolean; children: ReactNode }) {
-  return (
-    <Tooltip label={label} side="bottom">
-      <button
-        aria-label={label}
-        onClick={onClick}
-        className={clsx('grid h-9 w-9 shrink-0 place-items-center rounded-full backdrop-blur-md transition-colors', active ? 'bg-white/25' : 'bg-white/10 hover:bg-white/20')}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
-}
-
-function Theater({
-  focused,
-  stream,
-  participants,
-  ...rest
-}: StreamProps & { focused: VoiceParticipant; stream?: MediaStream; participants: VoiceParticipant[] }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const size = useSize(ref);
-  const hidden = useUI((s) => s.bubblesHidden);
-
-  return (
-    <div ref={ref} className="absolute inset-0 overflow-hidden">
+    <div className="absolute inset-0">
       {stream ? (
         <StreamVideo stream={stream} contain stage />
       ) : (
@@ -565,125 +578,38 @@ function Theater({
           </div>
         </div>
       )}
-      <AnimatePresence>
-        {!hidden &&
-          size.w > 0 &&
-          participants.map((p, i) => <Bubble key={p.peerId} p={p} index={i} bounds={size} focusedPeer={focused.peerId} {...rest} />)}
-      </AnimatePresence>
     </div>
   );
 }
 
-/** Loom-style floating person: drag anywhere, edges are magnetic, double-click to minimize. */
-function Bubble({
-  p,
-  index,
-  bounds,
-  users,
-  camOf,
-  speakingOf,
-  myPeer,
-  channelId,
-}: StreamProps & { p: VoiceParticipant; index: number; bounds: { w: number; h: number }; focusedPeer: string }) {
-  const stored = useUI((s) => s.bubbles[p.peerId]);
-  const compact = useCompact();
-  const mini = stored?.mini ?? false;
-  const S = compact ? (mini ? 40 : 68) : mini ? 56 : 116;
-  const margin = compact ? 10 : 18;
-  const dock = compact ? 84 : 104;
-  const bounds2 = { left: 12, top: 12, right: Math.max(12, bounds.w - S - 12), bottom: Math.max(12, bounds.h - S - 12) };
-  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
-  const toggleMini = () => useUI.getState().setBubble(p.peerId, { mini: !mini });
-
-  // Undragged bubbles stack bottom-right above the dock; dragged ones stay where they were dropped.
-  const perCol = Math.max(1, Math.floor((bounds.h - dock - 96) / (S + 12)));
-  const target = stored?.dragged
-    ? { x: clamp(stored.x, bounds2.left, bounds2.right), y: clamp(stored.y, bounds2.top, bounds2.bottom) }
-    : {
-        x: clamp(bounds.w - S - margin - Math.floor(index / perCol) * (S + 12), bounds2.left, bounds2.right),
-        y: clamp(bounds.h - dock - ((index % perCol) + 1) * (S + 12), bounds2.top, bounds2.bottom),
-      };
-  const x = useMotionValue(target.x);
-  const y = useMotionValue(target.y);
-  const cam = camOf(p);
-  const user = users[p.userId];
-  const isMe = p.peerId === myPeer;
-
-  useEffect(() => {
-    animate(x, target.x, spring);
-    animate(y, target.y, spring);
-  }, [target.x, target.y]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Magnetic edges: drops close to a side snap neatly onto it. */
-  const onDragEnd = () => {
-    let nx = clamp(x.get(), bounds2.left, bounds2.right);
-    let ny = clamp(y.get(), bounds2.top, bounds2.bottom);
-    if (nx - bounds2.left < 44) nx = margin;
-    if (bounds2.right - nx < 44) nx = bounds.w - S - margin;
-    if (ny - bounds2.top < 44) ny = margin + 52;
-    if (bounds2.bottom - ny < 44) ny = bounds.h - S - margin;
-    animate(x, nx, spring);
-    animate(y, ny, spring);
-    useUI.getState().setBubble(p.peerId, { x: nx, y: ny, dragged: true });
-  };
-
+/** Phones use their volume buttons. */
+function SharerVolume({ userId }: { userId: string }) {
+  const volume = useSettings((s) => s.streamVolumes[userId] ?? 1);
   return (
-    <motion.div
-      drag
-      dragMomentum={false}
-      dragElastic={0.1}
-      dragConstraints={bounds2}
-      onDragEnd={onDragEnd}
-      onDoubleClick={toggleMini}
-      // Touch: a tap (not a drag) shrinks or grows the bubble.
-      onTap={(e) => (e as PointerEvent).pointerType === 'touch' && toggleMini()}
-      onContextMenu={(e) => openMenu(e, channelId, p)}
-      initial={{ opacity: 0, scale: 0.6 }}
-      animate={{ opacity: 1, scale: 1, width: S, height: S }}
-      exit={{ opacity: 0, scale: 0.6 }}
-      whileHover={{ scale: 1.04 }}
-      whileDrag={{ scale: 1.08 }}
-      transition={spring}
-      style={{ x, y }}
-      className="group absolute left-0 top-0 z-20 cursor-grab active:cursor-grabbing"
-    >
-      <motion.div
-        className="h-full w-full overflow-hidden rounded-full bg-black"
-        animate={{
-          boxShadow: speakingOf(p)
-            ? '0 0 0 3px var(--success), 0 0 24px color-mix(in srgb, var(--success) 50%, transparent), 0 14px 34px rgba(0,0,0,0.55)'
-            : '0 0 0 1.5px rgba(255,255,255,0.28), 0 14px 34px rgba(0,0,0,0.55)',
-        }}
-        transition={{ duration: 0.15 }}
-      >
-        {cam ? <StreamVideo stream={cam} mirror={isMe} /> : <Avatar user={user} size={S} />}
-      </motion.div>
-      {(p.muted || p.serverMuted) && (
-        <span className="absolute bottom-0.5 right-0.5 grid h-6 w-6 place-items-center rounded-full bg-danger text-white shadow-[0_0_0_2px_rgba(0,0,0,0.6)]" style={{ transform: mini ? 'scale(0.75)' : undefined }}>
-          <MicOff size={12} />
-        </span>
-      )}
-      <button
-        aria-label={mini ? 'Expand' : 'Minimize'}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => useUI.getState().setBubble(p.peerId, { mini: !mini })}
-        className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-black/70 text-white opacity-0 shadow backdrop-blur transition-opacity group-hover:opacity-100"
-      >
-        {mini ? <Expand size={11} /> : <Minimize2 size={11} />}
-      </button>
-      {!mini && (
-        <span className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
-          {user?.name ?? 'Someone'}
-          {isMe ? ' (you)' : ''}
-        </span>
-      )}
-    </motion.div>
+    <div className="ml-2 flex w-[150px] shrink-0 items-center gap-2 compact:hidden">
+      <Volume2 size={14} className="shrink-0 opacity-80" />
+      <Slider value={volume} min={0} max={2} onChange={(v) => useSettings.getState().setStreamVolume(userId, v)} />
+    </div>
   );
 }
 
 // ─── Dock ────────────────────────────────────────────────────────────────────
 
-function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channel; room: Room; participants: VoiceParticipant[]; hidden: boolean; myPeer: string | null }) {
+function Dock({
+  channel,
+  room,
+  participants,
+  hidden,
+  myPeer,
+  watching,
+}: {
+  channel: Channel;
+  room: Room;
+  participants: VoiceParticipant[];
+  hidden: boolean;
+  myPeer: string | null;
+  watching: boolean;
+}) {
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const serverMuted = useVoice((s) => s.serverMuted);
@@ -692,6 +618,8 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
   const roomMuted = useChannels((s) => s.voice[channel.id]?.mutedRooms.includes(room.id) ?? false);
   const focusedPeer = useUI((s) => s.focusedPeer);
   const voiceChat = useUI((s) => s.voiceChat);
+  const partyView = useUI((s) => s.partyView);
+  const party = useParty((s) => s.parties[room.id]);
   const me = useAuth((s) => s.me);
   const compact = useCompact();
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
@@ -701,6 +629,10 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
   const micOff = muted || deafened || serverMuted;
   const toggleRoomMute = () => getHub(channel.id)?.send({ t: 'voice.roomMute', roomId: room.id, muted: !roomMuted });
   const toggleWatch = () => sharer && useUI.getState().set({ focusedPeer: focusedPeer ? null : sharer.peerId });
+  // Watch party: start one, or go back to (or away from) the one running.
+  const onParty = !!party && partyView && !focusedPeer;
+  const partyLabel = !party ? 'Start a watch party' : onParty ? 'Back to the call' : 'Back to the watch party';
+  const togglePartyView = () => (party ? useUI.getState().set(onParty ? { partyView: false } : { partyView: true, focusedPeer: null }) : void startParty(room.id));
 
   if (compact)
     return (
@@ -721,9 +653,11 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
             {screen ? <ScreenShareOff size={20} /> : <ScreenShare size={20} />}
           </DockButton>
         )}
-        <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
-          <MessageSquareText size={20} />
-        </DockButton>
+        {!watching && (
+          <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
+            <MessageSquareText size={20} />
+          </DockButton>
+        )}
         <DockButton label="More" state={deafened || roomMuted ? 'off' : 'normal'} onClick={(el) => setMoreMenu(el.getBoundingClientRect())}>
           <Ellipsis size={20} />
         </DockButton>
@@ -746,6 +680,9 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
             </MenuItem>
           )}
+          <MenuItem icon={<Popcorn size={15} />} onClick={() => (setMoreMenu(null), togglePartyView())}>
+            {partyLabel}
+          </MenuItem>
           {isAdmin && (
             <>
               <MenuSeparator />
@@ -793,9 +730,17 @@ function Dock({ channel, room, participants, hidden, myPeer }: { channel: Channe
           <Clapperboard size={19} />
         </DockButton>
       )}
-      <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
-        <MessageSquareText size={19} />
+      <DockButton label={partyLabel} state={onParty ? 'on' : 'normal'} onClick={togglePartyView}>
+        <span className="relative">
+          <Popcorn size={19} />
+          {party && !onParty && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
+        </span>
       </DockButton>
+      {!watching && (
+        <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
+          <MessageSquareText size={19} />
+        </DockButton>
+      )}
       {isAdmin && (
         <DockButton
           label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins can still talk)'}

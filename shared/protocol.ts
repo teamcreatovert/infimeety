@@ -151,6 +151,44 @@ export interface VoiceSnapshot {
   mutedRooms: string[];
 }
 
+/** A file in a watch party: like an attachment, streamed from its owner when someone copies it. */
+export interface PartyFile {
+  id: string;
+  ownerId: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+
+/**
+ * A watch party in a voice room: everyone plays their own copy of one file, in sync.
+ * Playback is "at server time `at`, the movie was at `position` seconds, and was (not)
+ * playing"; a play is scheduled a moment ahead so everyone starts on the same frame.
+ * With more than three people in the room, only the host and co-hosts control it.
+ */
+export interface PartyState {
+  id: string;
+  hostId: string;
+  cohosts: string[];
+  file: PartyFile;
+  subtitle: PartyFile | null;
+  playing: boolean;
+  position: number;
+  at: number;
+  /** Who made the last change. */
+  by: string;
+  seq: number;
+}
+
+/** What a viewer can ask the host for. */
+export type PartyAction = { kind: 'play'; position?: number } | { kind: 'pause' } | { kind: 'seek'; position: number };
+
+/** Where each person stands with the movie. */
+export interface PartyMemberStatus {
+  state: 'choosing' | 'copying' | 'ready' | 'failed';
+  progress?: number;
+}
+
 /** Structural copies of the DOM WebRTC types so the Worker compiles without DOM libs. */
 export interface SdpInit {
   type: 'offer' | 'answer' | 'pranswer' | 'rollback';
@@ -188,10 +226,18 @@ export type ClientMsg =
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
+  /** Start, update or (null) end the room's watch party. `resolves`: the request this answers. */
+  | { t: 'party.set'; roomId: string; party: Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at'> | null; resolves?: string }
+  | { t: 'party.request'; roomId: string; action: PartyAction }
+  /** The host makes someone a co-host (or not). */
+  | { t: 'party.cohost'; roomId: string; userId: string; on: boolean }
+  | { t: 'party.status'; roomId: string; status: PartyMemberStatus }
+  /** Clock sync: the hub answers with its own time. */
+  | { t: 'clock'; c: number }
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState> }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
   | { t: 'voice.kicked' }
@@ -216,5 +262,9 @@ export type ServerMsg =
   | { t: 'meeting.cohost'; userId: string }
   /** Meetings: the host ended it or it expired; `channel.removed` follows. */
   | { t: 'meeting.ended' }
+  | { t: 'party'; roomId: string; party: PartyState | null; resolved?: string }
+  | { t: 'party.request'; roomId: string; id: string; from: string; action: PartyAction }
+  | { t: 'party.status'; roomId: string; peerId: string; userId: string; status: PartyMemberStatus }
+  | { t: 'clock'; c: number; s: number }
   | { t: 'error'; message: string }
   | { t: 'pong' };

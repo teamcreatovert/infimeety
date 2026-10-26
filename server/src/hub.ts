@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { ClientMsg, Message, Role, ServerMsg, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { ClientMsg, Message, PartyFile, PartyState, Role, ServerMsg, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
 
@@ -23,6 +23,8 @@ interface MeetingState {
 }
 
 const MAX_FRAME = 64 * 1024;
+/** Above this many people in the room, only the host and co-hosts control a watch party. */
+const PARTY_OPEN_LIMIT = 3;
 /** A live meeting's hub re-checks its expiry at least this often (in case a disconnect went unnoticed). */
 const MEETING_CHECK = 15 * 60_000;
 
@@ -35,6 +37,9 @@ export class ChannelHub extends DurableObject<Env> {
   private roomKinds = new Map<string, string>();
   private meeting: MeetingState | null = null;
   private promoting = false;
+  /** Watch parties by voice room. */
+  private parties = new Map<string, PartyState>();
+  private lastRequest = new Map<string, number>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -42,6 +47,7 @@ export class ChannelHub extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
+      this.parties = new Map(Object.entries((await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {}));
     });
   }
 
@@ -55,7 +61,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.voiceSnapshot() });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.voiceSnapshot(), parties: Object.fromEntries(this.parties) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
 
     return new Response(null, { status: 101, webSocket: client, headers: { 'Sec-WebSocket-Protocol': 'infimeety' } });
@@ -274,6 +280,48 @@ export class ChannelHub extends DurableObject<Env> {
       }
       case 'media.revoked':
         return this.mediaRevoked(me, msg.attachmentIds);
+
+      case 'party.set':
+        return this.partySet(ws, me, msg);
+      case 'party.request': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || me.voice?.roomId !== msg.roomId) return;
+        // One request every two seconds per person is plenty.
+        const last = this.lastRequest.get(me.userId) ?? 0;
+        if (Date.now() - last < 2000) return;
+        this.lastRequest.set(me.userId, Date.now());
+        const a = msg.action ?? ({} as never);
+        const raw = Number((a as { position?: number }).position);
+        const position = Number.isFinite(raw) ? Math.max(0, raw) : undefined;
+        // A play without a time plays from wherever the movie is.
+        const action =
+          a.kind === 'pause'
+            ? { kind: 'pause' as const }
+            : a.kind === 'seek'
+              ? { kind: 'seek' as const, position: position ?? 0 }
+              : position === undefined
+                ? { kind: 'play' as const }
+                : { kind: 'play' as const, position };
+        return this.broadcast({ t: 'party.request', roomId: msg.roomId, id: newId(), from: me.userId, action });
+      }
+      case 'party.cohost': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || party.hostId !== me.userId || msg.userId === me.userId) return;
+        const cohosts = party.cohosts.filter((u) => u !== msg.userId);
+        if (msg.on) cohosts.push(String(msg.userId));
+        return this.savePartyState(msg.roomId, { ...party, cohosts, seq: party.seq + 1 });
+      }
+      case 'party.status':
+        if (me.voice?.roomId !== msg.roomId || !msg.status) return;
+        return this.broadcast({
+          t: 'party.status',
+          roomId: msg.roomId,
+          peerId: me.peerId,
+          userId: me.userId,
+          status: { state: ['choosing', 'copying', 'ready', 'failed'].includes(msg.status.state) ? msg.status.state : 'choosing', progress: Number(msg.status.progress) || 0 },
+        });
+      case 'clock':
+        return this.send(ws, { t: 'clock', c: Number(msg.c) || 0, s: Date.now() });
     }
   }
 
@@ -379,6 +427,78 @@ export class ChannelHub extends DurableObject<Env> {
     this.broadcast({ t: 'media.revoked', ownerId: me.userId, attachmentIds: [...revoked] });
   }
 
+  // ─── Watch parties ───────────────────────────────────────────────────────────
+
+  /** People (by user) in a voice room, longest-present first. */
+  private inRoom(roomId: string, except?: WebSocket) {
+    return this.voiceSnapshot(undefined, except)
+      .participants.filter((p) => p.roomId === roomId)
+      .sort((a, b) => a.joinedAt - b.joinedAt)
+      .map((p) => p.userId)
+      .filter((u, i, all) => all.indexOf(u) === i);
+  }
+
+  private canControl(party: PartyState, userId: string) {
+    return party.hostId === userId || party.cohosts.includes(userId) || this.inRoom(this.roomOf(party)).length <= PARTY_OPEN_LIMIT;
+  }
+
+  private roomOf(party: PartyState) {
+    for (const [roomId, p] of this.parties) if (p.id === party.id) return roomId;
+    return '';
+  }
+
+  private async savePartyState(roomId: string, party: PartyState | null, resolved?: string) {
+    if (party) this.parties.set(roomId, party);
+    else this.parties.delete(roomId);
+    await this.ctx.storage.put('parties', Object.fromEntries(this.parties));
+    this.broadcast({ t: 'party', roomId, party, resolved });
+  }
+
+  private async partySet(ws: WebSocket, me: Peer, msg: Extract<ClientMsg, { t: 'party.set' }>) {
+    const roomId = String(msg.roomId);
+    if (me.voice?.roomId !== roomId) return;
+    const current = this.parties.get(roomId);
+    const now = Date.now();
+    if (!msg.party) {
+      if (current && !this.canControl(current, me.userId)) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can end the watch party' });
+      return this.savePartyState(roomId, null);
+    }
+    const p = msg.party;
+    const file = cleanFile(p.file);
+    if (!file) return;
+    if (current && !this.canControl(current, me.userId)) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can control the watch party' });
+    // A new movie is the host's call (or anyone's, in a small room).
+    if (current && current.file.id !== file.id && current.hostId !== me.userId && this.inRoom(roomId).length > PARTY_OPEN_LIMIT) return;
+    const next: PartyState = {
+      id: current && current.file.id === file.id ? current.id : newId(),
+      hostId: current?.hostId ?? me.userId,
+      cohosts: current?.cohosts ?? [],
+      file,
+      subtitle: p.subtitle ? cleanFile(p.subtitle) : null,
+      playing: !!p.playing,
+      position: Math.max(0, Number(p.position) || 0),
+      // A play is scheduled a little ahead; never trust a time far from ours.
+      at: Math.min(now + 5000, Math.max(now - 60_000, Number(p.at) || now)),
+      by: me.userId,
+      seq: (current?.seq ?? 0) + 1,
+    };
+    await this.savePartyState(roomId, next, typeof msg.resolves === 'string' ? msg.resolves.slice(0, 32) : undefined);
+  }
+
+  /** After the room changes: an empty room ends its party; a host who left hands it on. */
+  private async tendParties(except?: WebSocket) {
+    for (const [roomId, party] of [...this.parties]) {
+      const present = this.inRoom(roomId, except);
+      if (!present.length) {
+        await this.savePartyState(roomId, null);
+        continue;
+      }
+      if (present.includes(party.hostId)) continue;
+      const hostId = party.cohosts.find((u) => present.includes(u)) ?? present[0];
+      await this.savePartyState(roomId, { ...party, hostId, cohosts: party.cohosts.filter((u) => u !== hostId), seq: party.seq + 1 });
+    }
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private async roomKind(roomId: string, channelId: string): Promise<string | null> {
@@ -429,6 +549,7 @@ export class ChannelHub extends DurableObject<Env> {
 
   private broadcastVoice(exceptSocket?: WebSocket) {
     this.broadcast({ t: 'voice', voice: this.voiceSnapshot(undefined, exceptSocket) }, exceptSocket);
+    this.tendParties(exceptSocket).catch((err) => console.error('party upkeep failed', err));
     if (this.meeting) this.meetingCallChanged(exceptSocket).catch((err) => console.error('meeting check failed', err));
   }
 
@@ -457,4 +578,18 @@ export class ChannelHub extends DurableObject<Env> {
       }
     }
   }
+}
+
+/** A party's file, as the sender describes it (metadata only). */
+function cleanFile(f: unknown): PartyFile | null {
+  if (!f || typeof f !== 'object') return null;
+  const { id, ownerId, name, mime, size } = f as Record<string, unknown>;
+  if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id) || typeof ownerId !== 'string' || typeof size !== 'number' || size < 0) return null;
+  return {
+    id,
+    ownerId: ownerId.slice(0, 64),
+    name: String(name ?? 'file').slice(0, 200),
+    mime: typeof mime === 'string' && /^[\w.+-]{1,40}\/[\w.+-]{1,100}$/.test(mime) ? mime : 'application/octet-stream',
+    size: Math.floor(size),
+  };
 }

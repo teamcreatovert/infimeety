@@ -1,5 +1,6 @@
 import type { ServerMsg } from '../../../shared/protocol';
 import { HubClient, type HubStatus } from './hub';
+import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -75,6 +76,7 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     case 'welcome':
       channels.set({ online: { ...channels.online, [cid]: msg.online }, voice: { ...channels.voice, [cid]: msg.voice } });
       voice.onWelcome(hub);
+      onParties(msg.parties);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
@@ -148,6 +150,15 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
       return useMeetings.getState().onCohost(cid, msg.userId);
     case 'meeting.ended':
       return useMeetings.getState().onEnded(cid);
+    case 'party':
+      return onParty(msg.roomId, msg.party, msg.resolved);
+    case 'party.status':
+      return onPartyStatus(msg.roomId, msg.peerId, msg.userId, msg.status);
+    case 'party.request':
+      return onRequest({ id: msg.id, roomId: msg.roomId, from: msg.from, action: msg.action });
+    case 'clock':
+      return onClock(msg.c, msg.s);
+
     case 'error':
       return toast({ kind: 'error', title: msg.message });
   }
