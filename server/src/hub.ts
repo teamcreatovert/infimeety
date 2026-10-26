@@ -268,7 +268,7 @@ export class ChannelHub extends DurableObject<Env> {
         const owners = this.ctx.getWebSockets(String(msg.ownerId)).filter((s) => s.readyState === 1);
         if (!owners.length) return this.send(ws, { t: 'media.offline', reqId: msg.reqId });
         for (const s of owners) {
-          this.send(s, { t: 'media.request', from: me.peerId, fromUser: me.userId, attachmentId: msg.attachmentId, reqId: msg.reqId });
+          this.send(s, { t: 'media.request', from: me.peerId, fromUser: me.userId, attachmentId: msg.attachmentId, reqId: msg.reqId, lanes: Math.max(1, Math.min(6, Math.floor(Number(msg.lanes) || 1))) });
         }
         return;
       }

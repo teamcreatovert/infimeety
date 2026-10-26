@@ -54,6 +54,10 @@ export interface SettingsState {
   screenMode: 'motion' | 'detail';
   shareAudio: boolean;
 
+  /** Where copies of friends' files go: a folder path in the app; a granted folder's name in Chrome/Edge. */
+  saveFolder: string | null;
+  saveFolderName: string | null;
+
   /** Per-person preferences, keyed by user id (0–2 = 0–200%). */
   userVolumes: Record<string, number>;
   localMutes: Record<string, boolean>;
@@ -111,6 +115,9 @@ export const useSettings = create<SettingsState>()(
       screenQuality: '1080p30',
       screenMode: 'motion',
       shareAudio: true,
+
+      saveFolder: null,
+      saveFolderName: null,
 
       userVolumes: {},
       localMutes: {},

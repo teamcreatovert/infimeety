@@ -1,13 +1,20 @@
 import { create } from 'zustand';
 
-export type MediaStatus = 'idle' | 'requesting' | 'loading' | 'ready' | 'offline' | 'gone' | 'error';
+/** `waiting`: the sender is busy sending to others; `saving`: received, being put in place (a folder unpacks). */
+export type MediaStatus = 'idle' | 'requesting' | 'waiting' | 'loading' | 'saving' | 'ready' | 'offline' | 'gone' | 'error';
 
 export interface MediaEntry {
   status: MediaStatus;
   progress: number;
   url?: string;
-  /** A file received from someone, kept so it can be saved. */
+  /** A file received into memory. */
   blob?: Blob;
+  /** Copies: bytes per second, where it's being saved, and its id here once saved (to show it). */
+  speed?: number;
+  where?: string;
+  savedId?: string;
+  /** Why it failed, when there's more to say than "couldn't". */
+  problem?: string;
   /** Owner's own file, served straight from disk. */
   local?: boolean;
 }

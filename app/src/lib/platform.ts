@@ -23,23 +23,6 @@ export async function openExternal(url: string) {
   }
 }
 
-/** Saves a file received in chat: the system's Save dialog in the desktop app, a download in a browser. */
-export async function saveFile(name: string, blob: Blob) {
-  if (isTauri) {
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    return !!(await invoke<string | null>('media_save_as', bytes, { headers: { 'x-file-name': encodeURIComponent(name) } }));
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return true;
-}
-
 export const appWindow = {
   minimize: () => isTauri && getCurrentWindow().minimize(),
   toggleMaximize: () => isTauri && getCurrentWindow().toggleMaximize(),
@@ -55,6 +38,15 @@ export const appWindow = {
   attention: () => isTauri && getCurrentWindow().requestUserAttention(2),
 };
 
+/** An incoming copy being written to disk, piece by piece and in any order. */
+export interface ReceiveTarget {
+  /** Where it's going, to show the user. */
+  where: string;
+  write: (offset: number, data: Uint8Array) => Promise<void>;
+  /** Finishes the copy (or with ok=false throws it away). The copy is then shared on from this device. */
+  close: (ok: boolean) => Promise<SharedFile | null>;
+}
+
 export interface SharedFile {
   id: string;
   path: string;
@@ -67,6 +59,8 @@ export interface SharedFile {
 const desktopMedia = {
   available: true,
   pick: () => invoke<SharedFile[]>('media_pick'),
+  /** Shares a whole folder; it copies over as one and unpacks back into a folder. */
+  pickFolder: () => invoke<SharedFile[]>('media_pick_folder'),
   takeDropped: () => invoke<SharedFile[]>('media_take_dropped'),
   saveBytes: (name: string, bytes: Uint8Array) =>
     invoke<SharedFile>('media_save_bytes', bytes, { headers: { 'x-file-name': encodeURIComponent(name) } }),
@@ -75,6 +69,8 @@ const desktopMedia = {
   missing: () => invoke<string[]>('media_missing'),
   forget: (id: string) => invoke<void>('media_forget', { id }),
   src: (path: string) => convertFileSrc(path),
+  /** Shows the file in Explorer / Finder. */
+  reveal: (id: string) => invoke<void>('media_reveal', { id }),
 };
 
 /** Where your shared files live: on disk in the desktop app, in the browser's storage on the web. */

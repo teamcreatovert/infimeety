@@ -166,7 +166,8 @@ export interface IceInit {
 /** Payloads relayed peer-to-peer through the hub (`rtc` messages). */
 export type RtcPayload =
   | { kind: 'voice'; description?: SdpInit; candidate?: IceInit }
-  | { kind: 'xfer'; reqId: string; description?: SdpInit; candidate?: IceInit }
+  /** A file transfer's connection; big copies use several at once (`lane`, absent = 0). */
+  | { kind: 'xfer'; reqId: string; lane?: number; description?: SdpInit; candidate?: IceInit }
   | { kind: 'media.reply'; reqId: string; status: 'gone' | 'busy' | 'unknown' };
 
 export type ClientMsg =
@@ -184,7 +185,8 @@ export type ClientMsg =
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
   | { t: 'rtc'; to: string; data: RtcPayload }
-  | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string }
+  /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
+  | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
   | { t: 'ping' };
 
@@ -202,7 +204,7 @@ export type ServerMsg =
   | { t: 'chat.attachments'; id: string; roomId: string; attachments: Attachment[] }
   | { t: 'typing'; roomId: string; userId: string }
   | { t: 'rtc'; from: string; fromUser: string; data: RtcPayload }
-  | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string }
+  | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }
   | { t: 'channel.changed' }

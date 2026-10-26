@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AppWindow, AtSign, Bell, Download, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
+import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserRound, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
@@ -11,6 +11,7 @@ import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from
 import { APP_VERSION } from '@/config';
 import { api } from '@/lib/api';
 import { isMac, isTauri } from '@/lib/platform';
+import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
 import { sounds } from '@/lib/sounds';
 import { useUpdater } from '@/lib/updater';
@@ -23,6 +24,7 @@ const TABS: { id: SettingsTab; label: string; icon: ReactNode; tint: string }[] 
   { id: 'account', label: 'Account', icon: <UserRound size={15} />, tint: '#0a84ff' },
   { id: 'voice', label: 'Voice & Video', icon: <Mic size={15} />, tint: '#30d158' },
   { id: 'screen', label: 'Screen Share', icon: <MonitorUp size={15} />, tint: '#bf5af2' },
+  { id: 'files', label: 'Files', icon: <FolderDown size={15} />, tint: '#64d2ff' },
   { id: 'appearance', label: 'Appearance', icon: <Palette size={15} />, tint: '#ff9f0a' },
   { id: 'sounds', label: 'Sounds', icon: <Bell size={15} />, tint: '#ff375f' },
   { id: 'desktop', label: 'Overlay & Tray', icon: <AppWindow size={15} />, tint: '#5e5ce6' },
@@ -62,6 +64,7 @@ export function SettingsModal() {
             {tab === 'account' && <AccountTab />}
             {tab === 'voice' && <VoiceTab />}
             {tab === 'screen' && <ScreenTab />}
+            {tab === 'files' && <FilesTab />}
             {tab === 'appearance' && <AppearanceTab />}
             {tab === 'sounds' && <SoundsTab />}
             {tab === 'desktop' && <DesktopTab />}
@@ -396,6 +399,33 @@ function AppearanceTab() {
           <Switch checked={s.reduceTransparency} onChange={(v) => s.set({ reduceTransparency: v })} />
         </Row>
       </Group>
+    </>
+  );
+}
+
+function FilesTab() {
+  const folder = useSettings((s) => (isTauri ? s.saveFolder : s.saveFolderName));
+  return (
+    <>
+      <Group
+        title="Copies"
+        footer="When friends share files, folders or a watch-party movie, Copy saves them here. They come straight from your friend’s device, over several connections at once."
+      >
+        {canChooseFolder ? (
+          <Row label="Save copies to" detail={folder ?? 'Not chosen yet. You’ll be asked the first time you copy something.'}>
+            <Button size="sm" onClick={() => void chooseSaveFolder()}>
+              {folder ? 'Change…' : 'Choose…'}
+            </Button>
+          </Row>
+        ) : (
+          <Row label="Save copies to" detail="Your Downloads folder. Chrome, Edge and the Infimeety app can save into a folder you pick." />
+        )}
+      </Group>
+      {!isTauri && (
+        <p className="px-1 text-[12px] leading-snug text-fg-3">
+          Big copies and watch parties work best in the Infimeety app: it writes straight to disk at full speed and keeps sharing in the background.
+        </p>
+      )}
     </>
   );
 }

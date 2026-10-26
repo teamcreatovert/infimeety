@@ -8,7 +8,7 @@ export interface Toast {
   body?: string;
 }
 
-export type SettingsTab = 'account' | 'voice' | 'screen' | 'appearance' | 'sounds' | 'desktop' | 'updates';
+export type SettingsTab = 'account' | 'voice' | 'screen' | 'files' | 'appearance' | 'sounds' | 'desktop' | 'updates';
 
 /** Where someone was right-clicked; decides which actions their menu offers. */
 export type UserMenuContext = { kind: 'voice'; channelId: string; peerId: string } | { kind: 'dm'; channelId: string } | { kind: 'member' };
