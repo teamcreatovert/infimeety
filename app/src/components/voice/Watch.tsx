@@ -252,7 +252,7 @@ export function CallPanel({
   const party = useParty((s) => (room ? s.parties[room.id] : undefined));
   const unread = useMessages((s) => s.unread[chatRoom.id] ?? 0);
   const showPeople = tabs && !!people;
-  const showParty = tabs && !!room && room.kind === 'voice' && (room.allowParty || !!party);
+  const showParty = tabs && !!room && room.kind === 'voice' && (room.allowParty !== false || !!party);
   const tab = stored === 'people' && showPeople ? 'people' : stored === 'party' && showParty ? 'party' : 'chat';
   const setTab = (sideTab: typeof stored) => useUI.getState().set({ sideTab });
   const close = onClose && (

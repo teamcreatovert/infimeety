@@ -34,7 +34,7 @@ export function PartyPlanner() {
   const target = useUI((s) => s.partyPlanner);
   const channel = useChannels((s) => s.channels.find((c) => c.id === target?.channelId));
   // Only rooms where an admin hasn't turned watch parties off.
-  const voiceRooms = channel?.rooms.filter((r) => r.kind === 'voice' && r.allowParty) ?? [];
+  const voiceRooms = channel?.rooms.filter((r) => r.kind === 'voice' && r.allowParty !== false) ?? [];
   const myRoom = useVoice((s) => (s.channelId === channel?.id ? s.roomId : null));
   const existing = useParty((s) => (target?.edit && target.roomId ? s.parties[target.roomId] : undefined));
   const [roomId, setRoomId] = useState('');

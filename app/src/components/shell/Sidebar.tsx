@@ -262,7 +262,7 @@ function RoomButton({
               <Popcorn size={15} />
             </span>
             <span className="flex-1 truncate">Allow watch parties</span>
-            <Switch checked={room.allowParty} onChange={(on) => void allowParties(on)} />
+            <Switch checked={room.allowParty !== false} onChange={(on) => void allowParties(on)} />
           </div>
         )}
         <MenuItem danger disabled={!canDelete} icon={<Trash2 size={15} />} onClick={() => void remove()}>
