@@ -1,5 +1,7 @@
 // Publishes the builds made by `tauri build` as a GitHub release, plus the `latest.json` that
-// installed apps poll for one-click updates. Windows, Mac or both: whatever was built.
+// installed apps poll for one-click updates. Windows, Mac or both: whatever was built, plus the
+// Android app (Infimeety.apk) when the Mobile workflow built it. If the release is already out,
+// these builds join it (a Mac build that finished late, say).
 //
 // The Release workflow (.github/workflows/release.yml) runs this after building and signing
 // both apps; that's the normal way to ship. Local builds aren't code-signed, so antivirus
@@ -59,6 +61,9 @@ const mac = {
 };
 mac.signature = mac.archive && find('Infimeety.app.tar.gz.sig', 'universal-apple-darwin/release/bundle/macos');
 
+// The Android app has no updater entry: Android updates it when a newer APK is installed.
+const apk = assetsDir ? find('Infimeety.apk') : null;
+
 const hasWindows = !!(windows.installer && windows.signature);
 const hasMac = !!(mac.dmg && mac.archive && mac.signature);
 if (windows.installer && !windows.signature) throw new Error(`Missing ${windows.installer}.sig. Sign it for the updater first.`);
@@ -113,12 +118,41 @@ if (hasMac) {
   files.push(mac.dmg, join(out, 'Infimeety.dmg'), join(out, archive), join(out, `${archive}.sig`));
 }
 
-writeFileSync(join(out, 'latest.json'), JSON.stringify({ version, notes, pub_date: new Date().toISOString(), platforms }, null, 2));
+if (apk) files.push(apk);
+
+const released = (() => {
+  try {
+    execFileSync('gh', ['release', 'view', tag, '--repo', REPO], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+let pubDate = new Date().toISOString();
+if (released) {
+  // Keep the platforms already in the release's latest.json; these builds add to them.
+  const dir = mkdtempSync(join(tmpdir(), 'infimeety-latest-'));
+  try {
+    execFileSync('gh', ['release', 'download', tag, '--repo', REPO, '--pattern', 'latest.json', '--dir', dir], { stdio: 'ignore' });
+    const before = JSON.parse(readFileSync(join(dir, 'latest.json'), 'utf8'));
+    for (const [key, value] of Object.entries(before.platforms ?? {})) platforms[key] ??= value;
+    pubDate = before.pub_date ?? pubDate;
+  } catch {
+    /* no latest.json yet */
+  }
+}
+writeFileSync(join(out, 'latest.json'), JSON.stringify({ version, notes, pub_date: pubDate, platforms }, null, 2));
 files.push(join(out, 'latest.json'));
 
-// In CI, a release started from the Actions tab has no tag yet: create it at the commit that was built.
-const target = process.env.GITHUB_SHA ? ['--target', process.env.GITHUB_SHA] : [];
-execFileSync('gh', ['release', 'create', tag, ...files, '--repo', REPO, '--title', `Infimeety ${version}`, '--notes', releaseNotes, '--latest', ...target], {
-  stdio: 'inherit',
-});
-console.log(`\nPublished ${tag} (${[hasWindows && 'Windows', hasMac && 'Mac'].filter(Boolean).join(' + ')}): https://github.com/${REPO}/releases/tag/${tag}`);
+const built = [hasWindows && 'Windows', hasMac && 'Mac', apk && 'Android'].filter(Boolean).join(' + ');
+if (released) {
+  execFileSync('gh', ['release', 'upload', tag, ...files, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
+  console.log(`\nAdded ${built} to ${tag}: https://github.com/${REPO}/releases/tag/${tag}`);
+} else {
+  // In CI, a release started from the Actions tab has no tag yet: create it at the commit that was built.
+  const target = process.env.GITHUB_SHA ? ['--target', process.env.GITHUB_SHA] : [];
+  execFileSync('gh', ['release', 'create', tag, ...files, '--repo', REPO, '--title', `Infimeety ${version}`, '--notes', releaseNotes, '--latest', ...target], {
+    stdio: 'inherit',
+  });
+  console.log(`\nPublished ${tag} (${built}): https://github.com/${REPO}/releases/tag/${tag}`);
+}

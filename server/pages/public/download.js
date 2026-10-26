@@ -22,6 +22,7 @@
   var hero = document.getElementById('hero-download');
   var heroLabel = hero && hero.querySelector('span');
   var card = platform && document.getElementById('p-' + platform);
+  var downloadIcon = hero && hero.querySelector('svg') ? hero.querySelector('svg').innerHTML : '';
   function signInIcon() {
     var icon = hero.querySelector('svg');
     if (icon) icon.innerHTML = '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="m10 17 5-5-5-5" /><path d="M15 12H3" />';
@@ -56,6 +57,18 @@
         return a.name;
       });
       var version = String(release.tag_name || '').replace(/^v/, '');
+      if (names.indexOf('Infimeety.apk') >= 0) {
+        document.querySelector('.android-web').hidden = true;
+        document.querySelector('.android-app').hidden = false;
+        var soon = document.getElementById('android-soon');
+        if (soon) soon.remove();
+        if (platform === 'android' && hero) {
+          hero.href = document.getElementById('dl-android').href;
+          hero.removeAttribute('data-web');
+          heroLabel.textContent = 'Download for Android';
+          hero.querySelector('svg').innerHTML = downloadIcon;
+        }
+      }
       if (names.indexOf('Infimeety.dmg') < 0) {
         var m = document.getElementById('dl-mac');
         m.setAttribute('aria-disabled', 'true');

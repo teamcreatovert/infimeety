@@ -290,9 +290,19 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The Android app (Infimeety.apk), signed with the Infimeety Android key (docs/MOBILE.md).
+  android:
+    needs: check
+    uses: ./.github/workflows/mobile.yml
+    with:
+      artifact: Infimeety-${{ needs.check.outputs.version }}-android
+      ios: false
+      require-key: true
+    secrets: inherit
+
   publish:
-    needs: [check, windows, macos]
-    # Windows must have built; the Mac app joins the release if it built too.
+    needs: [check, windows, macos, android]
+    # Windows must have built; the Mac and Android apps join the release if they built too.
     if: ${{ !cancelled() && needs.windows.result == 'success' && inputs.dry-run != true }}
     runs-on: ubuntu-latest
     env:
@@ -312,6 +322,10 @@ jobs:
       - name: Note a missing Mac build
         if: needs.macos.result != 'success'
         run: echo "::warning::The Mac build failed, so this release is Windows-only. Mac users keep their current version."
+
+      - name: Note a missing Android build
+        if: needs.android.result != 'success'
+        run: echo "::warning::The Android build failed or has no signing key, so this release has no APK."
 
       - name: Publish the release
         env:

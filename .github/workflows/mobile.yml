@@ -10,7 +10,8 @@ name: Mobile
 # iPhone: a build for the iOS Simulator, which proves the app compiles. Installing on real
 # iPhones (TestFlight, the App Store) needs an Apple Developer account first.
 #
-# Runs on pushes to branches that change the app, and from Actions → Mobile → Run workflow.
+# Runs on pushes to branches that change the app, from Actions → Mobile → Run workflow, and
+# from the Release workflow, which puts the APK in the release.
 on:
   push:
     branches-ignore: [main]
@@ -19,18 +20,31 @@ on:
       - 'shared/**'
       - '.github/workflows/mobile.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact:
+        description: Name for the APK's artifact
+        type: string
+        default: Infimeety-android
+      ios:
+        description: Also check the iPhone build
+        type: boolean
+        default: true
+      require-key:
+        description: Fail instead of signing with a throwaway key (releases)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-
-concurrency:
-  group: mobile-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: mobile-android-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -62,11 +76,15 @@ jobs:
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          REQUIRE_KEY: ${{ inputs.require-key || false }}
         run: |
           store="$RUNNER_TEMP/infimeety.jks"
           if [[ -n "$KEYSTORE" ]]; then
             echo "$KEYSTORE" | base64 --decode > "$store"
             password="$KEYSTORE_PASSWORD"
+          elif [[ "$REQUIRE_KEY" == true ]]; then
+            echo "::error::A release APK needs the Infimeety Android key (ANDROID_KEYSTORE). See docs/MOBILE.md."
+            exit 1
           else
             echo "::warning::No ANDROID_KEYSTORE secret, so this APK is signed with a throwaway key. See docs/MOBILE.md."
             password=throwaway
@@ -75,12 +93,19 @@ jobs:
           fi
           printf 'storeFile=%s\npassword=%s\nkeyAlias=infimeety\n' "$store" "$password" > app/src-tauri/gen/android/keystore.properties
 
+      # The runner comes with the Android SDK and NDK; the NDK is installed if it's missing.
       - name: Build
         working-directory: app
-        env:
-          NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes 2> /dev/null | "$sdkmanager" --licenses > /dev/null || true
+          ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          if [[ -z "$ndk" || ! -d "$ndk" ]]; then
+            "$sdkmanager" --install "ndk;27.2.12479018" > /dev/null
+            ndk="$ANDROID_HOME/ndk/27.2.12479018"
+          fi
+          export NDK_HOME="$ndk"
+          echo "NDK: $NDK_HOME"
           npx tauri android build --apk --target aarch64 --target armv7 --ci
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' | head -1)
           [[ -n "$apk" ]] || { echo "::error::No APK was built."; exit 1; }
@@ -90,14 +115,18 @@ jobs:
       - name: Keep the APK
         uses: actions/upload-artifact@v7
         with:
-          name: Infimeety-android
+          name: ${{ inputs.artifact || 'Infimeety-android' }}
           path: ${{ runner.temp }}/Infimeety.apk
           if-no-files-found: error
           retention-days: 14
 
   ios:
+    if: ${{ inputs.ios != false }}
     runs-on: macos-latest
     timeout-minutes: 60
+    concurrency:
+      group: mobile-ios-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
 

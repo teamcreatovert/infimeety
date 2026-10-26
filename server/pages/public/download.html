@@ -113,6 +113,8 @@
       .plat p { margin: 0; color: var(--fg2); font-size: 14.5px; }
       .plat .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; }
       .soon { position: absolute; top: 22px; right: 22px; padding: 4px 10px; border-radius: 99px; background: rgba(255, 159, 10, 0.16); color: #ffc46b; font-size: 12px; font-weight: 600; }
+      .android-web, .android-app { display: contents; }
+      .android-web[hidden], .android-app[hidden] { display: none; }
       .plat details { font-size: 14px; color: var(--fg2); }
       .plat summary { cursor: pointer; color: var(--fg); font-weight: 600; font-size: 14px; }
       .plat ol { margin: 10px 0 0; padding-left: 20px; }
@@ -328,17 +330,28 @@
             </details>
           </div>
           <div class="plat reveal" id="p-android">
-            <span class="soon">Coming soon</span>
+            <span class="soon" id="android-soon">Coming soon</span>
             <div class="head">
               <span class="logo"><svg viewBox="0 0 24 24" fill="#3ddc84"><path d="M17.6 9.5 19.4 6.4a.5.5 0 1 0-.9-.5l-1.8 3.1A10.4 10.4 0 0 0 12 8a10.4 10.4 0 0 0-4.7 1l-1.8-3.1a.5.5 0 1 0-.9.5l1.8 3.1C3.4 11 1.8 13.7 1.5 16.9h21c-.3-3.2-1.9-5.9-4.9-7.4zM7.5 14.2a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm9 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" /></svg></span>
               <div><h3>Android</h3><div class="req">Phones and tablets</div></div>
             </div>
-            <p>The app is on its way. Until then, Infimeety works in Chrome, and you can install it from the browser so it opens like an app.</p>
-            <div class="row"><a class="btn" href="/web/" data-web>Open in Chrome</a></div>
-            <details>
-              <summary>Install it from Chrome</summary>
-              <ol><li>Open Infimeety in Chrome.</li><li>Tap the ⋮ menu, then <b>Add to Home screen</b> or <b>Install app</b>.</li></ol>
-            </details>
+            <!-- download.js shows the app version once a release has the APK. -->
+            <div class="android-web">
+              <p>The app is on its way. Until then, Infimeety works in Chrome, and you can install it from the browser so it opens like an app.</p>
+              <div class="row"><a class="btn" href="/web/" data-web>Open in Chrome</a></div>
+              <details>
+                <summary>Install it from Chrome</summary>
+                <ol><li>Open Infimeety in Chrome.</li><li>Tap the ⋮ menu, then <b>Add to Home screen</b> or <b>Install app</b>.</li></ol>
+              </details>
+            </div>
+            <div class="android-app" hidden>
+              <p>Calls, chat and watch parties in an app. Copies of friends’ files land in your Downloads folder.</p>
+              <div class="row"><a class="btn primary" id="dl-android" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.apk">Download for Android</a></div>
+              <details>
+                <summary>Installing it</summary>
+                <ol><li>Open <b>Infimeety.apk</b> from your downloads.</li><li>If Android asks, allow your browser to install apps, then tap <b>Install</b>.</li></ol>
+              </details>
+            </div>
           </div>
         </div>
         <p class="note" id="version" style="text-align: center; margin-top: 22px">Free and open source · <a href="https://github.com/teamcreatovert/infimeety/releases">All versions</a></p>
