@@ -1,6 +1,7 @@
 import type { ServerMsg } from '../../../shared/protocol';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
+import { onSound } from './soundboard';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -87,6 +88,9 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
       return voice.onSnapshot(cid, msg.voice);
     case 'voice.kicked':
       if (useVoice.getState().channelId === cid) voice.leave({ kicked: true });
+      return;
+    case 'sound':
+      if (useVoice.getState().channelId === cid) onSound(msg);
       return;
     case 'voice.moved': {
       if (useVoice.getState().channelId !== cid) return;

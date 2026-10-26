@@ -264,6 +264,13 @@ class VoiceEngine {
     this.pushState();
   }
 
+  /** Where the soundboard plays: the call's output, so Deafen silences it too. Null outside a call. */
+  soundOutput() {
+    if (!this.inCall) return null;
+    this.ensureAudio();
+    return this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null;
+  }
+
   toggleDeafen() {
     const deafened = !useVoice.getState().deafened;
     useVoice.setState({ deafened });
