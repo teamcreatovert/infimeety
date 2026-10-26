@@ -1,0 +1,93 @@
+name: Mac
+
+# The Mac app for the Release workflow: one universal app (Apple Silicon + Intel in a single
+# download), built on whichever kind of GitHub Mac the caller names. The Release workflow tries
+# the Intel Macs first and the Apple Silicon ones if that fails or never starts, since GitHub's
+# Macs are sometimes too busy to pick up a job at all.
+#
+# With an Apple Developer ID set up (docs/SETUP.md §8), the app is signed and notarized, so it
+# opens without warnings. Without one it's ad-hoc signed: it runs, and the first launch needs
+# System Settings → Privacy & Security → Open Anyway. Either way tauri build then packs and
+# signs the update (Infimeety.app.tar.gz + .sig) with the updater key.
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: GitHub Mac to build on (macos-15-intel, macos-latest, …)
+        type: string
+        required: true
+      version:
+        description: The app version being released
+        type: string
+        required: true
+    outputs:
+      built:
+        description: '"true" once the app is built and kept as an artifact'
+        value: ${{ jobs.build.outputs.built }}
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    # A Mac build that fails doesn't hold back Windows, or mark the release failed.
+    continue-on-error: true
+    outputs:
+      built: ${{ steps.done.outputs.built }}
+    env:
+      VERSION: ${{ inputs.version }}
+      BUNDLE: src-tauri/target/universal-apple-darwin/release/bundle
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'app/src-tauri -> target'
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          NOTARY_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$CERTIFICATE" ]]; then
+            export APPLE_CERTIFICATE="$CERTIFICATE" APPLE_CERTIFICATE_PASSWORD="$CERTIFICATE_PASSWORD" APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
+            [[ -n "$NOTARY_ID" ]] && export APPLE_ID="$NOTARY_ID" APPLE_PASSWORD="$NOTARY_PASSWORD" APPLE_TEAM_ID="$NOTARY_TEAM"
+          else
+            echo "::warning::No Apple Developer ID set up, so the Mac app is ad-hoc signed and NOT notarized. See docs/SETUP.md §8."
+          fi
+          npx tauri build --target universal-apple-darwin --bundles app,dmg --ci
+
+      - name: Keep the app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Infimeety-${{ env.VERSION }}-macos
+          path: |
+            app/${{ env.BUNDLE }}/dmg/Infimeety_${{ env.VERSION }}_universal.dmg
+            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz
+            app/${{ env.BUNDLE }}/macos/Infimeety.app.tar.gz.sig
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Done
+        id: done
+        run: echo "built=true" >> "$GITHUB_OUTPUT"

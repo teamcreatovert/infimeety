@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { isTauri } from './platform';
+import { isMac, isTauri } from './platform';
 import { voice } from './voice/engine';
 import { useChannels } from '@/stores/channels';
 import { useSettings, type OverlayCorner } from '@/stores/settings';
@@ -60,7 +60,8 @@ export function startDesktop() {
 
   const sync = () => {
     const s = useSettings.getState();
-    const want = s.overlay && useVoice.getState().roomId !== null;
+    // The overlay is Windows-only until it's been tried on a Mac.
+    const want = s.overlay && !isMac && useVoice.getState().roomId !== null;
     if (!want) {
       if (openCorner) void invoke('overlay_close').catch(() => {});
       openCorner = null;

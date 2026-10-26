@@ -1,20 +1,19 @@
 name: Release
 
-# Builds the Windows installer, code-signs it through SignPath once that is set up
-# (docs/CODE-SIGNING.md), signs it for the updater and publishes one GitHub release + the
-# latest.json that installed apps auto-update from.
+# Builds the Windows installer and the Mac app, code-signs the Windows one through SignPath
+# once that is set up (docs/CODE-SIGNING.md), signs both for the updater and publishes one
+# GitHub release + the latest.json that installed apps auto-update from.
 #
 # Start it by pushing a version tag (git tag v0.2.0 && git push origin v0.2.0), or from
 # Actions → Release → Run workflow, which also takes release notes and a dry-run switch.
 #
 # Windows order matters: infimeety.exe is signed before it's packed into the installer, the
 # installer is signed next, and the updater signature (.sig) is made last, over the final
-# bytes. Changing a file after its .sig is made breaks updates for everyone.
+# bytes. Changing a file after its .sig is made breaks updates for everyone. The Mac build
+# does all of that itself (tauri build signs the app, then makes and signs the update).
 #
-# Releases are Windows-only for now. Mac and Android are paused: GitHub's Apple Silicon Macs
-# were too busy to ever pick up the job (it gave up after 15 minutes and turned every run
-# red), and Android has no signing key yet. publish-release.mjs still adds a Mac or Android
-# build if one is downloaded into release-assets.
+# A failed Mac build doesn't hold back Windows: the release goes out with what was built.
+# Android is paused (no signing key yet); publish-release.mjs adds an APK if one is there.
 on:
   push:
     tags: ['v*']
@@ -228,12 +227,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Paused (see the top): a `macos` job (git history: v0.3.9's release.yml) and an `android` job
-  # calling mobile.yml with require-key: true, once the ANDROID_KEYSTORE secrets exist
-  # (docs/MOBILE.md). To bring one back, add its job and list it under publish's needs.
+  # The Mac app (mac.yml): GitHub's Intel Macs first, then its Apple Silicon ones if that
+  # build fails or never starts. Either kind builds the universal app.
+  macos:
+    needs: check
+    uses: ./.github/workflows/mac.yml
+    with:
+      runner: macos-15-intel
+      version: ${{ needs.check.outputs.version }}
+    secrets: inherit
+
+  macos-retry:
+    needs: [check, macos]
+    if: ${{ !cancelled() && needs.macos.outputs.built != 'true' }}
+    uses: ./.github/workflows/mac.yml
+    with:
+      runner: macos-latest
+      version: ${{ needs.check.outputs.version }}
+    secrets: inherit
+
+  # Android is paused: releases don't build it. To bring it back, add the ANDROID_KEYSTORE
+  # secrets (docs/MOBILE.md) and an `android` job calling mobile.yml with require-key: true,
+  # and list it under publish's needs.
 
   publish:
-    needs: [check, windows]
+    needs: [check, windows, macos, macos-retry]
+    # Windows must have built; the Mac app joins the release if it built too.
     if: ${{ !cancelled() && needs.windows.result == 'success' && inputs.dry-run != true }}
     runs-on: ubuntu-latest
     env:
@@ -249,6 +268,10 @@ jobs:
         with:
           pattern: Infimeety-${{ needs.check.outputs.version }}-*
           path: release-assets
+
+      - name: Note a missing Mac build
+        if: needs.macos.outputs.built != 'true' && needs.macos-retry.outputs.built != 'true'
+        run: echo "::warning::The Mac build failed, so this release is Windows-only. Mac users keep their current version."
 
       - name: Publish the release
         env:

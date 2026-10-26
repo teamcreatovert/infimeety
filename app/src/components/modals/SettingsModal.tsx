@@ -504,35 +504,38 @@ function DesktopTab() {
   const s = useSettings();
   return (
     <>
-      <Group title="Voice overlay" footer="While you're in a call and using another app or game, a light overlay shows who's talking. Clicks pass straight through it.">
-        <Row label="Show voice overlay">
-          <Switch checked={s.overlay} onChange={(v) => s.set({ overlay: v })} />
-        </Row>
-        <Row label="Show">
-          <Segmented
-            id="overlay-show"
-            className="w-[240px]"
-            value={s.overlayShow}
-            onChange={(v) => s.set({ overlayShow: v })}
-            options={[
-              { value: 'speaking', label: "Who's talking" },
-              { value: 'everyone', label: 'Everyone' },
-            ]}
-          />
-        </Row>
-        <Row label="Position">
-          <Select
-            value={s.overlayCorner}
-            onChange={(v) => s.set({ overlayCorner: v })}
-            options={[
-              { value: 'top-left', label: 'Top left' },
-              { value: 'top-right', label: 'Top right' },
-              { value: 'bottom-left', label: 'Bottom left' },
-              { value: 'bottom-right', label: 'Bottom right' },
-            ]}
-          />
-        </Row>
-      </Group>
+      {/* The overlay is Windows-only until it's been tried on a Mac. */}
+      {!isMac && (
+        <Group title="Voice overlay" footer="While you're in a call and using another app or game, a light overlay shows who's talking. Clicks pass straight through it.">
+          <Row label="Show voice overlay">
+            <Switch checked={s.overlay} onChange={(v) => s.set({ overlay: v })} />
+          </Row>
+          <Row label="Show">
+            <Segmented
+              id="overlay-show"
+              className="w-[240px]"
+              value={s.overlayShow}
+              onChange={(v) => s.set({ overlayShow: v })}
+              options={[
+                { value: 'speaking', label: "Who's talking" },
+                { value: 'everyone', label: 'Everyone' },
+              ]}
+            />
+          </Row>
+          <Row label="Position">
+            <Select
+              value={s.overlayCorner}
+              onChange={(v) => s.set({ overlayCorner: v })}
+              options={[
+                { value: 'top-left', label: 'Top left' },
+                { value: 'top-right', label: 'Top right' },
+                { value: 'bottom-left', label: 'Bottom left' },
+                { value: 'bottom-right', label: 'Bottom right' },
+              ]}
+            />
+          </Row>
+        </Group>
+      )}
       <Group
         title="Window"
         footer={
