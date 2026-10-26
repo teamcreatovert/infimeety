@@ -42,6 +42,8 @@ interface ChannelsState {
   addRoom: (channelId: string, kind: Room['kind'], name: string) => Promise<Room>;
   renameRoom: (channelId: string, roomId: string, name: string) => Promise<void>;
   deleteRoom: (channelId: string, roomId: string) => Promise<void>;
+  /** Admins: watch parties on or off in a voice room (ending one that's running). */
+  setRoomParty: (channelId: string, roomId: string, allowParty: boolean) => Promise<void>;
   /** Uploads a channel picture (a prepared image), or removes it with null. */
   setIcon: (channelId: string, image: { body: Blob; type: string } | null) => Promise<void>;
   upsertUser: (user: PublicUser) => void;
@@ -153,6 +155,20 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
     // Text rooms come back lower-cased with dashes; reload to show exactly what was saved.
     const [channel] = (await api<Channel[]>('/channels')).filter((c) => c.id === channelId);
     if (channel) set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
+  },
+
+  async setRoomParty(channelId, roomId, allowParty) {
+    const patch = (allow: boolean) =>
+      set((s) => ({
+        channels: s.channels.map((c) => (c.id === channelId ? { ...c, rooms: c.rooms.map((r) => (r.id === roomId ? { ...r, allowParty: allow } : r)) } : c)),
+      }));
+    patch(allowParty);
+    try {
+      await api(`/channels/${channelId}/rooms/${roomId}`, { method: 'PATCH', json: { allowParty } });
+    } catch (err) {
+      patch(!allowParty);
+      throw err;
+    }
   },
 
   async deleteRoom(channelId, roomId) {

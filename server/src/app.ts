@@ -631,17 +631,34 @@ app.post('/channels/:id/rooms', auth, requireRole('admin'), async (c) => {
   return c.json(toRoom(room), 201);
 });
 
+/** Rename a room, and/or (voice rooms) turn watch parties on or off. */
 app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) => {
   const id = c.req.param('id');
-  const { name } = await c.req.json<{ name?: string }>();
-  const clean = (name ?? '').trim().slice(0, 40);
-  if (!clean) return c.json({ error: 'name_required' }, 400);
-  const room = await c.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(c.req.param('roomId'), id).first<{ kind: string }>();
+  const roomId = c.req.param('roomId');
+  const { name, allowParty } = await c.req.json<{ name?: string; allowParty?: boolean }>();
+  const room = await c.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id).first<{ kind: string }>();
   if (!room) return c.json({ error: 'not_found' }, 404);
-  // Chat rooms are written like "#movie-night", as when they're created.
-  const final = room.kind === 'text' ? clean.toLowerCase().replace(/\s+/g, '-') : clean;
-  await c.env.DB.prepare('UPDATE rooms SET name = ? WHERE id = ? AND channel_id = ?').bind(final, c.req.param('roomId'), id).run();
-  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  const updates: D1PreparedStatement[] = [];
+  if (name !== undefined) {
+    const clean = name.trim().slice(0, 40);
+    if (!clean) return c.json({ error: 'name_required' }, 400);
+    // Chat rooms are written like "#movie-night", as when they're created.
+    const final = room.kind === 'text' ? clean.toLowerCase().replace(/\s+/g, '-') : clean;
+    updates.push(c.env.DB.prepare('UPDATE rooms SET name = ? WHERE id = ? AND channel_id = ?').bind(final, roomId, id));
+  }
+  if (typeof allowParty === 'boolean') {
+    if (room.kind !== 'voice') return c.json({ error: 'not_a_voice_room' }, 400);
+    updates.push(c.env.DB.prepare('UPDATE rooms SET allow_party = ? WHERE id = ? AND channel_id = ?').bind(allowParty ? 1 : 0, roomId, id));
+  }
+  if (!updates.length) return c.json({ error: 'nothing_to_change' }, 400);
+  await c.env.DB.batch(updates);
+  const channelHub = hub(c.env, id);
+  c.executionCtx.waitUntil(
+    (async () => {
+      if (allowParty === false) await channelHub.endPartyIn(roomId);
+      await channelHub.notify({ t: 'channel.changed' });
+    })(),
+  );
   return c.json({ ok: true });
 });
 

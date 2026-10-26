@@ -35,6 +35,8 @@ interface UIState {
   partyView: boolean;
   /** Watch mode folds the channel list away (desktop); a button brings it back. */
   navCollapsed: boolean;
+  /** The call's side panel tab. */
+  sideTab: 'chat' | 'people' | 'party';
   /** The watch party planner: for a new party in a channel (optionally a given voice room), or `edit` the room's party. */
   partyPlanner: { channelId: string; roomId?: string; edit?: boolean } | null;
   userMenu: { userId: string; x: number; y: number; context: UserMenuContext } | null;
@@ -68,6 +70,7 @@ export const useUI = create<UIState>()((set) => ({
   watchLayout: 'theater',
   partyView: true,
   navCollapsed: false,
+  sideTab: 'chat',
   partyPlanner: null,
   userMenu: null,
   profileCard: null,

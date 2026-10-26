@@ -1,4 +1,4 @@
-import { Captions, Film, FolderOpen, Popcorn, X } from 'lucide-react';
+import { Captions, Film, FolderOpen, Plus, Popcorn, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DEFAULT_PARTY_SETTINGS, type PartySettings } from '../../../../shared/protocol';
 import { Modal } from '../ui/overlay';
@@ -13,6 +13,9 @@ import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 const SETTINGS_KEY = 'infimeety.partySettings';
+// Both Movie rows share the settings rows' padding, and their buttons share one width.
+const MEDIA_ROW = 'flex min-h-[56px] items-center gap-3 px-3.5 py-2.5';
+const MEDIA_BUTTON = 'w-[104px] shrink-0 justify-center';
 
 function lastSettings(): PartySettings {
   try {
@@ -30,7 +33,8 @@ function lastSettings(): PartySettings {
 export function PartyPlanner() {
   const target = useUI((s) => s.partyPlanner);
   const channel = useChannels((s) => s.channels.find((c) => c.id === target?.channelId));
-  const voiceRooms = channel?.rooms.filter((r) => r.kind === 'voice') ?? [];
+  // Only rooms where an admin hasn't turned watch parties off.
+  const voiceRooms = channel?.rooms.filter((r) => r.kind === 'voice' && r.allowParty) ?? [];
   const myRoom = useVoice((s) => (s.channelId === channel?.id ? s.roomId : null));
   const existing = useParty((s) => (target?.edit && target.roomId ? s.parties[target.roomId] : undefined));
   const [roomId, setRoomId] = useState('');
@@ -43,7 +47,8 @@ export function PartyPlanner() {
   // Fresh each time it opens: the room you're in (or were pointed at), your usual settings.
   useEffect(() => {
     if (!target) return;
-    setRoomId(target.roomId ?? myRoom ?? voiceRooms[0]?.id ?? '');
+    const allowed = (id: string | null | undefined) => (id && voiceRooms.some((r) => r.id === id) ? id : null);
+    setRoomId(allowed(target.roomId) ?? allowed(myRoom) ?? voiceRooms[0]?.id ?? '');
     setMovie(null);
     setSubtitle(null);
     setSettings(existing?.settings ?? lastSettings());
@@ -111,27 +116,30 @@ export function PartyPlanner() {
 
         <div className="h-5" />
         <Group title="Movie">
-          <div className="flex items-center gap-3 p-3">
+          <div className={MEDIA_ROW}>
             <Film size={18} className="shrink-0 text-fg-3" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-medium">{movie?.name ?? existing?.file.name ?? 'No movie chosen yet'}</div>
-              <div className="text-[11.5px] text-fg-3">
-                {movie ? formatBytes(movie.size) : existing ? `${formatBytes(existing.file.size)} · picking another sends everyone back to the lobby` : 'MP4 or WebM play everywhere; the app plays more'}
+              <div className="mt-0.5 text-[11.5px] leading-snug text-fg-3">
+                {movie ? formatBytes(movie.size) : existing ? `${formatBytes(existing.file.size)} · picking another sends everyone back to the lobby` : 'MP4 or WebM plays everywhere. The app plays more formats.'}
               </div>
             </div>
-            <Button size="sm" variant={movie || existing ? 'ghost' : 'primary'} icon={<FolderOpen size={13} />} onClick={() => void chooseMovie()}>
+            <Button size="sm" variant={movie || existing ? 'secondary' : 'primary'} icon={<FolderOpen size={13} />} className={MEDIA_BUTTON} onClick={() => void chooseMovie()}>
               {movie || existing ? 'Change' : 'Choose…'}
             </Button>
           </div>
-          <div className="flex items-center gap-3 p-3 pt-0">
+          <div className={MEDIA_ROW}>
             <Captions size={18} className="shrink-0 text-fg-3" />
-            <div className="min-w-0 flex-1 truncate text-[13px] text-fg-2">{subtitle?.name ?? (editing && !movie ? (existing?.subtitle?.name ?? 'No subtitles') : 'No subtitles (optional)')}</div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] text-fg-2">{subtitle?.name ?? (editing && !movie ? (existing?.subtitle?.name ?? 'No subtitles') : 'Subtitles')}</div>
+              {!subtitle && !(editing && !movie && existing?.subtitle) && <div className="mt-0.5 text-[11.5px] leading-snug text-fg-3">Optional · SRT or VTT</div>}
+            </div>
             {subtitle ? (
-              <Button size="sm" variant="ghost" onClick={() => setSubtitle(null)}>
+              <Button size="sm" variant="secondary" className={MEDIA_BUTTON} onClick={() => setSubtitle(null)}>
                 Remove
               </Button>
             ) : (
-              <Button size="sm" variant="ghost" onClick={() => void chooseSubtitle()}>
+              <Button size="sm" variant="secondary" icon={<Plus size={13} />} className={MEDIA_BUTTON} onClick={() => void chooseSubtitle()}>
                 Add…
               </Button>
             )}
@@ -179,6 +187,11 @@ export function PartyPlanner() {
           </Row>
         </Group>
 
+        {!editing && voiceRooms.length === 0 && (
+          <p className="mb-1 rounded-[12px] bg-fill-1 px-3.5 py-3 text-[12.5px] leading-snug text-fg-2">
+            Watch parties are turned off in this channel’s voice rooms. An admin can turn them on from a voice room’s menu.
+          </p>
+        )}
         {!isApp && (
           <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 block text-[12px] text-fg-3 hover:text-accent">
             Movies copy faster and more formats play in the Infimeety app →

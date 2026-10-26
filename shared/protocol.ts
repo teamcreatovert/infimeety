@@ -28,6 +28,8 @@ export interface Room {
   kind: RoomKind;
   name: string;
   position: number;
+  /** Voice rooms: whether watch parties can be held here. Admins switch it; on by default. */
+  allowParty: boolean;
 }
 
 export interface Channel {

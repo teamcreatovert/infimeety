@@ -12,6 +12,7 @@ import {
   MicOff,
   Pencil,
   PhoneOff,
+  Popcorn,
   Plus,
   ScreenShare,
   ScreenShareOff,
@@ -28,8 +29,9 @@ import type { Channel, Room, VoiceParticipant } from '../../../../shared/protoco
 import { Avatar } from '../ui/Avatar';
 import { ChannelIcon } from '../ui/ChannelIcon';
 import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
-import { IconButton } from '../ui/primitives';
+import { IconButton, Switch } from '../ui/primitives';
 import { api } from '@/lib/api';
+import { useParty } from '@/lib/party';
 import { spring } from '@/lib/motion';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -219,6 +221,16 @@ function RoomButton({
     }
   };
 
+  const allowParties = async (on: boolean) => {
+    // Switching off ends a party that's running here, for everyone in the room.
+    if (!on && useParty.getState().parties[room.id] && !confirm(`Turn off watch parties in ${room.name}? The watch party running here ends for everyone.`)) return;
+    try {
+      await useChannels.getState().setRoomParty(channel.id, room.id, on);
+    } catch {
+      toast({ kind: 'error', title: 'Couldn’t change the room' });
+    }
+  };
+
   if (renaming) return <RenameRoom channel={channel} room={room} onDone={() => setRenaming(false)} />;
 
   return (
@@ -244,6 +256,15 @@ function RoomButton({
         <MenuItem icon={<Pencil size={15} />} onClick={() => (setMenu(null), setRenaming(true))}>
           Rename
         </MenuItem>
+        {room.kind === 'voice' && (
+          <div className="flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px]">
+            <span className="grid w-4 shrink-0 place-items-center opacity-80">
+              <Popcorn size={15} />
+            </span>
+            <span className="flex-1 truncate">Allow watch parties</span>
+            <Switch checked={room.allowParty} onChange={(on) => void allowParties(on)} />
+          </div>
+        )}
         <MenuItem danger disabled={!canDelete} icon={<Trash2 size={15} />} onClick={() => void remove()}>
           {canDelete ? 'Delete room' : 'Can’t delete the only chat room'}
         </MenuItem>

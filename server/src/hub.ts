@@ -84,6 +84,11 @@ export class ChannelHub extends DurableObject<Env> {
     if (msg.t === 'channel.removed') for (const s of this.sockets()) s.close(4004, 'Channel deleted');
   }
 
+  /** An admin turned watch parties off in a room: end the one running there, if any. */
+  async endPartyIn(roomId: string) {
+    if (this.parties.has(roomId)) await this.savePartyState(roomId, null);
+  }
+
   async removeUser(userId: string) {
     for (const s of this.ctx.getWebSockets(userId)) {
       this.send(s, { t: 'channel.removed' });
@@ -522,6 +527,10 @@ export class ChannelHub extends DurableObject<Env> {
     const file = cleanFile(p.file);
     if (!file) return;
     if (current && !this.canControl(current, me.userId)) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can control the watch party' });
+    if (!current) {
+      const room = await this.env.DB.prepare('SELECT allow_party FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, me.channelId).first<{ allow_party: number }>();
+      if (room?.allow_party === 0) return this.send(ws, { t: 'error', message: 'Watch parties are turned off in this room' });
+    }
     // A new movie is the host's call (or a co-host's).
     if (current && current.file.id !== file.id && !this.isHost(current, me.userId)) return;
     const resolves = typeof msg.resolves === 'string' ? msg.resolves.slice(0, 32) : undefined;

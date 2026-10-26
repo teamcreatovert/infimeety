@@ -169,7 +169,8 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
 
   const [attachMenu, setAttachMenu] = useState<Anchor | null>(null);
   // A watch party needs a voice room to watch in (spaces have them; DMs and meetings have their call).
-  const canWatch = channel.rooms.some((r) => r.kind === 'voice');
+  // From a voice room's chat: that room must allow parties. From a chat room: any voice room that does.
+  const canWatch = room.kind === 'voice' ? room.allowParty : channel.rooms.some((r) => r.kind === 'voice' && r.allowParty);
   const attach = async (folder: boolean) => {
     setAttachMenu(null);
     try {

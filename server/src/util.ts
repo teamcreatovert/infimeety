@@ -84,6 +84,7 @@ export const toRoom = (r: any): Room => ({
   kind: r.kind,
   name: r.name,
   position: r.position,
+  allowParty: r.allow_party !== 0,
 });
 
 export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => ({

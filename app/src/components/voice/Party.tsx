@@ -9,6 +9,7 @@ import {
   Film,
   FolderOpen,
   Pause,
+  Phone,
   Play,
   Popcorn,
   RotateCcw,
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
-import type { PartyAction, PartyState, VoiceParticipant } from '../../../../shared/protocol';
+import type { Channel, PartyAction, PartyState, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { pace } from '../chat/AttachmentView';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
@@ -59,7 +60,9 @@ import {
   type PartyRequest,
 } from '@/lib/party';
 import { isApp, isPhoneApp, isTauri } from '@/lib/platform';
+import { useCompact } from '@/lib/responsive';
 import { cancelCopy } from '@/lib/transfer';
+import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
@@ -342,147 +345,304 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
   );
 }
 
+/** Re-renders twice a second while the movie is on, so "everyone is at 12:34" keeps time. */
+function useTick(on: boolean) {
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const t = setInterval(() => rerender((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [on]);
+}
+
+/** Opens the side panel on its Watch party tab. */
+const openPartyTab = () => useUI.getState().set({ voiceChat: true, sideTab: 'party' });
+
 /**
- * Before the movie: get your copy, then say you're ready. The host starts it (ready or not)
- * and whoever wasn't ready, or arrives later, joins in where everyone is.
+ * The stage before the movie (or before you join in): a calm poster with the one thing to do
+ * next. Getting ready in detail (your copy, who's ready, settings) lives in the side panel's
+ * Watch party tab.
  */
 function PartyLobby({ roomId, party, checking }: { roomId: string; party: PartyState; checking: boolean }) {
   const me = useMe();
   const control = useControls(roomId);
   const host = useChannels((s) => s.users[party.hostId]);
-  const owner = useChannels((s) => s.users[party.file.ownerId]);
+  const users = useChannels((s) => s.users);
   const hasCopy = useParty((s) => s.copies[party.file.id]?.state === 'ready');
+  // Is the Watch party tab on screen next to (or, on phones, under) the stage? Then the buttons
+  // live there and the poster only says where things stand.
+  const compact = useCompact();
+  const panelOnParty = useUI((s) => s.sideTab === 'party' && (compact || (s.voiceChat && !s.immersive && s.watchLayout === 'theater')));
   const people = useRoomPeople(roomId);
-  const ready = party.ready.includes(me ?? '');
   const live = party.phase === 'live';
-  const notReady = people.filter((u) => !party.ready.includes(u));
-  const [confirming, setConfirming] = useState(false);
-  const hosting = isHost(party, me);
-  const [, rerender] = useState(0);
-  useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => rerender((n) => n + 1), 500);
-    return () => clearInterval(t);
-  }, [live]);
-
-  const start = () => {
-    if (notReady.length && !confirming) return setConfirming(true);
-    setConfirming(false);
-    startNow(roomId);
-  };
+  const ready = party.ready.includes(me ?? '');
+  const readyCount = party.ready.filter((u) => people.includes(u)).length;
+  useTick(live);
 
   return (
-    <div className="absolute inset-0 overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(120,90,255,0.2),transparent_60%)] px-6 pb-[calc(var(--dock-space)+24px)] pt-[72px] text-white compact:px-4 compact:pt-[56px]">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="mx-auto flex w-full max-w-[460px] flex-col items-center text-center">
+    <div className="absolute inset-0 grid place-items-center overflow-y-auto bg-[radial-gradient(ellipse_at_top,rgba(120,90,255,0.2),transparent_60%)] px-6 pb-[calc(var(--dock-space)+24px)] pt-[72px] text-white compact:px-4 compact:pt-[56px]">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="flex w-full max-w-[440px] flex-col items-center text-center">
         <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-white/70">
           {live ? 'The movie is on' : 'Watch party lobby'}
         </span>
-        <h2 className="mt-3 max-w-full truncate font-display text-[20px] font-bold tracking-[-0.02em] compact:text-[17px]">{party.file.name}</h2>
+        <span className="mt-5 grid h-16 w-16 place-items-center rounded-[20px] bg-white/10 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.25)] compact:mt-3 compact:h-12 compact:w-12">
+          <Popcorn size={30} className="compact:hidden" />
+          <Popcorn size={22} className="hidden compact:block" />
+        </span>
+        <h2 className="mt-3 max-w-full truncate font-display text-[22px] font-bold tracking-[-0.02em] compact:text-[17px]">{party.file.name}</h2>
         <p className="mt-0.5 text-[12.5px] text-white/60">
           {formatBytes(party.file.size)} · hosted by {party.hostId === me ? 'you' : (host?.name ?? 'someone')}
           {party.subtitle ? ' · with subtitles' : ''}
         </p>
 
-        {/* Your copy of the movie */}
-        <div className="mt-5 w-full rounded-[18px] bg-white/[0.07] p-4 text-left">
-          {checking ? (
-            <div className="flex items-center gap-2 text-[13px] text-white/70">
-              <Spinner size={15} /> Looking for the movie on this device…
-            </div>
-          ) : hasCopy ? (
-            <div className="flex items-center gap-2.5 text-[13px]">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-success">
-                <Check size={14} strokeWidth={3} />
+        <div className="mt-4 flex items-center gap-2.5">
+          <div className="flex -space-x-2">
+            {people.slice(0, 5).map((u) => (
+              <span key={u} className="rounded-full shadow-[0_0_0_2px_rgba(0,0,0,0.6)]">
+                <Avatar user={users[u]} size={26} />
               </span>
-              <span className="flex-1">You have the movie</span>
-              <button onClick={() => void pickOwnCopy(roomId)} className="text-[12px] text-white/55 hover:text-white">
-                Use another copy…
-              </button>
-            </div>
-          ) : (
-            <CopyMovie roomId={roomId} party={party} owner={owner?.name} mine={party.file.ownerId === me} />
-          )}
+            ))}
+          </div>
+          <span className="text-[12.5px] text-white/70">
+            {live ? (
+              <>
+                Everyone is at <b className="tabular-nums text-white">{formatTime(expectedPosition(party))}</b>
+                {party.playing ? '' : ' (paused)'}
+              </>
+            ) : (
+              `${readyCount} of ${people.length} ready`
+            )}
+          </span>
         </div>
 
-        {live ? (
-          // Arrived late, or wasn't ready when it started: join in where everyone is.
-          <div className="mt-5 flex flex-col items-center">
-            <p className="text-[13px] text-white/75">
-              Everyone is at <b className="tabular-nums text-white">{formatTime(expectedPosition(party))}</b>
-              {party.playing ? '' : ' (paused)'}
-            </p>
-            <Button variant="primary" size="lg" className="mt-3" icon={<Play size={16} fill="currentColor" />} disabled={!hasCopy} onClick={() => joinIn(party)}>
-              {hasCopy ? `Join them at ${formatTime(expectedPosition(party))}` : 'Get the movie to join in'}
-            </Button>
-          </div>
+        {panelOnParty ? (
+          <p className="mt-5 text-[12.5px] text-white/55">{compact ? 'Get ready in the Watch party tab below' : 'Get ready in the Watch party panel →'}</p>
         ) : (
-          <>
-            <Button
-              variant={ready ? 'secondary' : 'primary'}
-              size="lg"
-              className={clsx('mt-5 min-w-[220px]', ready && '!bg-success !text-white')}
-              icon={ready ? <Check size={17} strokeWidth={3} /> : undefined}
-              disabled={!hasCopy && !ready}
-              onClick={() => setReady(roomId, !ready)}
-            >
-              {ready ? 'Ready (tap to undo)' : hasCopy ? 'I’m ready' : 'Get the movie first'}
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {checking ? (
+            <span className="flex items-center gap-2 text-[13px] text-white/70">
+              <Spinner size={15} /> Looking for the movie on this device…
+            </span>
+          ) : !hasCopy ? (
+            <Button variant="primary" size="lg" icon={<Film size={16} />} onClick={openPartyTab}>
+              Get the movie
             </Button>
-
-            <div className="mt-5 w-full">
-              <div className="mb-2 text-left text-[11.5px] font-semibold uppercase tracking-[0.05em] text-white/50">
-                {party.ready.filter((u) => people.includes(u)).length} of {people.length} ready
-              </div>
-              <div className="flex flex-col gap-1">
-                {people.map((u) => (
-                  <PersonStatus key={u} roomId={roomId} party={party} userId={u} />
-                ))}
-              </div>
-            </div>
-
-            {control ? (
-              <div className="mt-5 flex w-full flex-col items-center gap-2">
-                {confirming && (
-                  <p className="text-[12.5px] text-white/75">
-                    {notReady.length === 1 ? `${nameOf(notReady[0])} isn’t` : `${notReady.length} people aren’t`} ready yet. They can join in later, where everyone is.
-                  </p>
-                )}
-                <div className="flex flex-wrap justify-center gap-2">
-                  <Button variant="primary" size="lg" icon={<Play size={16} fill="currentColor" />} onClick={start}>
-                    {notReady.length === 0 ? 'Start the movie' : confirming ? 'Start anyway' : `Start (${people.length - notReady.length}/${people.length} ready)`}
-                  </Button>
-                  {confirming && (
-                    <Button variant="secondary" size="lg" className="!bg-white/10 !text-white" onClick={() => setConfirming(false)}>
-                      Wait for them
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="mt-5 text-[12.5px] text-white/60">
-                {party.settings.autoStart ? 'It starts by itself once everyone’s ready.' : `Waiting for ${host?.name ?? 'the host'} to start it.`}
-              </p>
-            )}
-            {control && party.settings.autoStart && <p className="mt-2 text-[11.5px] text-white/45">Or it starts by itself once everyone’s ready.</p>}
-          </>
+          ) : live ? (
+            <Button variant="primary" size="lg" icon={<Play size={16} fill="currentColor" />} onClick={() => joinIn(party)}>
+              Join them at {formatTime(expectedPosition(party))}
+            </Button>
+          ) : (
+            <>
+              <ReadyButton roomId={roomId} ready={ready} size="lg" />
+              {control && <StartButton roomId={roomId} party={party} people={people} size="lg" onStage />}
+            </>
+          )}
+        </div>
         )}
-
-        {hosting && (
-          <div className="mt-5 flex gap-4 text-[12px]">
-            <button onClick={() => openSettings(roomId)} className="flex items-center gap-1.5 text-white/60 hover:text-white">
-              <Settings2 size={13} /> Settings
-            </button>
-            <button onClick={() => endParty(roomId)} className="flex items-center gap-1.5 text-white/60 hover:text-[#ff9b9b]">
-              <X size={13} /> End the party
-            </button>
-          </div>
+        {!panelOnParty && !live && !control && hasCopy && (
+          <p className="mt-3 text-[12px] text-white/55">{party.settings.autoStart ? 'It starts by itself once everyone’s ready.' : `${host?.name ?? 'The host'} starts it.`}</p>
         )}
-        {!isApp && !checking && !hasCopy && (
-          <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 text-[11.5px] text-white/50 hover:text-accent">
-            Watch parties copy faster and play more formats in the Infimeety app →
-          </a>
+        {!panelOnParty && (
+          <button onClick={openPartyTab} className="mt-4 text-[12px] text-white/55 hover:text-white">
+            {checking || hasCopy ? 'Who’s ready, settings and more →' : 'Copy it or pick your own copy →'}
+          </button>
         )}
       </motion.div>
     </div>
+  );
+}
+
+function ReadyButton({ roomId, ready, size, className }: { roomId: string; ready: boolean; size?: 'md' | 'lg'; className?: string }) {
+  return (
+    <Button
+      variant={ready ? 'secondary' : 'primary'}
+      size={size}
+      className={clsx('min-w-[160px]', ready && '!bg-success !text-white', className)}
+      icon={ready ? <Check size={16} strokeWidth={3} /> : undefined}
+      onClick={() => setReady(roomId, !ready)}
+    >
+      {ready ? 'Ready (tap to undo)' : 'I’m ready'}
+    </Button>
+  );
+}
+
+/** Start the movie; with people not ready yet, it asks once ("Start anyway"). */
+function StartButton({ roomId, party, people, size, onStage, className }: { roomId: string; party: PartyState; people: string[]; size?: 'md' | 'lg'; onStage?: boolean; className?: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const notReady = people.filter((u) => !party.ready.includes(u));
+  const start = () => {
+    if (notReady.length && !confirming) return setConfirming(true);
+    setConfirming(false);
+    startNow(roomId);
+  };
+  return (
+    <>
+      <Button variant={confirming || notReady.length === 0 ? 'primary' : 'secondary'} size={size} className={clsx(onStage && notReady.length > 0 && !confirming && '!bg-white/10 !text-white', className)} icon={<Play size={15} fill="currentColor" />} onClick={start}>
+        {notReady.length === 0 ? 'Start the movie' : confirming ? 'Start anyway' : `Start (${people.length - notReady.length}/${people.length} ready)`}
+      </Button>
+      {confirming && (
+        <p className={clsx('w-full text-[12px]', onStage ? 'text-white/70' : 'text-fg-2')}>
+          {notReady.length === 1 ? `${nameOf(notReady[0])} isn’t` : `${notReady.length} people aren’t`} ready yet. They can join in later, where everyone is.{' '}
+          <button onClick={() => setConfirming(false)} className={clsx('font-medium', onStage ? 'text-white hover:underline' : 'text-accent hover:underline')}>
+            Wait for them
+          </button>
+        </p>
+      )}
+    </>
+  );
+}
+
+// ─── The side panel's Watch party tab ───────────────────────────────────────────
+
+/** The Watch party tab: plan one, or everything about getting ready for the one that's on. */
+export function PartyPanel({ channel, room }: { channel: Channel; room: Room }) {
+  const party = useParty((s) => s.parties[room.id]);
+  return party ? <PartyDetails channel={channel} room={room} party={party} /> : <PartyEmpty channel={channel} room={room} />;
+}
+
+/** No party yet. (Rooms with watch parties turned off don't show the tab at all.) */
+function PartyEmpty({ channel, room }: { channel: Channel; room: Room }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+      <span className="grid h-14 w-14 place-items-center rounded-[18px] bg-accent text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35)]">
+        <Popcorn size={26} />
+      </span>
+      <h3 className="mt-4 font-display text-[17px] font-bold tracking-[-0.02em]">Watch together</h3>
+      <p className="mt-1.5 text-[12.5px] leading-snug text-fg-2">Pick a movie from your computer. Everyone gets their own copy, says they’re ready, and you press play together, in sync.</p>
+      <Button variant="primary" className="mt-5" icon={<Popcorn size={15} />} onClick={() => useUI.getState().set({ partyPlanner: { channelId: channel.id, roomId: room.id } })}>
+        Plan a watch party
+      </Button>
+    </div>
+  );
+}
+
+function PartyDetails({ channel, room, party }: { channel: Channel; room: Room; party: PartyState }) {
+  const roomId = room.id;
+  const me = useMe();
+  const inRoom = useVoice((s) => s.roomId === roomId);
+  const control = useControls(roomId);
+  const host = useChannels((s) => s.users[party.hostId]);
+  const owner = useChannels((s) => s.users[party.file.ownerId]);
+  const copy = useParty((s) => s.copies[party.file.id]);
+  const joined = useParty((s) => !!s.joined[party.id]);
+  const people = useRoomPeople(roomId);
+  const live = party.phase === 'live';
+  const ready = party.ready.includes(me ?? '');
+  const hasCopy = copy?.state === 'ready';
+  const checking = !copy || copy.state === 'checking';
+  const hosting = isHost(party, me);
+  useTick(live);
+  // The stage looks for your copy too; this covers the panel open over the call view.
+  useEffect(() => {
+    if (inRoom) void prepare(roomId);
+  }, [inRoom, roomId, party.file.id]);
+
+  const status = live ? (party.playing ? `Playing · ${formatTime(expectedPosition(party))}` : `Paused at ${formatTime(expectedPosition(party))}`) : 'In the lobby';
+
+  return (
+    <div className="scroll h-full px-3 pb-5 pt-3" style={{ scrollbarGutter: 'auto' }}>
+      <div className="flex items-center gap-3 rounded-[14px] bg-fill-1 p-3 shadow-[inset_0_0_0_0.5px_var(--hairline)]">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-accent text-white">
+          <Popcorn size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13.5px] font-semibold">{party.file.name}</div>
+          <div className="truncate text-[11.5px] tabular-nums text-fg-3">
+            {status} · {formatBytes(party.file.size)}
+            {party.subtitle ? ' · subtitles' : ''}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-fg-3">
+            <Crown size={11} className="shrink-0 text-[#f5b83d]" /> {party.hostId === me ? 'You’re hosting' : `${host?.name ?? 'Someone'} is hosting`}
+          </div>
+        </div>
+      </div>
+
+      {!inRoom ? (
+        <div className="mt-4 rounded-[14px] bg-fill-1 p-3.5 text-[12.5px] leading-snug text-fg-2">
+          Join the call to get the movie and watch along.
+          <Button variant="primary" size="sm" className="mt-3 w-full" icon={<Phone size={14} />} onClick={() => void voice.join(channel.id, roomId)}>
+            Join the call
+          </Button>
+        </div>
+      ) : (
+        <>
+          <PanelSection title="Your copy">
+            {checking ? (
+              <div className="flex items-center gap-2 text-[12.5px] text-fg-2">
+                <Spinner size={14} /> Looking for the movie on this device…
+              </div>
+            ) : hasCopy ? (
+              <div className="flex items-center gap-2.5 text-[13px]">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-success text-white">
+                  <Check size={12} strokeWidth={3} />
+                </span>
+                <span className="flex-1">You have the movie</span>
+                <button onClick={() => void pickOwnCopy(roomId)} className="text-[12px] text-fg-3 hover:text-accent">
+                  Use another copy…
+                </button>
+              </div>
+            ) : (
+              <CopyMovie roomId={roomId} party={party} owner={owner?.name} mine={party.file.ownerId === me} />
+            )}
+          </PanelSection>
+
+          {live ? (
+            !joined && (
+              <Button variant="primary" className="mt-3 w-full" icon={<Play size={15} fill="currentColor" />} disabled={!hasCopy} onClick={() => joinIn(party)}>
+                {hasCopy ? `Join them at ${formatTime(expectedPosition(party))}` : 'Get the movie to join in'}
+              </Button>
+            )
+          ) : (
+            hasCopy && <ReadyButton roomId={roomId} ready={ready} className="mt-3 w-full" />
+          )}
+        </>
+      )}
+
+      <PanelSection title={live ? `${people.length} in the room` : `${party.ready.filter((u) => people.includes(u)).length} of ${people.length} ready`}>
+        <div className="-mx-1 flex flex-col gap-0.5">
+          {people.map((u) => (
+            <PersonStatus key={u} roomId={roomId} party={party} userId={u} />
+          ))}
+          {people.length === 0 && <p className="px-1 text-[12px] text-fg-3">Nobody’s in the call yet.</p>}
+        </div>
+      </PanelSection>
+
+      {!live && inRoom && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {control ? (
+            <StartButton roomId={roomId} party={party} people={people} className="w-full" />
+          ) : (
+            <p className="text-[12px] text-fg-3">{party.settings.autoStart ? 'It starts by itself once everyone’s ready.' : `Waiting for ${host?.name ?? 'the host'} to start it.`}</p>
+          )}
+          {control && party.settings.autoStart && <p className="text-[11.5px] text-fg-3">Or it starts by itself once everyone’s ready.</p>}
+        </div>
+      )}
+
+      {hosting && (
+        <div className="mt-4 flex gap-2">
+          <Button size="sm" className="flex-1" icon={<Settings2 size={13} />} onClick={() => openSettings(roomId)}>
+            Settings
+          </Button>
+          <Button size="sm" variant="ghost" className="flex-1 !text-danger" icon={<X size={13} />} onClick={() => endParty(roomId)}>
+            End the party
+          </Button>
+        </div>
+      )}
+      {!isApp && inRoom && !checking && !hasCopy && (
+        <a href={DOWNLOAD_PAGE} target="_blank" rel="noopener" className="mt-4 block text-[11.5px] text-fg-3 hover:text-accent">
+          Watch parties copy faster and play more formats in the Infimeety app →
+        </a>
+      )}
+    </div>
+  );
+}
+
+function PanelSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-4">
+      <h4 className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-fg-3">{title}</h4>
+      <div className="rounded-[14px] bg-fill-1 p-3 shadow-[inset_0_0_0_0.5px_var(--hairline)]">{children}</div>
+    </section>
   );
 }
 
@@ -498,9 +658,9 @@ function CopyMovie({ roomId, party, owner, mine }: { roomId: string; party: Part
 
   if (mine)
     return (
-      <div className="flex flex-col gap-2.5 text-[13px] text-white/75">
+      <div className="flex flex-col gap-2.5 text-[12.5px] leading-snug text-fg-2">
         <span>Your movie file isn’t on this device anymore. Find it so everyone can copy it.</span>
-        <Button variant="primary" className="self-start" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
+        <Button variant="primary" size="sm" className="self-start" icon={<FolderOpen size={14} />} onClick={() => void pickOwnCopy(roomId)}>
           Find the movie file…
         </Button>
       </div>
@@ -508,10 +668,10 @@ function CopyMovie({ roomId, party, owner, mine }: { roomId: string; party: Part
   if (busy)
     return (
       <div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-fill-3">
           <motion.div className="h-full rounded-full bg-accent" animate={{ width: `${Math.max(2, progress * 100)}%` }} transition={{ duration: 0.3 }} />
         </div>
-        <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-white/65">
+        <div className="mt-2 flex items-center justify-between gap-3 text-[12px] text-fg-2">
           <span className="truncate">
             {status === 'requesting'
               ? `Connecting to ${from}…`
@@ -521,26 +681,26 @@ function CopyMovie({ roomId, party, owner, mine }: { roomId: string; party: Part
                   ? 'Finishing…'
                   : `Copying · ${Math.round(progress * 100)}%${pace(entry?.speed, party.file.size * (1 - progress))}`}
           </span>
-          <button onClick={() => cancelCopy(party.file.id)} className="shrink-0 font-medium text-white/80 hover:text-white">
+          <button onClick={() => cancelCopy(party.file.id)} className="shrink-0 font-medium text-fg hover:text-accent">
             Cancel
           </button>
         </div>
-        {entry?.where && <p className="mt-1 truncate text-[11.5px] text-white/45">Saving to {entry.where}</p>}
+        {entry?.where && <p className="mt-1 truncate text-[11.5px] text-fg-3">Saving to {entry.where}</p>}
       </div>
     );
   return (
     <div className="flex flex-col gap-2.5">
-      {failed && <p className="text-[12.5px] text-[#ff9b9b]">{status === 'offline' ? `${from} isn’t reachable right now.` : (entry?.problem ?? 'The copy didn’t finish.')}</p>}
-      <p className="text-[13px] leading-snug text-white/75">Everyone plays their own copy, so it looks perfect and stays in sync. Copy it straight from {from}’s computer.</p>
+      {failed && <p className="text-[12px] text-danger">{status === 'offline' ? `${from} isn’t reachable right now.` : (entry?.problem ?? 'The copy didn’t finish.')}</p>}
+      <p className="text-[12.5px] leading-snug text-fg-2">Everyone plays their own copy, so it looks perfect and stays in sync. Copy it straight from {from}’s computer.</p>
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" icon={<Film size={15} />} onClick={() => void copyMovie(roomId)}>
+        <Button variant="primary" size="sm" icon={<Film size={14} />} onClick={() => void copyMovie(roomId)}>
           {failed ? 'Try again' : 'Copy the movie'}
         </Button>
-        <Button variant="secondary" className="!bg-white/10 !text-white" icon={<FolderOpen size={15} />} onClick={() => void pickOwnCopy(roomId)}>
+        <Button size="sm" icon={<FolderOpen size={14} />} onClick={() => void pickOwnCopy(roomId)}>
           I already have it
         </Button>
       </div>
-      {saveFolder && <p className="text-[11.5px] text-white/45">Saves to {saveFolder}</p>}
+      {saveFolder && <p className="text-[11.5px] text-fg-3">Saves to {saveFolder}</p>}
     </div>
   );
 }
@@ -552,32 +712,32 @@ function useRoomPeople(roomId: string) {
   return [...new Set((participants ?? []).filter((p) => p.roomId === roomId).sort((a, b) => a.joinedAt - b.joinedAt).map((p) => p.userId))];
 }
 
-/** One person in the lobby list. */
+/** One person in the Watch party tab's list. */
 function PersonStatus({ roomId, party, userId }: { roomId: string; party: PartyState; userId: string }) {
   const user = useChannels((s) => s.users[userId]);
   const me = useMe();
   const copy = useParty((s) => Object.values(s.statuses[roomId] ?? {}).find((x) => x.userId === userId));
   const ready = party.ready.includes(userId);
   return (
-    <div className="flex items-center gap-2.5 rounded-[12px] bg-white/[0.05] px-2.5 py-2 text-left">
-      <Avatar user={user} size={28} />
+    <div className="flex items-center gap-2.5 rounded-[10px] px-1 py-1.5 text-left">
+      <Avatar user={user} size={26} />
       <span className="min-w-0 flex-1 truncate text-[13px]">
         {user?.name ?? 'Someone'}
-        {userId === me && <span className="text-white/45"> (you)</span>}
+        {userId === me && <span className="text-fg-3"> (you)</span>}
         {party.hostId === userId && <Crown size={12} className="ml-1.5 inline text-[#f5b83d]" />}
       </span>
-      {ready ? (
-        <span className="flex items-center gap-1 rounded-full bg-success/90 px-2 py-0.5 text-[11.5px] font-semibold">
+      {ready && party.phase === 'lobby' ? (
+        <span className="flex items-center gap-1 rounded-full bg-success px-2 py-0.5 text-[11px] font-semibold text-white">
           <Check size={11} strokeWidth={3} /> Ready
         </span>
       ) : copy?.state === 'ready' ? (
-        <span className="text-[11.5px] text-white/60">Has the movie</span>
+        <span className="text-[11.5px] text-fg-3">Has the movie</span>
       ) : copy?.state === 'copying' ? (
-        <span className="text-[11.5px] tabular-nums text-white/60">Copying {Math.round((copy.progress ?? 0) * 100)}%</span>
+        <span className="text-[11.5px] tabular-nums text-fg-3">Copying {Math.round((copy.progress ?? 0) * 100)}%</span>
       ) : copy?.state === 'failed' ? (
-        <span className="text-[11.5px] text-[#ff9b9b]">Copy failed</span>
+        <span className="text-[11.5px] text-danger">Copy failed</span>
       ) : (
-        <span className="text-[11.5px] text-white/40">No copy yet</span>
+        <span className="text-[11.5px] text-fg-3">No copy yet</span>
       )}
     </div>
   );

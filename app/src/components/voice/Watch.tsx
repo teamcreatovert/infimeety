@@ -1,14 +1,16 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
+import { PartyPanel } from './Party';
 import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { Tooltip } from '../ui/overlay';
 import { StreamVideo } from './StreamVideo';
 import { spring } from '@/lib/motion';
+import { useParty } from '@/lib/party';
 import { useCompact } from '@/lib/responsive';
 import { useMessages } from '@/stores/messages';
 import { openUserMenu, useUI } from '@/stores/ui';
@@ -38,6 +40,8 @@ export interface WatchPeople {
 interface Props extends WatchPeople {
   channel: Channel;
   chatRoom: Room;
+  /** The call's voice room (for the side panel's Watch party tab). */
+  room?: Room;
   layout: WatchLayout;
   onLayout: (layout: WatchLayout) => void;
   /** Chrome hidden while nobody moves (cinema behaviour). */
@@ -214,30 +218,83 @@ export function HeadButton({ label, onClick, active, children }: { label: string
   );
 }
 
-// ─── Side panel: Chat | People ───────────────────────────────────────────────
+// ─── Side panel: Chat | People | Watch party ─────────────────────────────────
 
 function Panel(props: Props & { tabs: boolean; className?: string }) {
-  const { channel, chatRoom, people, tabs, className } = props;
-  const [tab, setTab] = useState<'chat' | 'people'>('chat');
+  const { channel, chatRoom, room, tabs, className } = props;
+  return <CallPanel channel={channel} chatRoom={chatRoom} room={room} people={props} tabs={tabs} className={className} />;
+}
+
+/**
+ * The call's side panel, the same in a call and in watch mode: Chat, People (when the call's
+ * people are known) and Watch party (a voice room that allows parties, or one that has one).
+ * With tabs it has no close button of its own: the chat button that opened it closes it.
+ */
+export function CallPanel({
+  channel,
+  chatRoom,
+  room,
+  people,
+  tabs = true,
+  onClose,
+  className,
+}: {
+  channel: Channel;
+  chatRoom: Room;
+  /** The call's voice room: enables the Watch party tab. */
+  room?: Room;
+  people?: WatchPeople;
+  tabs?: boolean;
+  onClose?: () => void;
+  className?: string;
+}) {
+  const stored = useUI((s) => s.sideTab);
+  const party = useParty((s) => (room ? s.parties[room.id] : undefined));
   const unread = useMessages((s) => s.unread[chatRoom.id] ?? 0);
+  const showPeople = tabs && !!people;
+  const showParty = tabs && !!room && room.kind === 'voice' && (room.allowParty || !!party);
+  const tab = stored === 'people' && showPeople ? 'people' : stored === 'party' && showParty ? 'party' : 'chat';
+  const setTab = (sideTab: typeof stored) => useUI.getState().set({ sideTab });
+  const close = onClose && (
+    <button aria-label="Close the side panel" onClick={onClose} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
+      <X size={15} />
+    </button>
+  );
   return (
     <div className={clsx('flex flex-col bg-[var(--bg)]/40 glass-side', className)}>
-      {tabs ? (
+      {showPeople || showParty ? (
         <div className="flex h-[52px] shrink-0 items-center gap-1 px-2 hairline-b">
           <PanelTab active={tab === 'chat'} onClick={() => setTab('chat')}>
             <MessageSquareText size={15} /> Chat
             {tab !== 'chat' && unread > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{unread}</span>}
           </PanelTab>
-          <PanelTab active={tab === 'people'} onClick={() => setTab('people')}>
-            <Users size={15} /> People <span className="text-fg-3">{people.length}</span>
-          </PanelTab>
+          {showPeople && (
+            <PanelTab active={tab === 'people'} onClick={() => setTab('people')}>
+              <Users size={15} /> People <span className="text-fg-3">{people.people.length}</span>
+            </PanelTab>
+          )}
+          {showParty && (
+            <PanelTab active={tab === 'party'} onClick={() => setTab('party')}>
+              <Popcorn size={15} /> Watch party
+              {tab !== 'party' && party && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+            </PanelTab>
+          )}
         </div>
       ) : (
         <div className="flex h-[52px] shrink-0 items-center gap-2 px-4 text-[13.5px] font-semibold hairline-b">
-          <MessageSquareText size={15} className="text-fg-3" /> Chat
+          <MessageSquareText size={15} className="text-fg-3" /> <span className="flex-1">Chat</span>
+          {close}
         </div>
       )}
-      <div className="min-h-0 flex-1">{tabs && tab === 'people' ? <PeopleList {...props} /> : <ChatView channel={channel} room={chatRoom} compact />}</div>
+      <div className="min-h-0 flex-1">
+        {tab === 'people' && people ? (
+          <PeopleList {...people} channel={channel} />
+        ) : tab === 'party' && room ? (
+          <PartyPanel channel={channel} room={room} />
+        ) : (
+          <ChatView channel={channel} room={chatRoom} compact />
+        )}
+      </div>
     </div>
   );
 }
@@ -254,7 +311,7 @@ function PanelTab({ active, onClick, children }: { active: boolean; onClick: () 
   );
 }
 
-function PeopleList({ people, users, camOf, speakingOf, myPeer, channel, extra }: Props) {
+function PeopleList({ people, users, camOf, speakingOf, myPeer, channel, extra }: WatchPeople & { channel: Channel }) {
   return (
     <div className="scroll h-full p-2" style={{ scrollbarGutter: 'auto' }}>
       {people.map((p) => {

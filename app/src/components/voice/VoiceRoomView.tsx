@@ -21,12 +21,10 @@ import {
   Video,
   VideoOff,
   Volume2,
-  X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
-import { ChatView } from '../chat/ChatView';
 import { MobileBack } from '../shell/MobileBack';
 import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
@@ -34,7 +32,7 @@ import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/ov
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
-import { WatchStage, type WatchLayout } from './Watch';
+import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
@@ -147,7 +145,13 @@ function Lobby({ channel, room }: { channel: Channel; room: Room }) {
           </motion.div>
         </div>
       </div>
-      <VoiceChatPanel open={voiceChat} channel={channel} room={room} />
+      <VoiceChatPanel
+        open={voiceChat}
+        channel={channel}
+        room={room}
+        voiceRoom={room}
+        people={{ people: participants, users, camOf: () => undefined, speakingOf: () => false, myPeer: null }}
+      />
     </div>
   );
 }
@@ -170,7 +174,11 @@ export function ChatToggle() {
   );
 }
 
-export function VoiceChatPanel({ open, channel, room }: { open: boolean; channel: Channel; room: Room }) {
+/**
+ * The call's side panel: Chat, plus People and Watch party when the call's `people` and voice
+ * room are given. `room` is the chat's room (a DM call chats in the DM).
+ */
+export function VoiceChatPanel({ open, channel, room, voiceRoom, people }: { open: boolean; channel: Channel; room: Room; voiceRoom?: Room; people?: WatchPeople }) {
   const compact = useCompact();
   const close = () => useUI.getState().set({ voiceChat: false });
   // Phones: the chat covers the call as a sheet; the call keeps running underneath.
@@ -189,11 +197,9 @@ export function VoiceChatPanel({ open, channel, room }: { open: boolean; channel
               <button aria-label="Back to the call" onClick={close} className="grid h-10 w-9 place-items-center rounded-[10px] text-fg-2 active:bg-fill-2">
                 <ChevronDown size={24} />
               </button>
-              <span className="flex-1 truncate text-[15px] font-semibold">Chat</span>
+              <span className="flex-1 truncate text-[15px] font-semibold">Back to the call</span>
             </div>
-            <div className="min-h-0 flex-1">
-              <ChatView channel={channel} room={room} compact />
-            </div>
+            <CallPanel channel={channel} chatRoom={room} room={voiceRoom} people={people} className="min-h-0 flex-1" />
           </motion.aside>
         )}
       </AnimatePresence>,
@@ -209,19 +215,7 @@ export function VoiceChatPanel({ open, channel, room }: { open: boolean; channel
           transition={{ type: 'spring', stiffness: 380, damping: 40 }}
           className="shrink-0 overflow-hidden hairline-l"
         >
-          <div className="flex h-full w-[360px] flex-col">
-            <div data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center px-4">
-              <span data-tauri-drag-region className="flex-1 text-[13.5px] font-semibold">
-                Chat
-              </span>
-              <button aria-label="Close chat" onClick={() => useUI.getState().set({ voiceChat: false })} className="grid h-7 w-7 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
-                <X size={15} />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1">
-              <ChatView channel={channel} room={room} compact />
-            </div>
-          </div>
+          <CallPanel channel={channel} chatRoom={room} room={voiceRoom} people={people} onClose={close} className="h-full w-[360px]" />
         </motion.aside>
       )}
     </AnimatePresence>
@@ -271,7 +265,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
   // A watch party starting (or running when we arrive) takes everyone to it.
   useEffect(() => {
-    if (party?.id) useUI.getState().set({ partyView: true, focusedPeer: null });
+    // The side panel opens on its Watch party tab, where everyone gets ready.
+    if (party?.id) useUI.getState().set({ partyView: true, focusedPeer: null, sideTab: 'party' });
   }, [party?.id]);
 
   // Drop watch mode only when the focused sharer actually stopped (not on a stale render).
@@ -352,6 +347,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
         <WatchStage
           channel={channel}
           chatRoom={chatRoom}
+          room={room}
           layout={immersive ? 'full' : watchLayout}
           onLayout={setLayout}
           idle={hideChrome}
@@ -410,7 +406,6 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           </span>
           <div data-tauri-drag-region className="flex-1 self-stretch" />
           {extras}
-          <ChatToggle />
         </header>
 
         {soundPrompt}
@@ -432,7 +427,13 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
         <Dock channel={channel} room={room} participants={participants} hidden={false} myPeer={myPeer} watching={false} />
       </div>
-      <VoiceChatPanel open={voiceChat} channel={channel} room={chatRoom} />
+      <VoiceChatPanel
+        open={voiceChat}
+        channel={channel}
+        room={chatRoom}
+        voiceRoom={room}
+        people={{ people: participants, users, camOf, speakingOf, myPeer, extra: party ? (p) => <PartyPersonExtra roomId={room.id} party={party} p={p} /> : undefined }}
+      />
     </div>
   );
 }
