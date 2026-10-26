@@ -10,8 +10,8 @@ name: Mobile
 # iPhone: a build for the iOS Simulator, which proves the app compiles. Installing on real
 # iPhones (TestFlight, the App Store) needs an Apple Developer account first.
 #
-# Runs on pushes to branches that change the app, from Actions → Mobile → Run workflow, and
-# from the Release workflow, which puts the APK in the release.
+# Runs on pushes to branches that change the app, and from Actions → Mobile → Run workflow.
+# While Android is paused, releases don't call it (see release.yml).
 on:
   push:
     branches-ignore: [main]
