@@ -21,7 +21,6 @@ import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
 import { startWebLinks } from './lib/weblinks';
-import { startCaptions } from './lib/captions';
 import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
@@ -70,7 +69,6 @@ export default function App() {
     void startDeepLinks();
     startWebLinks();
     startDesktop();
-    startCaptions();
 
     // Feels like a native app: no browser context menu outside text.
     const onContext = (e: MouseEvent) => {

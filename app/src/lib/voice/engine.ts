@@ -264,10 +264,6 @@ class VoiceEngine {
     this.pushState();
   }
 
-  /** Your microphone while in a call (live captions listen to it). */
-  get micStream() {
-    return this.inCall ? this.mic : null;
-  }
 
 
   toggleDeafen() {

@@ -5,7 +5,6 @@ import type { Lobby } from './lobby';
 export interface Env {
   DB: D1Database;
   AVATARS: KVNamespace;
-  AI: Ai;
   HUB: DurableObjectNamespace<ChannelHub>;
   LOBBY: DurableObjectNamespace<Lobby>;
   PUBLIC_URL: string;

@@ -34,8 +34,6 @@ export const SOCKET_RATES = {
   media: [60, 5],
   party: [30, 6],
   voice: [40, 8],
-  // Live captions: a line per stretch of speech.
-  caption: [8, 1],
   other: [60, 10],
 } as const satisfies Record<string, readonly [number, number]>;
 

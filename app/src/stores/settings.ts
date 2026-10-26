@@ -49,8 +49,6 @@ export interface SettingsState {
   soundsEnabled: boolean;
   soundVolume: number;
   messageSounds: boolean;
-  /** Live captions: the language you speak (helps Whisper), or detect it. */
-  captionLanguage: 'auto' | 'bn' | 'en';
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -113,7 +111,6 @@ export const useSettings = create<SettingsState>()(
       soundsEnabled: true,
       soundVolume: 0.7,
       messageSounds: true,
-      captionLanguage: 'auto',
 
       screenQuality: '1080p30',
       screenMode: 'motion',

@@ -676,24 +676,6 @@ app.delete('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) 
   return c.json({ ok: true });
 });
 
-/**
- * Live captions: a few seconds of your own speech (16 kHz WAV, base64) to text, with Workers
- * AI's Whisper. Bangla and English, or detected. Nothing is kept.
- */
-app.post('/channels/:id/captions', limit('captions', 40), guestOk, requireRole('member'), async (c) => {
-  const { audio, language } = await c.req.json<{ audio?: unknown; language?: unknown }>();
-  if (typeof audio !== 'string' || audio.length < 2_000 || audio.length > 700_000 || !/^[A-Za-z0-9+/]+=*$/.test(audio)) return c.json({ error: 'bad_audio' }, 400);
-  const lang = language === 'bn' || language === 'en' ? language : undefined;
-  try {
-    const ai = c.env.AI as unknown as { run(model: string, input: Record<string, unknown>): Promise<{ text?: string; transcription_info?: { language?: string } }> };
-    const out = await ai.run('@cf/openai/whisper-large-v3-turbo', { audio, task: 'transcribe', language: lang, vad_filter: true });
-    return c.json({ text: (out.text ?? '').trim(), language: out.transcription_info?.language ?? lang ?? null });
-  } catch (err) {
-    console.error('captions failed', err);
-    return c.json({ error: 'transcription_failed' }, 502);
-  }
-});
-
 app.get('/channels/:id/rooms/:roomId/messages', guestOk, requireRole('member'), async (c) => {
   const before = c.req.query('before') ?? null;
   const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 100);

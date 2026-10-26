@@ -164,8 +164,6 @@ export interface VoiceParticipant extends VoiceLocalState {
 export interface VoiceSnapshot {
   participants: VoiceParticipant[];
   mutedRooms: string[];
-  /** Voice rooms with live captions on. */
-  captionRooms?: string[];
 }
 
 /** A file in a watch party: like an attachment, streamed from its owner when someone copies it. */
@@ -258,10 +256,6 @@ export type ClientMsg =
   | { t: 'voice.disconnect'; peerId: string }
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
-  /** Live captions on or off for a voice room (anyone in it). */
-  | { t: 'captions.set'; roomId: string; on: boolean }
-  /** A line of your own speech, transcribed, for the others in your room. */
-  | { t: 'caption.line'; text: string }
   | { t: 'rtc'; to: string; data: RtcPayload }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
@@ -294,8 +288,6 @@ export type ServerMsg =
   | { t: 'voice.kicked' }
   /** An admin moved you; your client rejoins voice in `roomId`. */
   | { t: 'voice.moved'; roomId: string }
-  | { t: 'captions.changed'; roomId: string; on: boolean; by: string }
-  | { t: 'caption'; roomId: string; peerId: string; userId: string; text: string; at: number }
   | { t: 'chat.new'; message: Message; nonce?: string }
   | { t: 'chat.edited'; id: string; roomId: string; content: string; editedAt: number }
   | { t: 'chat.deleted'; id: string; roomId: string }

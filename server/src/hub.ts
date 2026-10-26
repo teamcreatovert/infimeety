@@ -38,8 +38,6 @@ const MEETING_CHECK = 15 * 60_000;
  */
 export class ChannelHub extends DurableObject<Env> {
   private mutedRooms = new Set<string>();
-  /** Voice rooms with live captions on; turned off once a room empties. */
-  private captionRooms = new Set<string>();
   private roomKinds = new Map<string, string>();
   private meeting: MeetingState | null = null;
   private promoting = false;
@@ -53,7 +51,6 @@ export class ChannelHub extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"t":"ping"}', '{"t":"pong"}'));
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
-      this.captionRooms = new Set((await ctx.storage.get<string[]>('captionRooms')) ?? []);
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
       // Parties saved before lobbies and settings existed are already live, with the defaults.
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
@@ -285,24 +282,6 @@ export class ChannelHub extends DurableObject<Env> {
         if (!target || !this.canModerate(me, this.peer(target)) || !this.peer(target).voice) return;
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
-      }
-      case 'captions.set': {
-        // Anyone in the room turns captions on or off; everyone is told who did.
-        const roomId = String(msg.roomId);
-        if (me.voice?.roomId !== roomId) return;
-        if (msg.on) this.captionRooms.add(roomId);
-        else this.captionRooms.delete(roomId);
-        await this.ctx.storage.put('captionRooms', [...this.captionRooms]);
-        this.broadcast({ t: 'captions.changed', roomId, on: !!msg.on, by: me.userId });
-        return this.broadcastVoice();
-      }
-      case 'caption.line': {
-        const roomId = me.voice?.roomId;
-        const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 500) : '';
-        if (!roomId || !this.captionRooms.has(roomId) || !text) return;
-        const line: ServerMsg = { t: 'caption', roomId, peerId: me.peerId, userId: me.userId, text, at: Date.now() };
-        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === roomId) this.send(s, line);
-        return;
       }
 
       case 'rtc': {
@@ -651,17 +630,10 @@ export class ChannelHub extends DurableObject<Env> {
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted });
     }
-    return { participants, mutedRooms: [...this.mutedRooms], captionRooms: [...this.captionRooms] };
+    return { participants, mutedRooms: [...this.mutedRooms] };
   }
 
   private broadcastVoice(exceptSocket?: WebSocket) {
-    // Captions stop once nobody is left in the room.
-    if (this.captionRooms.size) {
-      const occupied = new Set(this.sockets().map((s) => this.peer(s).voice?.roomId).filter(Boolean));
-      const before = this.captionRooms.size;
-      for (const roomId of this.captionRooms) if (!occupied.has(roomId)) this.captionRooms.delete(roomId);
-      if (this.captionRooms.size !== before) this.ctx.storage.put('captionRooms', [...this.captionRooms]).catch(() => {});
-    }
     this.broadcast({ t: 'voice', voice: this.voiceSnapshot(undefined, exceptSocket) }, exceptSocket);
     this.tendParties(exceptSocket).catch((err) => console.error('party upkeep failed', err));
     if (this.meeting) this.meetingCallChanged(exceptSocket).catch((err) => console.error('meeting check failed', err));
@@ -720,10 +692,6 @@ function rateOf(t: unknown): SocketRate {
     case 'party.status':
     case 'clock':
       return 'party';
-    case 'caption.line':
-      return 'caption';
-    case 'captions.set':
-      return 'voice';
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }
