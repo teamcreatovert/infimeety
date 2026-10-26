@@ -107,7 +107,7 @@ function SoundTile({ emoji, label, disabled, onPlay, onRemove }: { emoji: string
 export function SoundBursts() {
   const bursts = useSoundBursts((s) => s.bursts);
   return (
-    <div className="pointer-events-none absolute bottom-full left-1/2 mb-3 flex -translate-x-1/2 flex-col-reverse items-center gap-1.5">
+    <div className="pointer-events-none absolute bottom-full right-2 mb-3 flex flex-col-reverse items-end gap-1.5">
       <AnimatePresence>
         {bursts.map((b) => (
           <motion.div

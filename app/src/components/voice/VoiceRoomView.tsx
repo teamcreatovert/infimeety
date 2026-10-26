@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   AudioLines,
+  Captions,
   ChevronDown,
   ChevronUp,
   Clapperboard,
@@ -33,12 +34,14 @@ import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/ov
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
+import { CaptionsMenu, CaptionsOverlay } from './Captions';
 import { SoundboardPanel, SoundBursts } from './Soundboard';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty } from '@/lib/party';
+import { setCaptions, useCaptionsOn } from '@/lib/captions';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -634,6 +637,9 @@ function Dock({
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
   const [soundboard, setSoundboard] = useState<Anchor | null>(null);
+  const [captionsMenu, setCaptionsMenu] = useState<Anchor | null>(null);
+  const captionsOn = useCaptionsOn();
+  const toggleCaptions = (anchor: Anchor) => (captionsOn ? setCaptionsMenu(anchor) : setCaptions(true));
   const isAdmin = channel.role !== 'member';
   const sharer = participants.find((p) => p.screen && p.peerId !== myPeer) ?? participants.find((p) => p.screen);
   const micOff = muted || deafened || serverMuted;
@@ -653,6 +659,7 @@ function Dock({
         className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[22px] p-1.5 glass-pop"
       >
         <SoundBursts />
+        <CaptionsOverlay />
         <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
           {micOff ? <MicOff size={20} /> : <Mic size={20} />}
         </DockButton>
@@ -686,6 +693,9 @@ function Dock({
           <MenuItem icon={deafened ? <Headphones size={15} /> : <HeadphoneOff size={15} />} onClick={() => (setMoreMenu(null), voice.toggleDeafen())}>
             {deafened ? 'Undeafen' : 'Deafen (mute everyone for me)'}
           </MenuItem>
+          <MenuItem icon={<Captions size={15} />} onClick={() => (setMoreMenu(null), moreMenu && toggleCaptions(moreMenu))}>
+            {captionsOn ? 'Live captions…' : 'Turn on live captions'}
+          </MenuItem>
           <MenuItem icon={<PartyPopper size={15} />} onClick={() => (setMoreMenu(null), setSoundboard(moreMenu))}>
             Soundboard
           </MenuItem>
@@ -711,6 +721,9 @@ function Dock({
         <Popover open={!!soundboard} anchor={soundboard} onClose={() => setSoundboard(null)} side="top" align="center" offset={14}>
           <SoundboardPanel />
         </Popover>
+      <Popover open={!!captionsMenu} anchor={captionsMenu} onClose={() => setCaptionsMenu(null)} side="top" align="center" offset={14}>
+        <CaptionsMenu onClose={() => setCaptionsMenu(null)} />
+      </Popover>
       </motion.div>
     );
 
@@ -722,6 +735,7 @@ function Dock({
       className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-2 glass-pop"
     >
       <SoundBursts />
+        <CaptionsOverlay />
       <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
         {micOff ? <MicOff size={19} /> : <Mic size={19} />}
       </DockButton>
@@ -747,6 +761,9 @@ function Dock({
       </div>
       <DockButton label="Soundboard" state={soundboard ? 'on' : 'normal'} onClick={(el) => setSoundboard(el.getBoundingClientRect())}>
         <PartyPopper size={19} />
+      </DockButton>
+      <DockButton label={captionsOn ? 'Live captions are on' : 'Turn on live captions'} state={captionsOn ? 'on' : 'normal'} onClick={(el) => toggleCaptions(el.getBoundingClientRect())}>
+        <Captions size={19} />
       </DockButton>
       {sharer && (
         <DockButton label={focusedPeer ? 'Exit watch mode' : 'Watch together'} state={focusedPeer ? 'on' : 'normal'} onClick={toggleWatch}>
@@ -801,6 +818,9 @@ function Dock({
       </Popover>
       <Popover open={!!soundboard} anchor={soundboard} onClose={() => setSoundboard(null)} side="top" align="center" offset={14}>
         <SoundboardPanel />
+      </Popover>
+      <Popover open={!!captionsMenu} anchor={captionsMenu} onClose={() => setCaptionsMenu(null)} side="top" align="center" offset={14}>
+        <CaptionsMenu onClose={() => setCaptionsMenu(null)} />
       </Popover>
       <span className="sr-only">{me?.name}</span>
     </motion.div>

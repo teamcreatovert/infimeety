@@ -52,6 +52,8 @@ export interface SettingsState {
   /** Hear the soundboard in calls, and how loud. */
   soundboard: boolean;
   soundboardVolume: number;
+  /** Live captions: the language you speak (helps Whisper), or detect it. */
+  captionLanguage: 'auto' | 'bn' | 'en';
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -116,6 +118,7 @@ export const useSettings = create<SettingsState>()(
       messageSounds: true,
       soundboard: true,
       soundboardVolume: 0.7,
+      captionLanguage: 'auto',
 
       screenQuality: '1080p30',
       screenMode: 'motion',

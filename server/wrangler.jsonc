@@ -22,6 +22,8 @@
 
   // `wrangler kv namespace create AVATARS` prints the real id — paste it here before deploying.
   "kv_namespaces": [{ "binding": "AVATARS", "id": "8bdf1a31d8eb4d1886f62a90a1ef50fc" }],
+  // Workers AI: speech to text for live captions (free daily allowance).
+  "ai": { "binding": "AI" },
 
   "durable_objects": {
     "bindings": [

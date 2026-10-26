@@ -264,6 +264,11 @@ class VoiceEngine {
     this.pushState();
   }
 
+  /** Your microphone while in a call (live captions listen to it). */
+  get micStream() {
+    return this.inCall ? this.mic : null;
+  }
+
   /** Where the soundboard plays: the call's output, so Deafen silences it too. Null outside a call. */
   soundOutput() {
     if (!this.inCall) return null;
