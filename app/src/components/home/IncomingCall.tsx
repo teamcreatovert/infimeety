@@ -3,6 +3,7 @@ import { Phone, PhoneOff } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Avatar } from '../ui/Avatar';
 import { spring } from '@/lib/motion';
+import { notify } from '@/lib/notify';
 import { appWindow } from '@/lib/platform';
 import { sounds } from '@/lib/sounds';
 import { voice } from '@/lib/voice/engine';
@@ -54,6 +55,7 @@ export function IncomingCall() {
     if (!call) return;
     sounds.ring();
     void appWindow.attention();
+    void notify(`${call.dm.peer?.name ?? 'A friend'} is calling you`, 'Open Infimeety to answer.');
     const ring = setInterval(() => sounds.ring(), 2600);
     const timeout = setTimeout(() => tick((n) => n + 1), Math.max(0, call.joinedAt + RING_FOR - Date.now()));
     return () => {

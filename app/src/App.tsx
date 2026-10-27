@@ -21,6 +21,7 @@ import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
+import { startNotifications } from './lib/notify';
 import { startWebLinks } from './lib/weblinks';
 import { startDesktop } from './lib/desktop';
 import { connectLobby, disconnectLobby } from './lib/lobby';
@@ -68,6 +69,7 @@ export default function App() {
     void useAuth.getState().init();
     startUpdateChecks();
     void startDeepLinks();
+    startNotifications();
     startWebLinks();
     startDesktop();
 

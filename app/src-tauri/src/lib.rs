@@ -41,6 +41,8 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Pop-ups for messages and calls while the app is in the background.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let registry = media::Registry::load(app.handle())?;
             app.manage(registry);

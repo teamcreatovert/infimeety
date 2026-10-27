@@ -1,4 +1,5 @@
 import type { ServerMsg } from '../../../shared/protocol';
+import { notifyMessage } from './notify';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { sounds } from './sounds';
@@ -106,6 +107,7 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
         useMessages.getState().bumpUnread(msg.message.roomId);
         if (settings.messageSounds && !settings.mutedChats[cid]) sounds.message();
       }
+      notifyMessage(cid, msg.message);
       return;
     }
     case 'chat.edited':
