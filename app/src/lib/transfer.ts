@@ -33,7 +33,10 @@ const MAX_LANES = 6;
 const REVOKED_KEY = 'infimeety.revoked';
 
 /** More lanes for bigger files: each one adds a connection's worth of throughput. */
-export const lanesFor = (size: number) => (size < 8 * 1024 * 1024 ? 1 : size < 64 * 1024 * 1024 ? 2 : 4);
+// Through a relay one connection can't fill the line (the round trip is long), so copies use several.
+export const lanesFor = (size: number) => (size < 2 * 1024 * 1024 ? 1 : size < 32 * 1024 * 1024 ? 4 : MAX_LANES);
+/** Smaller files go out in smaller pieces, so every connection gets a share. */
+const chunkFor = (size: number) => (size < 64 * 1024 * 1024 ? 1024 * 1024 : CHUNK);
 
 interface Lane {
   peer: Peer;
@@ -346,8 +349,9 @@ function serveLane(hub: HubClient, to: string, reqId: string, file: SharedFile, 
       clearTimeout(connectTimeout);
       const max = peer.pc.sctp?.maxMessageSize ?? 0;
       const frame = max >= BIG_FRAME ? BIG_FRAME : FRAME;
-      const chunks = Math.ceil(file.size / CHUNK);
-      const read = (c: number) => localMedia.read(file.id, c * CHUNK, CHUNK);
+      const piece = chunkFor(file.size);
+      const chunks = Math.ceil(file.size / piece);
+      const read = (c: number) => localMedia.read(file.id, c * piece, piece);
       let next: Promise<ArrayBuffer> | null = lane < chunks ? read(lane) : null;
       next?.catch(() => {});
       try {
@@ -357,7 +361,7 @@ function serveLane(hub: HubClient, to: string, reqId: string, file: SharedFile, 
           // Read the next chunk from disk while this one goes out.
           next = c + lanes < chunks ? read(c + lanes) : null;
           next?.catch(() => {});
-          dc.send(JSON.stringify({ at: c * CHUNK }));
+          dc.send(JSON.stringify({ at: c * piece }));
           for (let i = 0; i < buf.byteLength; i += frame) {
             if (dc.readyState !== 'open') throw new Error('closed');
             if (dc.bufferedAmount > HIGH_WATER) await drained();
