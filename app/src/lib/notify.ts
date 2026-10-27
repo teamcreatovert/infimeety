@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { appWindow, isTauri, isWindows } from './platform';
+import { appWindow, isMac, isTauri, isWindows } from './platform';
 import { useChannels } from '@/stores/channels';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
+import { useVoice } from '@/stores/voice';
 
 /**
  * The desktop app, like Discord: a red badge with your unread count on the taskbar (Windows)
@@ -62,6 +63,10 @@ export function startNotifications() {
 /** A pop-up, only while Infimeety isn't the window in front. `target` is the chat a click opens. */
 export async function notify(title: string, body: string, target = '') {
   if (!isTauri || (await getCurrentWindow().isFocused().catch(() => false))) return;
+  // In a call, it shows in the who's-talking overlay instead of a pop-up over your game.
+  if (useVoice.getState().roomId && useSettings.getState().overlay && !isMac) {
+    return void emitTo('overlay', 'overlay:note', { title, body }).catch(() => {});
+  }
   // Windows: Infimeety's own pop-up, which can open the chat when clicked.
   if (isWindows && (await invoke<boolean>('notify', { title, body, target }).catch(() => false))) return;
   try {

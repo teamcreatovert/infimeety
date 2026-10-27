@@ -14,11 +14,22 @@ import { spring } from '@/lib/motion';
  */
 export function Overlay() {
   const [state, setState] = useState<OverlayState | null>(null);
+  // Messages and calls while you're in a call (instead of pop-ups over a game), for 6 s each.
+  const [notes, setNotes] = useState<{ id: number; title: string; body: string }[]>([]);
 
   useEffect(() => {
     const unlisten = listen<OverlayState>('overlay:state', (e) => setState(e.payload));
     void unlisten.then(() => emit('overlay:ready'));
-    return () => void unlisten.then((off) => off());
+    let next = 0;
+    const offNote = listen<{ title: string; body: string }>('overlay:note', (e) => {
+      const id = ++next;
+      setNotes((n) => [...n.slice(-2), { id, ...e.payload }]);
+      setTimeout(() => setNotes((n) => n.filter((x) => x.id !== id)), 6000);
+    });
+    return () => {
+      void unlisten.then((off) => off());
+      void offNote.then((off) => off());
+    };
   }, []);
 
   const right = !!state?.corner.endsWith('right');
@@ -29,6 +40,21 @@ export function Overlay() {
   return (
     <div className={clsx('flex h-full w-full flex-col gap-1.5 p-2', right ? 'items-end' : 'items-start', bottom ? 'justify-end' : 'justify-start')}>
       <AnimatePresence initial={false}>
+        {notes.map((n) => (
+          <motion.div
+            key={`note-${n.id}`}
+            layout
+            initial={{ opacity: 0, x: right ? 14 : -14, scale: 0.94 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.2 } }}
+            transition={spring}
+            className="max-w-[260px] rounded-[14px] px-3 py-1.5"
+            style={{ background: 'rgba(14, 14, 20, 0.82)', boxShadow: 'inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 6px 18px rgba(0, 0, 0, 0.28)' }}
+          >
+            <div className="truncate text-[12px] font-semibold text-white">{n.title}</div>
+            <div className="truncate text-[12px] text-white/75">{n.body}</div>
+          </motion.div>
+        ))}
         {people.map((p) => (
           <motion.div
             key={p.peerId}
