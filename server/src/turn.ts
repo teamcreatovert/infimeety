@@ -44,18 +44,22 @@ async function cloudflareTurn(env: Env): Promise<IceServer[] | null> {
 
 /** What /ice hands to signed-in clients. */
 export async function iceServers(env: Env): Promise<IceServer[]> {
+  // Cloudflare's relay is fast. A fixed-login relay on a free plan is speed-limited, which makes
+  // file copies crawl when friends can't connect directly, so it's only the fallback.
+  const cloudflare = await cloudflareTurn(env);
+  if (cloudflare) return cloudflare;
   const relay = staticRelay(env);
   if (relay) {
     const urls = [`turn:${relay.host}?transport=udp`, `turn:${relay.host}?transport=tcp`];
     return [...STUN, { urls, username: relay.username, credential: relay.password }];
   }
-  return (await cloudflareTurn(env)) ?? STUN;
+  return STUN;
 }
 
 /** Public health check. Never includes credentials. */
 export async function turnStatus(env: Env) {
   const relay = staticRelay(env);
-  if (relay) return { ...(await probeTurn(relay)), relay: relay.host };
+  if (relay && (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN)) return { ...(await probeTurn(relay)), relay: relay.host };
   if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return { turn: 'not_configured' };
   const relays = (await cloudflareTurn(env))?.flatMap((s) => s.urls).filter((u) => u.startsWith('turn')) ?? [];
   return { turn: relays.length ? 'ok' : 'error', relays: relays.map((u) => u.split('?')[0]) };

@@ -48,6 +48,14 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             app.manage(system_audio::SystemAudio::default());
             app.manage(desktop::CloseToTray::default());
             desktop::setup_tray(app)?;
+            // Mac: opened straight from the installer (.dmg), the app vanishes once it's ejected.
+            if cfg!(target_os = "macos") && std::env::current_exe().is_ok_and(|exe| exe.starts_with("/Volumes")) {
+                use tauri_plugin_dialog::DialogExt;
+                app.dialog()
+                    .message("Infimeety is running from the installer, so it will disappear when you eject it. Quit Infimeety, drag it into your Applications folder, and open it from there.")
+                    .title("Move Infimeety to Applications")
+                    .show(|_| {});
+            }
             // The installer registers infimeety:// too; this keeps it pointing at the running build.
             #[cfg(any(windows, target_os = "linux"))]
             {

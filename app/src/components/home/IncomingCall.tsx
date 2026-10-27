@@ -11,6 +11,8 @@ import { useChannels } from '@/stores/channels';
 import { useVoice } from '@/stores/voice';
 
 const RING_FOR = 45_000;
+/** When you were last in each call room. A friend reconnecting to a call you just dropped out of isn't a new call. */
+const lastIn = new Map<string, number>();
 
 /**
  * Rings when a friend starts a call in your DM and you're not in it.
@@ -20,22 +22,32 @@ export function IncomingCall() {
   const channels = useChannels((s) => s.channels);
   const voiceState = useChannels((s) => s.voice);
   const myRoom = useVoice((s) => s.roomId);
+  const rejoining = useVoice((s) => s.status === 'connecting');
   const meId = useAuth((s) => s.me?.id);
   const [dismissed, setDismissed] = useState<Record<string, true>>({});
   const [, tick] = useState(0);
 
+  useEffect(() => {
+    if (!myRoom) return;
+    lastIn.set(myRoom, Date.now());
+    return () => void lastIn.set(myRoom, Date.now());
+  }, [myRoom]);
+
   const call = useMemo(() => {
+    if (rejoining) return null;
     for (const dm of channels) {
       if (dm.kind !== 'dm' || !dm.peer) continue;
       const room = dm.rooms.find((r) => r.kind === 'voice');
       const caller = voiceState[dm.id]?.participants.find((p) => p.roomId === room?.id && p.userId !== meId);
       if (!room || !caller || myRoom === room.id) continue;
+      // You were in this call with them a moment ago (one of you reconnected): no ring.
+      if ((lastIn.get(room.id) ?? 0) > caller.joinedAt - 60_000) continue;
       const key = `${caller.peerId}:${caller.joinedAt}`;
       if (dismissed[key] || Date.now() - caller.joinedAt > RING_FOR) continue;
       return { dm, room, key, joinedAt: caller.joinedAt };
     }
     return null;
-  }, [channels, voiceState, myRoom, meId, dismissed]);
+  }, [channels, voiceState, myRoom, rejoining, meId, dismissed]);
 
   // Ring until answered, declined, or it times out.
   useEffect(() => {
