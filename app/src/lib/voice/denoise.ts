@@ -71,3 +71,30 @@ export async function denoise(mic: MediaStream): Promise<Denoised | null> {
 export function resumeDenoise() {
   if (ctx?.state === 'suspended') void ctx.resume().catch(() => {});
 }
+
+const loaded = new WeakMap<AudioContext, Promise<ArrayBuffer>>();
+
+/**
+ * A noise filter for a friend's voice, applied on this device only ("Clean up their voice").
+ * Null where it can't run: RNNoise needs a 48 kHz audio context.
+ */
+export async function voiceFilter(c: AudioContext): Promise<RnnoiseWorkletNode | null> {
+  if (typeof AudioWorkletNode === 'undefined' || c.sampleRate !== 48000) return null;
+  try {
+    let wasm = loaded.get(c);
+    if (!wasm) {
+      const pending = (async () => {
+        const [w] = await Promise.all([loadRnnoise({ url: rnnoiseWasm, simdUrl: rnnoiseSimdWasm }), c.audioWorklet.addModule(rnnoiseWorklet)]);
+        await WebAssembly.compile(w);
+        return w;
+      })();
+      pending.catch(() => loaded.get(c) === pending && loaded.delete(c));
+      loaded.set(c, pending);
+      wasm = pending;
+    }
+    return new RnnoiseWorkletNode(c, { maxChannels: 1, wasmBinary: await wasm });
+  } catch (err) {
+    console.warn('[voice] voice filter unavailable', err);
+    return null;
+  }
+}

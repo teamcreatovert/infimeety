@@ -66,6 +66,8 @@ export interface SettingsState {
   userVolumes: Record<string, number>;
   localMutes: Record<string, boolean>;
   streamVolumes: Record<string, number>;
+  /** "Clean up their voice", per person: 0 off, 1 standard, 2 strong. */
+  userNoiseFilters: Record<string, number>;
 
   autoUpdate: boolean;
 
@@ -84,6 +86,7 @@ export interface SettingsState {
   set: (patch: Partial<SettingsState>) => void;
   setUserVolume: (userId: string, volume: number) => void;
   setStreamVolume: (userId: string, volume: number) => void;
+  setUserNoiseFilter: (userId: string, level: number) => void;
   toggleLocalMute: (userId: string) => void;
   toggleDmPin: (channelId: string) => void;
   setDmClosed: (channelId: string, closed: boolean) => void;
@@ -125,6 +128,7 @@ export const useSettings = create<SettingsState>()(
       saveFolderName: null,
 
       userVolumes: {},
+      userNoiseFilters: {},
       localMutes: {},
       streamVolumes: {},
 
@@ -143,6 +147,7 @@ export const useSettings = create<SettingsState>()(
       set: (patch) => set(patch),
       setUserVolume: (userId, volume) => set((s) => ({ userVolumes: { ...s.userVolumes, [userId]: volume } })),
       setStreamVolume: (userId, volume) => set((s) => ({ streamVolumes: { ...s.streamVolumes, [userId]: volume } })),
+      setUserNoiseFilter: (userId, level) => set((s) => ({ userNoiseFilters: { ...s.userNoiseFilters, [userId]: level } })),
       toggleLocalMute: (userId) => set((s) => ({ localMutes: { ...s.localMutes, [userId]: !s.localMutes[userId] } })),
       toggleDmPin: (id) => set((s) => ({ pinnedDms: s.pinnedDms.includes(id) ? s.pinnedDms.filter((x) => x !== id) : [...s.pinnedDms, id] })),
       setDmClosed: (id, closed) => set((s) => (closed ? { closedDms: { ...s.closedDms, [id]: true } } : s.closedDms[id] ? { closedDms: without(s.closedDms, id) } : s)),
@@ -164,7 +169,7 @@ export const useSettings = create<SettingsState>()(
         return s as unknown as SettingsState;
       },
       // Functions don't survive JSON anyway; listing them keeps the stored shape obvious.
-      partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, toggleLocalMute: _c, toggleDmPin: _d, setDmClosed: _e, toggleChatMute: _f, setNote: _g, ...rest }) => rest,
+      partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, setUserNoiseFilter: _h, toggleLocalMute: _c, toggleDmPin: _d, setDmClosed: _e, toggleChatMute: _f, setNote: _g, ...rest }) => rest,
     },
   ),
 );

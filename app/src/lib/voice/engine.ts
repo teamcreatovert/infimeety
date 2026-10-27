@@ -8,7 +8,7 @@ import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
 import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 import { confirmCallSwitch } from './callSwitch';
-import { denoise, resumeDenoise, type Denoised } from './denoise';
+import { denoise, resumeDenoise, voiceFilter, type Denoised } from './denoise';
 import { Peer, VOICE_BITRATE, type Signal } from './peer';
 import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
 
@@ -42,6 +42,10 @@ interface AudioChain {
   gain: GainNode;
   analyser: AnalyserNode;
   data: Float32Array<ArrayBuffer>;
+  /** "Clean up their voice": the level asked for, and the nodes between their voice and its volume. */
+  filter: number;
+  filterNodes: AudioNode[];
+  filterToken: number;
 }
 
 /**
@@ -146,7 +150,7 @@ class VoiceEngine {
     this.startMeter();
 
     this.unsubSettings = useSettings.subscribe((s, prev) => {
-      if (s.userVolumes !== prev.userVolumes || s.localMutes !== prev.localMutes || s.streamVolumes !== prev.streamVolumes || s.outputVolume !== prev.outputVolume) this.applyGains();
+      if (s.userVolumes !== prev.userVolumes || s.localMutes !== prev.localMutes || s.streamVolumes !== prev.streamVolumes || s.userNoiseFilters !== prev.userNoiseFilters || s.outputVolume !== prev.outputVolume) this.applyGains();
       if (s.outputDeviceId !== prev.outputDeviceId) this.applyOutput();
       if (
         s.inputDeviceId !== prev.inputDeviceId ||
@@ -658,7 +662,21 @@ class VoiceEngine {
     analyser.fftSize = 512;
     source.connect(analyser);
     source.connect(gain).connect(this.master);
-    this.chains.set(key, { peerId, userId, kind, stream, trackId: track.id, el, source, gain, analyser, data: new Float32Array(analyser.fftSize) });
+    this.chains.set(key, {
+      peerId,
+      userId,
+      kind,
+      stream,
+      trackId: track.id,
+      el,
+      source,
+      gain,
+      analyser,
+      data: new Float32Array(analyser.fftSize),
+      filter: 0,
+      filterNodes: [],
+      filterToken: 0,
+    });
     this.applyGains();
   }
 
@@ -667,8 +685,47 @@ class VoiceEngine {
     if (!c) return;
     c.source.disconnect();
     c.gain.disconnect();
+    dropNodes(c.filterNodes);
     c.el.srcObject = null;
     this.chains.delete(key);
+  }
+
+  /**
+   * Cleans up a friend's voice on this device: Standard runs it through RNNoise, Strong through
+   * RNNoise twice after cutting the rumble. Their own noise suppression may be off or too weak.
+   */
+  private async setFilter(key: string, c: AudioChain, level: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const token = ++c.filterToken;
+    c.filter = level;
+    const nodes: AudioNode[] = [];
+    if (level > 0) {
+      if (level > 1) {
+        const rumble = ctx.createBiquadFilter();
+        rumble.type = 'highpass';
+        rumble.frequency.value = 90;
+        nodes.push(rumble);
+      }
+      for (let i = 0; i < level; i++) {
+        const node = await voiceFilter(ctx);
+        if (!node) break;
+        nodes.push(node);
+      }
+      if (nodes.length < level + (level > 1 ? 1 : 0)) {
+        dropNodes(nodes);
+        nodes.length = 0; // this device can't: keep their voice as it is
+      }
+    }
+    if (this.chains.get(key) !== c || token !== c.filterToken) return dropNodes(nodes);
+    // The new path first, then the old one out, so their voice doesn't drop.
+    let at: AudioNode = c.source;
+    for (const n of nodes) at = at.connect(n);
+    at.connect(c.gain);
+    if (c.filterNodes.length) c.source.disconnect(c.filterNodes[0]);
+    else if (nodes.length) c.source.disconnect(c.gain);
+    dropNodes(c.filterNodes);
+    c.filterNodes = nodes;
   }
 
   private applyGains() {
@@ -677,7 +734,9 @@ class VoiceEngine {
     const s = useSettings.getState();
     const now = this.ctx.currentTime;
     this.master.gain.setTargetAtTime(deafened ? 0 : s.outputVolume, now, 0.015);
-    for (const c of this.chains.values()) {
+    for (const [key, c] of this.chains) {
+      const filter = c.kind === 'mic' ? Math.round(s.userNoiseFilters[c.userId] ?? 0) : 0;
+      if (filter !== c.filter) void this.setFilter(key, c, filter);
       const p = this.participants.get(c.peerId);
       const v =
         c.kind === 'mic'
@@ -732,6 +791,16 @@ export const voice = new VoiceEngine();
 
 if (import.meta.env.DEV) Object.assign(window, { __voice: voice, __voiceState: useVoice });
 // A live call can't be hot-swapped; reload the page in dev instead of running two engines.
+function dropNodes(nodes: AudioNode[]) {
+  for (const n of nodes) {
+    n.disconnect();
+    (n as AudioNode & { destroy?: () => void }).destroy?.();
+  }
+}
+
+/** Whether "Clean up their voice" can run here (RNNoise needs 48 kHz audio). */
+export const canFilterVoices = () => typeof AudioWorkletNode !== 'undefined' && isTauri;
+
 import.meta.hot?.accept(() => location.reload());
 
 /** Grouped media devices for the settings screen. */

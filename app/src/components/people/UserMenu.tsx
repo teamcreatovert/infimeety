@@ -33,7 +33,7 @@ import { acceptFriend, addFriend, removeFriend, useFriendStatus, usePerson } fro
 import { api } from '@/lib/api';
 import { inviteUrl } from '@/lib/invite';
 import { getHub, moveVoice, sendChat } from '@/lib/realtime';
-import { voice } from '@/lib/voice/engine';
+import { canFilterVoices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMeetings } from '@/stores/meetings';
@@ -209,15 +209,27 @@ function SelfVoice({ channelId, close }: { channelId: string; close: Close }) {
   );
 }
 
+const FILTERS = ['Off', 'Standard', 'Strong'];
+
 function PeerVoice({ channelId, peerId, userId }: { channelId: string; peerId: string; userId: string }) {
   const sharing = useChannels((s) => !!s.voice[channelId]?.participants.find((p) => p.peerId === peerId)?.screen);
   const volume = useSettings((s) => s.userVolumes[userId] ?? 1);
   const streamVolume = useSettings((s) => s.streamVolumes[userId] ?? 1);
   const localMuted = useSettings((s) => !!s.localMutes[userId]);
+  const filter = useSettings((s) => s.userNoiseFilters[userId] ?? 0);
   const settings = useSettings.getState();
   return (
     <>
       <VolumeRow label="Volume for me" value={volume} onChange={(v) => settings.setUserVolume(userId, v)} />
+      {canFilterVoices() && (
+        <div className="px-2.5 pb-1.5 pt-1" title="Removes background noise from their voice, for you only">
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="text-fg-2">Clean up their voice</span>
+            <span className="text-fg-3">{FILTERS[filter] ?? FILTERS[0]}</span>
+          </div>
+          <Slider value={filter} min={0} max={2} step={1} onChange={(v) => settings.setUserNoiseFilter(userId, Math.round(v))} />
+        </div>
+      )}
       {sharing && <VolumeRow label="Screen share volume" value={streamVolume} onChange={(v) => settings.setStreamVolume(userId, v)} />}
       <Toggle icon={<MicOff size={14} />} label="Mute for me" checked={localMuted} onChange={() => settings.toggleLocalMute(userId)} />
     </>
