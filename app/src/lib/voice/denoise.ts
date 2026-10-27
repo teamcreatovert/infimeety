@@ -50,13 +50,18 @@ export async function denoise(mic: MediaStream): Promise<Denoised | null> {
     if (c.state !== 'running') await Promise.race([c.resume(), new Promise((r) => setTimeout(r, 1500))]);
     if (c.state !== 'running') return null;
     const source = c.createMediaStreamSource(mic);
+    // RNNoise cleans one channel only: mix a two-channel mic down first, or the right side goes silent.
+    const mono = c.createGain();
+    mono.channelCount = 1;
+    mono.channelCountMode = 'explicit';
     const node = new RnnoiseWorkletNode(c, { maxChannels: 1, wasmBinary });
     const out = c.createMediaStreamDestination();
-    source.connect(node).connect(out);
+    source.connect(mono).connect(node).connect(out);
     return {
       stream: out.stream,
       stop: () => {
         source.disconnect();
+        mono.disconnect();
         node.disconnect();
         node.destroy();
       },

@@ -97,6 +97,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             desktop::set_close_to_tray,
             desktop::overlay_open,
             desktop::overlay_close,
+            desktop::notify,
         ])
 }
 

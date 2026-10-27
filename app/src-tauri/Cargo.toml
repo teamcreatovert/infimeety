@@ -37,5 +37,6 @@ panic = "abort"
 strip = true
 
 [target."cfg(windows)".dependencies]
+tauri-winrt-notification = "0.8"
 wasapi = "0.26.0"
 webview2-com = "0.39"

@@ -40,20 +40,6 @@ export const appWindow = {
     return isTauri ? getCurrentWindow().isFullscreen() : !!document.fullscreenElement;
   },
   attention: () => isTauri && getCurrentWindow().requestUserAttention(2),
-  /** A call: the window comes up over the others (from the tray or minimized too), like Discord's. */
-  async bringForward() {
-    if (!isTauri) return;
-    const w = getCurrentWindow();
-    try {
-      await w.unminimize();
-      await w.show();
-      await w.setAlwaysOnTop(true);
-      await w.setFocus();
-      setTimeout(() => void w.setAlwaysOnTop(false).catch(() => {}), 1500);
-    } catch {
-      /* the window is closing */
-    }
-  },
 };
 
 /** An incoming copy being written to disk, piece by piece and in any order. */

@@ -124,3 +124,29 @@ pub fn overlay_close(app: AppHandle) {
         let _ = window.destroy();
     }
 }
+
+/// A Windows pop-up for a message or call. Clicking it brings Infimeety up and tells the page
+/// which chat to open (`target`); nothing else ever moves the window, so a game keeps the screen.
+#[tauri::command]
+pub fn notify(app: AppHandle, title: String, body: String, target: String) -> bool {
+    #[cfg(windows)]
+    {
+        use tauri::Emitter;
+        let handle = app.clone();
+        let shown = tauri_winrt_notification::Toast::new(&app.config().identifier)
+            .title(&title)
+            .text1(&body)
+            .on_activated(move |_| {
+                show_main(&handle);
+                let _ = handle.emit_to("main", "notification-click", target.clone());
+                Ok(())
+            })
+            .show();
+        shown.is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, title, body, target);
+        false
+    }
+}

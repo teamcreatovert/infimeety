@@ -87,8 +87,14 @@ export class Peer {
     this.pc.onsignalingstatechange = () => {
       if (this.pc.signalingState === 'stable') this.onStable?.();
     };
+    // A path that drops gets a fresh start: at once when it fails, after 4 s if it stays
+    // disconnected (Chrome takes ~30 s to call that failed), so nobody stays silent to one person.
+    let stuck: ReturnType<typeof setTimeout> | undefined;
     this.pc.oniceconnectionstatechange = () => {
-      if (this.pc.iceConnectionState === 'failed') this.pc.restartIce();
+      clearTimeout(stuck);
+      const state = this.pc.iceConnectionState;
+      if (state === 'failed') this.pc.restartIce();
+      else if (state === 'disconnected') stuck = setTimeout(() => !this.closed && this.pc.iceConnectionState === 'disconnected' && this.pc.restartIce(), 4000);
     };
   }
 

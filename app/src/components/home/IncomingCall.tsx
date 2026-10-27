@@ -55,8 +55,8 @@ export function IncomingCall() {
     if (!call) return;
     sounds.ring();
     void appWindow.attention();
-    void notify(`${call.dm.peer?.name ?? 'A friend'} is calling you`, 'Answer it in Infimeety.');
-    void appWindow.bringForward();
+    // A pop-up and the ring, never the window jumping up (a game keeps the screen).
+    void notify(`${call.dm.peer?.name ?? 'A friend'} is calling you`, 'Click to answer in Infimeety.', call.dm.id);
     const ring = setInterval(() => sounds.ring(), 2600);
     const timeout = setTimeout(() => tick((n) => n + 1), Math.max(0, call.joinedAt + RING_FOR - Date.now()));
     return () => {

@@ -1850,6 +1850,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tauri-winrt-notification",
  "uuid",
  "wasapi",
  "webview2-com",

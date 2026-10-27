@@ -720,6 +720,9 @@ class VoiceEngine {
         nodes.length = 0; // this device can't: keep their voice as it is
       }
     }
+    // RNNoise cleans one channel only. A voice arrives as two, so mix it down first; otherwise
+    // the cleaned voice plays in the left ear alone. One channel then plays in both ears.
+    if (nodes.length) nodes.unshift(monoMix(ctx));
     if (this.chains.get(key) !== c || token !== c.filterToken) return dropNodes(nodes);
     // The new path first, then the old one out, so their voice doesn't drop.
     let at: AudioNode = c.source;
@@ -794,6 +797,13 @@ export const voice = new VoiceEngine();
 
 if (import.meta.env.DEV) Object.assign(window, { __voice: voice, __voiceState: useVoice });
 // A live call can't be hot-swapped; reload the page in dev instead of running two engines.
+function monoMix(ctx: BaseAudioContext) {
+  const mono = ctx.createGain();
+  mono.channelCount = 1;
+  mono.channelCountMode = 'explicit';
+  return mono;
+}
+
 function dropNodes(nodes: AudioNode[]) {
   for (const n of nodes) {
     n.disconnect();
