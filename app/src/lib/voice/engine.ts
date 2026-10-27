@@ -439,7 +439,10 @@ class VoiceEngine {
     if (!this.ctx) {
       // The desktop's system-sound capture streams 48 kHz. Browsers keep the device rate:
       // Firefox can't feed a mic at another rate into the graph.
-      this.ctx = new AudioContext(isTauri ? { latencyHint: 'interactive', sampleRate: 48000 } : { latencyHint: 'interactive' });
+      // 48 kHz lets "Clean up their voice" (RNNoise) run. Chrome and Edge resample the mic for it;
+      // other browsers keep their own rate.
+      const at48k = isTauri || /Chrome|Edg\//.test(navigator.userAgent);
+      this.ctx = new AudioContext(at48k ? { latencyHint: 'interactive', sampleRate: 48000 } : { latencyHint: 'interactive' });
       this.master = this.ctx.createGain();
       this.master.connect(this.ctx.destination);
       this.applyOutput();
@@ -799,7 +802,7 @@ function dropNodes(nodes: AudioNode[]) {
 }
 
 /** Whether "Clean up their voice" can run here (RNNoise needs 48 kHz audio). */
-export const canFilterVoices = () => typeof AudioWorkletNode !== 'undefined' && isTauri;
+export const canFilterVoices = () => typeof AudioWorkletNode !== 'undefined' && (isTauri || /Chrome|Edg\//.test(navigator.userAgent));
 
 import.meta.hot?.accept(() => location.reload());
 

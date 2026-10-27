@@ -18,6 +18,7 @@
     "core:window:allow-show",
     "core:window:allow-request-user-attention",
     "core:window:allow-set-overlay-icon",
+    "core:window:allow-set-always-on-top",
     "core:window:allow-set-badge-count",
     "core:window:allow-is-focused",
     "notification:default",
