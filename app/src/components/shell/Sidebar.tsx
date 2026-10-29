@@ -25,6 +25,8 @@ import {
   Video,
   VideoOff,
   Volume2,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
@@ -370,8 +372,23 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
 }
 
 export function ParticipantIcons({ p, size = 13 }: { p: VoiceParticipant; size?: number }) {
+  const conn = useVoice((s) => s.connection[p.peerId]);
+  const isMe = p.peerId === voice.peerId;
+  const peerTrouble = !isMe && (conn === 'failed' || conn === 'disconnected');
+  const peerConnecting = !isMe && (conn === 'connecting' || conn === 'new');
+
   return (
     <span className="flex shrink-0 items-center gap-1 text-fg-3">
+      {peerTrouble && (
+        <Tooltip label="Connection trouble">
+          <WifiOff size={size} className="text-danger" />
+        </Tooltip>
+      )}
+      {peerConnecting && (
+        <Tooltip label="Reconnecting...">
+          <Wifi size={size} className="animate-pulse text-warning" />
+        </Tooltip>
+      )}
       {p.screen && <span className="rounded-[4px] bg-danger px-1 text-[9px] font-bold leading-[14px] text-white">LIVE</span>}
       {p.camera && <Video size={size} />}
       {p.serverMuted ? <ShieldAlert size={size} className="text-danger" /> : p.muted && <MicOff size={size} className="text-danger" />}
@@ -391,8 +408,10 @@ export function VoicePanel() {
   const room = channel?.rooms.find((r) => r.id === roomId);
 
   const states = Object.values(connection);
-  const trouble = states.some((s) => s === 'failed' || s === 'disconnected');
-  const connecting = status === 'connecting' || states.some((s) => s === 'new' || s === 'connecting');
+  // Only show room-wide trouble for the local user if all peer paths failed (or local status is down)
+  const allFailed = states.length > 0 && states.every((s) => s === 'failed' || s === 'disconnected');
+  const trouble = status === 'connecting' ? false : allFailed;
+  const connecting = status === 'connecting' || (states.length > 0 && states.every((s) => s === 'new' || s === 'connecting'));
 
   return (
     <AnimatePresence>

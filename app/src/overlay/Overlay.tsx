@@ -73,6 +73,11 @@ export function Overlay() {
             <span className="truncate text-[13px] font-semibold tracking-[-0.01em] text-white" style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.35)' }}>
               {p.name}
             </span>
+            {p.screen && (
+              <span className="flex items-center gap-1 rounded bg-danger px-1.5 py-0.5 text-[9.5px] font-bold leading-none text-white shadow-sm">
+                LIVE
+              </span>
+            )}
             {p.muted && <MicOff size={12} className="shrink-0 text-white/55" />}
           </motion.div>
         ))}

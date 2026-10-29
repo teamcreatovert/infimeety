@@ -14,6 +14,7 @@ export interface OverlayPerson {
   avatarUrl: string | null;
   speaking: boolean;
   muted: boolean;
+  screen: boolean;
 }
 
 /** What the overlay window draws. Sent from here; the overlay keeps no state of its own. */
@@ -40,6 +41,7 @@ function overlayState(focused: boolean): OverlayState {
       avatarUrl: users[p.userId]?.avatarUrl ?? null,
       speaking: !!(p.peerId === me ? v.speaking.self : v.speaking[p.peerId]),
       muted: p.muted || p.deafened || p.serverMuted,
+      screen: p.screen,
     }));
   return { visible: !focused, corner: s.overlayCorner, show: s.overlayShow, people };
 }

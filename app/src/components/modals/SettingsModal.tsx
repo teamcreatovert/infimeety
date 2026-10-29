@@ -18,6 +18,7 @@ import { useUpdater } from '@/lib/updater';
 import { denoise, type Denoised } from '@/lib/voice/denoise';
 import { listDevices, voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
+import { useVoice } from '@/stores/voice';
 import { ACCENTS, SCREEN_PRESETS, WALLPAPERS, useSettings, type Accent, type NoiseFilter, type ScreenQuality, type Wallpaper } from '@/stores/settings';
 import { toast, useUI, type SettingsTab } from '@/stores/ui';
 
@@ -209,6 +210,46 @@ const NOISE_DETAIL: Record<NoiseFilter, string> = {
   off: 'Everything your mic hears is sent. Best for music.',
 };
 
+function PttKeyRecorder({ currentKey, onChange }: { currentKey: string; onChange: (key: string) => void }) {
+  const [recording, setRecording] = useState(false);
+  const pttActive = useVoice((s) => s.pttActive);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const code = e.code || e.key;
+      if (code && code !== 'Escape') {
+        onChange(code);
+      }
+      setRecording(false);
+    };
+    window.addEventListener('keydown', onKey, { capture: true, once: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [recording, onChange]);
+
+  const displayKey = currentKey === 'Space' ? 'Spacebar' : currentKey.replace(/^(Key|Digit)/, '');
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant={recording ? 'primary' : 'secondary'}
+        size="sm"
+        onClick={() => setRecording(true)}
+        className="min-w-[110px]"
+      >
+        {recording ? 'Press a key…' : displayKey}
+      </Button>
+      {pttActive && (
+        <span className="flex items-center gap-1 rounded-full bg-success/20 px-2 py-0.5 text-[11px] font-semibold text-success">
+          <Mic size={11} /> Transmitting
+        </span>
+      )}
+    </div>
+  );
+}
+
 function VoiceTab() {
   const s = useSettings();
   const [devices, setDevices] = useState<Awaited<ReturnType<typeof listDevices>> | null>(null);
@@ -312,6 +353,23 @@ function VoiceTab() {
         <Row label="Automatic gain" detail="Keeps your voice at a steady volume">
           <Switch checked={s.autoGainControl} onChange={(v) => s.set({ autoGainControl: v })} />
         </Row>
+        <Row label="Input mode" detail={s.voiceInputMode === 'ptt' ? 'Hold your shortcut key to transmit voice' : 'Microphone activates automatically when you speak'}>
+          <Segmented
+            id="voice-input-mode"
+            className="w-[240px]"
+            value={s.voiceInputMode}
+            onChange={(v) => s.set({ voiceInputMode: v })}
+            options={[
+              { value: 'activity', label: 'Voice Activity' },
+              { value: 'ptt', label: 'Push to Talk' },
+            ]}
+          />
+        </Row>
+        {s.voiceInputMode === 'ptt' && (
+          <Row label="Shortcut key" detail="Press the key you want to hold to speak">
+            <PttKeyRecorder currentKey={s.pttKey} onChange={(key) => s.set({ pttKey: key })} />
+          </Row>
+        )}
       </Group>
       <Group title="Speakers">
         <Row label="Output device">

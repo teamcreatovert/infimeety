@@ -33,6 +33,7 @@ export type ScreenQuality = keyof typeof SCREEN_PRESETS;
 export type OverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 /** Strong: RNNoise on your device (like Krisp). Standard: the browser's own, lighter filter. */
 export type NoiseFilter = 'strong' | 'standard' | 'off';
+export type VoiceInputMode = 'activity' | 'ptt';
 
 export interface SettingsState {
   theme: 'system' | 'dark' | 'light';
@@ -49,6 +50,9 @@ export interface SettingsState {
   /** How loud calls play (everyone together), 0–2. Each person also has their own volume. */
   outputVolume: number;
   autoGainControl: boolean;
+  voiceInputMode: VoiceInputMode;
+  pttKey: string;
+  pttReleaseDelay: number;
 
   soundsEnabled: boolean;
   soundVolume: number;
@@ -115,6 +119,9 @@ export const useSettings = create<SettingsState>()(
       noiseFilter: 'strong',
       outputVolume: 1,
       autoGainControl: true,
+      voiceInputMode: 'activity',
+      pttKey: 'Space',
+      pttReleaseDelay: 150,
 
       soundsEnabled: true,
       soundVolume: 0.7,

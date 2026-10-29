@@ -44,7 +44,7 @@ import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { SCREEN_PRESETS, useSettings, type ScreenQuality } from '@/stores/settings';
-import { openUserMenu, useUI } from '@/stores/ui';
+import { openUserMenu, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 type Tile = { key: string; kind: 'user' | 'screen'; p: VoiceParticipant };
@@ -255,12 +255,20 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   // The movie (and its controls) once it's on and this device watches along; the lobby before.
   const watchingAlong = useWatchingAlong(party);
 
-  // When a friend is sharing (e.g. a movie) — or starts to — jump straight into watch mode.
+  // When a friend starts sharing their screen, notify without hijacking everyone's view
   const sharers = participants.filter((p) => p.screen && p.peerId !== myPeer).map((p) => p.peerId);
   const prevSharers = useRef<string[]>([]);
   useEffect(() => {
     const fresh = sharers.find((id) => !prevSharers.current.includes(id));
-    if (fresh && !useUI.getState().focusedPeer) useUI.getState().set({ focusedPeer: fresh });
+    if (fresh) {
+      const sharer = participants.find((p) => p.peerId === fresh);
+      const name = sharer ? (users[sharer.userId]?.name ?? 'Someone') : 'Someone';
+      toast({
+        kind: 'info',
+        title: `${name} is live`,
+        body: 'Click their screen tile or LIVE badge to watch the stream.',
+      });
+    }
     prevSharers.current = sharers;
   }, [sharers.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -515,9 +523,10 @@ function TileView({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={spring}
+      onClick={() => kind === 'screen' && useUI.getState().set({ focusedPeer: p.peerId })}
       onDoubleClick={() => kind === 'screen' && useUI.getState().set({ focusedPeer: p.peerId })}
       onContextMenu={(e) => openMenu(e, channelId, p)}
-      className="group relative overflow-hidden rounded-[22px] glass-tile"
+      className={clsx('group relative overflow-hidden rounded-[22px] glass-tile', kind === 'screen' && 'cursor-pointer')}
       style={{ width, height }}
     >
       {kind === 'screen' ? (
@@ -552,13 +561,30 @@ function TileView({
         <span className="truncate">
           {kind === 'screen' ? `${isMe ? 'Your' : `${user?.name ?? 'Someone'}’s`} screen` : `${user?.name ?? 'Someone'}${isMe ? ' (you)' : ''}`}
         </span>
+        {kind === 'user' && p.screen && !isMe && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              useUI.getState().set({ focusedPeer: p.peerId });
+            }}
+            className="flex items-center gap-1 rounded bg-danger px-1.5 py-0.5 text-[10px] font-bold text-white transition-transform hover:scale-105 active:scale-95"
+          >
+            <MonitorPlay size={10} /> Watch
+          </button>
+        )}
         {kind === 'user' && <ParticipantIcons p={p} size={12} />}
       </div>
 
       <div className="absolute right-2.5 top-2.5 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 touch:opacity-100">
         {kind === 'screen' && (
-          <button onClick={() => useUI.getState().set({ focusedPeer: p.peerId })} className="flex h-8 items-center gap-1.5 rounded-full bg-black/50 px-3 text-[12px] font-semibold text-white backdrop-blur-md hover:bg-black/70">
-            <Clapperboard size={13} /> Watch
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              useUI.getState().set({ focusedPeer: p.peerId });
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-full bg-danger px-3 text-[12px] font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
+          >
+            <MonitorPlay size={13} /> Watch Stream
           </button>
         )}
         {!isMe && (

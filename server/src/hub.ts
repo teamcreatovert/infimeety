@@ -64,6 +64,14 @@ export class ChannelHub extends DurableObject<Env> {
     const info = JSON.parse(req.headers.get('X-Infimeety-Peer') ?? 'null') as Pick<Peer, 'userId' | 'role' | 'channelId' | 'guest'> | null;
     if (!info) return new Response('Bad request', { status: 400 });
 
+    // Clean up any stale sockets for this user in this channel so ghost duplicates do not linger
+    for (const old of this.ctx.getWebSockets(info.userId)) {
+      this.dropped(old);
+      try {
+        old.close(4001, 'Reconnected from another socket');
+      } catch {}
+    }
+
     const [client, server] = Object.values(new WebSocketPair());
     const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null };
     const wasOnline = this.sockets().some((s) => this.peer(s).userId === peer.userId);
@@ -221,6 +229,12 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'voice.join': {
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        for (const other of this.ctx.getWebSockets(me.userId)) {
+          if (other !== ws) {
+            const op = this.peer(other);
+            if (op.voice) this.save(other, { ...op, voice: null });
+          }
+        }
         const s = msg.state ?? {};
         this.save(ws, {
           ...me,
@@ -623,9 +637,11 @@ export class ChannelHub extends DurableObject<Env> {
 
   private voiceSnapshot(exceptUser?: string, exceptSocket?: WebSocket): VoiceSnapshot {
     const participants: VoiceParticipant[] = [];
+    const seenUsers = new Set<string>();
     for (const s of this.sockets(exceptSocket)) {
       const p = this.peer(s);
-      if (!p.voice || p.userId === exceptUser) continue;
+      if (!p.voice || p.userId === exceptUser || seenUsers.has(p.userId)) continue;
+      seenUsers.add(p.userId);
       const { forceMuted, ...v } = p.voice;
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted });

@@ -25,6 +25,7 @@ interface VoiceState {
   micAvailable: boolean;
   /** The browser hasn't let the call's sound start yet (mobile: until the first tap). */
   audioBlocked: boolean;
+  pttActive: boolean;
 }
 
 export const useVoice = create<VoiceState>()(() => ({
@@ -43,4 +44,5 @@ export const useVoice = create<VoiceState>()(() => ({
   localScreen: null,
   micAvailable: true,
   audioBlocked: false,
+  pttActive: false,
 }));

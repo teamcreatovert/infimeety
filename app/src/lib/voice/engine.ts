@@ -110,6 +110,7 @@ class VoiceEngine {
   private meter: ReturnType<typeof setInterval> | undefined;
   private lastLoud: Record<string, number> = {};
   private unsubSettings: (() => void) | null = null;
+  private unsubUI: (() => void) | null = null;
   private myJoinedAt = 0;
   /**
    * Set once the mic is open. Until then the hub's snapshots and offers are ignored: a peer
@@ -149,9 +150,14 @@ class VoiceEngine {
     sounds.join();
     this.startMeter();
 
+    this.unsubUI = useUI.subscribe((ui, prev) => {
+      if (ui.focusedPeer !== prev.focusedPeer) this.applyGains();
+    });
+
     this.unsubSettings = useSettings.subscribe((s, prev) => {
       if (s.userVolumes !== prev.userVolumes || s.localMutes !== prev.localMutes || s.streamVolumes !== prev.streamVolumes || s.userNoiseFilters !== prev.userNoiseFilters || s.outputVolume !== prev.outputVolume) this.applyGains();
       if (s.outputDeviceId !== prev.outputDeviceId) this.applyOutput();
+      if (s.voiceInputMode !== prev.voiceInputMode) this.applyMicEnabled();
       if (
         s.inputDeviceId !== prev.inputDeviceId ||
         s.echoCancellation !== prev.echoCancellation ||
@@ -178,6 +184,8 @@ class VoiceEngine {
     clearInterval(this.meter);
     this.unsubSettings?.();
     this.unsubSettings = null;
+    this.unsubUI?.();
+    this.unsubUI = null;
     this.hub = null;
     this.live = false;
 
@@ -516,11 +524,21 @@ class VoiceEngine {
     this.applyMicEnabled();
   }
 
-  private applyMicEnabled() {
-    const { muted, deafened, serverMuted } = useVoice.getState();
-    const on = !muted && !deafened && !serverMuted;
+    applyMicEnabled() {
+    const { muted, deafened, serverMuted, pttActive } = useVoice.getState();
+    const { voiceInputMode } = useSettings.getState();
+    const pttAllowed = voiceInputMode === 'ptt' ? pttActive : true;
+    const on = !muted && !deafened && !serverMuted && pttAllowed;
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = on));
     this.micRaw?.getAudioTracks().forEach((t) => (t.enabled = on));
+  }
+
+  setPttActive(active: boolean) {
+    if (useVoice.getState().pttActive === active) return;
+    useVoice.setState({ pttActive: active });
+    this.applyMicEnabled();
+    if (active) sounds.unmute();
+    else sounds.mute();
   }
 
   private closeMic({ mic, raw, denoiser }: { mic: MediaStream | null; raw: MediaStream | null; denoiser: Denoised | null }) {
@@ -749,7 +767,7 @@ class VoiceEngine {
           ? s.localMutes[c.userId] || p?.serverMuted
             ? 0
             : (s.userVolumes[c.userId] ?? 1)
-          : (s.streamVolumes[c.userId] ?? 1);
+          : useUI.getState().focusedPeer === c.peerId ? (s.streamVolumes[c.userId] ?? 1) : 0;
       c.gain.gain.setTargetAtTime(v, now, 0.015);
     }
   }

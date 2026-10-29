@@ -50,13 +50,35 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             app.manage(system_audio::SystemAudio::default());
             app.manage(desktop::CloseToTray::default());
             desktop::setup_tray(app)?;
-            // Mac: opened straight from the installer (.dmg), the app vanishes once it's ejected.
-            if cfg!(target_os = "macos") && std::env::current_exe().is_ok_and(|exe| exe.starts_with("/Volumes")) {
-                use tauri_plugin_dialog::DialogExt;
-                app.dialog()
-                    .message("Infimeety is running from the installer, so it will disappear when you eject it. Quit Infimeety, drag it into your Applications folder, and open it from there.")
-                    .title("Move Infimeety to Applications")
-                    .show(|_| {});
+            // Mac: opened straight from the installer (.dmg), offer to move to /Applications automatically
+            #[cfg(target_os = "macos")]
+            if let Ok(exe) = std::env::current_exe() {
+                if exe.to_string_lossy().starts_with("/Volumes/") {
+                    let mut app_dir = exe.clone();
+                    while app_dir.pop() {
+                        if app_dir.extension().and_then(|s| s.to_str()) == Some("app") {
+                            break;
+                        }
+                    }
+                    if app_dir.extension().and_then(|s| s.to_str()) == Some("app") {
+                        let app_dir_str = app_dir.to_string_lossy().to_string();
+                        let script = format!(
+                            "tell application \"System Events\"
+                             set answer to display alert \"Move Infimeety to Applications?\" message \"Infimeety is currently running from the installer disk image. Move it to your Applications folder so it stays installed after ejecting?\" buttons {{\"Move to Applications\", \"Keep Here\"}} default button 1
+                             if button returned of answer is \"Move to Applications\" then
+                                 do shell script \"cp -R \\\"{}\\\" \\\"/Applications/Infimeety.app\\\"\"
+                                 do shell script \"open \\\"/Applications/Infimeety.app\\\"\"
+                                 tell application \"Infimeety\" to quit
+                             end if
+                             end tell",
+                            app_dir_str
+                        );
+                        let _ = std::process::Command::new("osascript")
+                            .arg("-e")
+                            .arg(script)
+                            .spawn();
+                    }
+                }
             }
             // The installer registers infimeety:// too; this keeps it pointing at the running build.
             #[cfg(any(windows, target_os = "linux"))]
