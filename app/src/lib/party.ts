@@ -4,6 +4,7 @@ import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettin
 import { rememberCopy, savedCopies } from './copies';
 import { localMedia, type SharedFile } from './platform';
 import { getHub } from './realtime';
+import { featureOn } from './remote';
 import { isSubtitle, toVtt } from './subtitles';
 import { copyFile, requestMedia } from './transfer';
 import { useAuth } from '@/stores/auth';
@@ -364,6 +365,7 @@ export function whenInRoom(roomId: string, timeout = 8000) {
 
 /** Opens a planned party as a lobby in `roomId` (this device must be in that room's call). */
 export function createParty(roomId: string, movie: SharedFile, subtitle: SharedFile | null, settings: PartySettings) {
+  if (!featureOn('watchParty')) return toast({ kind: 'info', title: 'Watch parties are paused', body: 'We switched them off for a moment while we fix something. They’ll be back soon.' });
   const me = useAuth.getState().me?.id;
   const hub = hubFor();
   if (!me || !hub) return;

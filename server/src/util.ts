@@ -1,5 +1,5 @@
 import { MAX_FILE_SIZE } from '../../shared/protocol';
-import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, Role, Room } from '../../shared/protocol';
+import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, RemoteConfig, Role, Room } from '../../shared/protocol';
 import type { ChannelHub } from './hub';
 import type { Lobby } from './lobby';
 
@@ -19,6 +19,10 @@ export interface Env {
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
   DEV_LOGIN?: string;
+  /** Apps older than this ask to update (RemoteConfig.minVersion). Empty: no minimum. */
+  MIN_APP_VERSION?: string;
+  /** Comma-separated RemoteFeature names to switch off everywhere. */
+  FEATURES_OFF?: string;
 }
 
 export interface UserRow {
@@ -174,3 +178,13 @@ export function lobby(env: Env) {
 
 /** Friendship rows are keyed by the ordered pair (user_a < user_b). */
 export const orderedPair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
+
+/** What every app is told on connect (RemoteConfig): set with the Worker's vars, no app release needed. */
+export function remoteConfig(env: Env): RemoteConfig {
+  const min = env.MIN_APP_VERSION?.trim();
+  const off = (env.FEATURES_OFF ?? '')
+    .split(',')
+    .map((f) => f.trim())
+    .filter(Boolean);
+  return { ...(min ? { minVersion: min } : {}), ...(off.length ? { off } : {}) };
+}

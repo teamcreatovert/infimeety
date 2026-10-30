@@ -165,6 +165,18 @@ export interface VoiceParticipant extends VoiceLocalState {
   joinedAt: number;
 }
 
+/**
+ * Settings the server sends every app on connect, so a release can be steered without a new
+ * one: apps older than `minVersion` ask to update, and features named in `off` are hidden.
+ */
+export interface RemoteConfig {
+  minVersion?: string;
+  off?: string[];
+}
+
+/** Features `RemoteConfig.off` can switch off while something is wrong with them. */
+export type RemoteFeature = 'screenShare' | 'watchParty' | 'fileShare' | 'noiseFilter';
+
 export interface VoiceSnapshot {
   participants: VoiceParticipant[];
   mutedRooms: string[];
@@ -286,10 +298,11 @@ export type ClientMsg =
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState> }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; config?: RemoteConfig }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
-  | { t: 'voice.kicked' }
+  /** Out of voice: an admin's disconnect, or you joined voice from another device ('elsewhere'). */
+  | { t: 'voice.kicked'; reason?: 'admin' | 'elsewhere' }
   /** An admin moved you; your client rejoins voice in `roomId`. */
   | { t: 'voice.moved'; roomId: string }
   | { t: 'chat.new'; message: Message; nonce?: string }

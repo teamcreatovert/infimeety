@@ -1,6 +1,7 @@
 import type { ServerMsg } from '../../../shared/protocol';
 import { reportError } from './errors';
 import { notifyMessage } from './notify';
+import { onRemoteConfig } from './remote';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
@@ -91,6 +92,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
 
   switch (msg.t) {
     case 'welcome':
+      onRemoteConfig(msg.config);
       channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) }, voice: { ...channels.voice, [cid]: cleanVoiceSnapshot(msg.voice) } });
       voice.onWelcome(hub);
       onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
@@ -105,7 +107,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return voice.onSnapshot(cid, snapshot);
     }
     case 'voice.kicked':
-      if (useVoice.getState().channelId === cid) voice.leave({ kicked: true });
+      if (useVoice.getState().channelId === cid) voice.leave(msg.reason === 'elsewhere' ? { elsewhere: true } : { kicked: true });
       return;
     case 'voice.moved': {
       if (useVoice.getState().channelId !== cid) return;

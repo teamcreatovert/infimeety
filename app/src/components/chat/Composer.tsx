@@ -15,6 +15,7 @@ import { adopt, FOLDER_MIME, fromDrop } from '@/lib/webMedia';
 /** Phones can't pick folders. */
 const canShareFolders = isTauri || !isMobile;
 import { getHub } from '@/lib/realtime';
+import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
@@ -92,6 +93,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   }, [room.id, replyTo]);
 
   const stage = async (picked: SharedFile[]) => {
+    if (!featureOn('fileShare')) return toast({ kind: 'info', title: 'Sending files is paused', body: 'We switched it off for a moment while we fix something. It’ll be back soon.' });
     // Past 4 GB a file can't go in a message; say so rather than dropping it quietly.
     const tooBig = picked.filter((f) => f.size > MAX_FILE_SIZE);
     if (tooBig.length)

@@ -21,6 +21,7 @@ import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SafeModeBanner } from './components/shell/SafeModeBanner';
+import { UpdateRequired } from './components/UpdateRequired';
 import { markHealthy, safeMode } from './lib/boot';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
@@ -205,6 +206,7 @@ export default function App() {
         {status === 'ready' && <ErrorBoundary quiet area="join-invite"><JoinInviteModal /></ErrorBoundary>}
         <ErrorBoundary quiet area="lightbox"><Lightbox /></ErrorBoundary>
         <ErrorBoundary quiet area="update-prompt"><UpdatePrompt /></ErrorBoundary>
+        <ErrorBoundary quiet area="update-required"><UpdateRequired /></ErrorBoundary>
         {status === 'ready' && <ErrorBoundary quiet area="incoming-call"><IncomingCall /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="join-meeting"><JoinMeetingModal /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="meeting-knocks"><MeetingKnocks /></ErrorBoundary>}

@@ -1,8 +1,25 @@
 import type { ClientMsg, ServerMsg } from '../../../shared/protocol';
 import { getToken } from './api';
-import { WS_URL } from '@/config';
+import { APP_VERSION, WS_URL } from '@/config';
 
 export type HubStatus = 'connecting' | 'open' | 'closed';
+
+/**
+ * This window, for the server: a reconnect replaces only its own old connection, never your
+ * other windows or devices. Per tab in a browser (it survives a reload), per window in the app.
+ */
+const clientId = (() => {
+  const key = 'infimeety.client';
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (saved) return saved;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+    return id;
+  } catch {
+    return crypto.randomUUID();
+  }
+})();
 
 /** One realtime connection per channel, with auto-reconnect and keepalive. */
 export class HubClient {
@@ -31,7 +48,7 @@ export class HubClient {
   private connect() {
     const token = getToken();
     if (!token || this.closed) return;
-    const ws = new WebSocket(`${WS_URL}/channels/${this.channelId}/ws`, ['infimeety', token]);
+    const ws = new WebSocket(`${WS_URL}/channels/${this.channelId}/ws?v=${APP_VERSION}&client=${clientId}`, ['infimeety', token]);
     this.ws = ws;
     this.setStatus('connecting');
 
@@ -58,6 +75,8 @@ export class HubClient {
       this.onMessage(this, msg);
     };
     ws.onclose = (event) => {
+      // An older socket of ours closing after a newer one took over (4005, replaced): not news.
+      if (ws !== this.ws) return;
       clearInterval(this.ping);
       this.peerId = null;
       this.setStatus('closed');

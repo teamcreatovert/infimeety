@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import type { HubClient } from '@/lib/hub';
 import { canShareScreen, isTauri, isWindows } from '@/lib/platform';
 import { getHub } from '@/lib/realtime';
+import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
 import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
 import { toast, useUI } from '@/stores/ui';
@@ -167,7 +168,7 @@ class VoiceEngine {
     });
   }
 
-  leave({ silent = false, kicked = false } = {}) {
+  leave({ silent = false, kicked = false, elsewhere = false } = {}) {
     if (!this.inCall) return;
     this.hub?.send({ t: 'voice.leave' });
     for (const id of [...this.peers.keys()]) this.closePeer(id);
@@ -206,6 +207,7 @@ class VoiceEngine {
     useUI.getState().set({ focusedPeer: null, immersive: false });
     if (!silent) sounds.leave();
     if (kicked) toast({ kind: 'info', title: 'An admin disconnected you from voice' });
+    if (elsewhere) toast({ kind: 'info', title: 'You joined voice somewhere else', body: 'Your call moved to your other device or window.' });
   }
 
   /** The hub reconnected (new peer id): rebuild every connection from scratch. */
@@ -330,6 +332,7 @@ class VoiceEngine {
 
   async startScreen() {
     if (!this.inCall || this.screen) return;
+    if (!featureOn('screenShare')) return toast({ kind: 'info', title: 'Screen sharing is paused', body: 'We switched it off for a moment while we fix something. It’ll be back soon.' });
     const s = useSettings.getState();
     const preset = SCREEN_PRESETS[s.screenQuality];
     // The Windows webview's picker has no system audio, so sound is captured natively instead.
@@ -502,7 +505,7 @@ class VoiceEngine {
       }
     }
     this.micRaw = raw;
-    this.denoiser = s.noiseFilter === 'strong' ? await denoise(raw) : null;
+    this.denoiser = s.noiseFilter === 'strong' && featureOn('noiseFilter') ? await denoise(raw) : null;
     // Strong suppression can't run on this device: the browser's own filter instead.
     if (s.noiseFilter === 'strong' && !this.denoiser) void raw.getAudioTracks()[0]?.applyConstraints({ ...base, noiseSuppression: true }).catch(() => {});
     this.mic = this.denoiser?.stream ?? raw;

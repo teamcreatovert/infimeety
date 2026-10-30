@@ -3,7 +3,7 @@ import { DEFAULT_PARTY_SETTINGS, canModerateRole, outranks } from '../../shared/
 import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
-import { type Env, isAdmin, newId, sanitizeAttachments, toMessage } from './util';
+import { type Env, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
 
 /** Per-socket state. Survives hibernation via serializeAttachment. */
 interface Peer {
@@ -13,6 +13,9 @@ interface Peer {
   channelId: string;
   /** A meeting's browser guest (never auto-promoted to co-host). */
   guest?: boolean;
+  /** The app window this socket belongs to (apps from 0.5 on), and the app's version. */
+  client?: string;
+  version?: string;
   /** Voice state while in a voice room; `forceMuted` is the admin's per-person mute. */
   voice: (Omit<VoiceParticipant, 'serverMuted'> & { forceMuted: boolean }) | null;
 }
@@ -64,13 +67,28 @@ export class ChannelHub extends DurableObject<Env> {
     const info = JSON.parse(req.headers.get('X-Infimeety-Peer') ?? 'null') as Pick<Peer, 'userId' | 'role' | 'channelId' | 'guest'> | null;
     if (!info) return new Response('Bad request', { status: 400 });
 
+    const url = new URL(req.url);
+    const clientId = /^[\w-]{8,64}$/.test(url.searchParams.get('client') ?? '') ? url.searchParams.get('client')! : undefined;
+    const version = /^\d+\.\d+\.\d+$/.test(url.searchParams.get('v') ?? '') ? url.searchParams.get('v')! : undefined;
+
+    // The same app window reconnecting (after a network drop): its old socket may linger
+    // unnoticed for a while, showing you twice. Replace that one only; your other windows and
+    // devices keep their own connections.
+    if (clientId)
+      for (const old of this.sockets()) {
+        const p = this.peer(old);
+        if (p.userId !== info.userId || p.client !== clientId) continue;
+        old.close(4005, 'Replaced by a newer connection');
+        this.dropped(old);
+      }
+
     const [client, server] = Object.values(new WebSocketPair());
-    const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null };
+    const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null, client: clientId, version };
     const wasOnline = this.sockets().some((s) => this.peer(s).userId === peer.userId);
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.voiceSnapshot(), parties: Object.fromEntries(this.parties) });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.voiceSnapshot(), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
 
     return new Response(null, { status: 101, webSocket: client, headers: { 'Sec-WebSocket-Protocol': 'infimeety' } });
@@ -221,6 +239,14 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'voice.join': {
         if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        // One voice connection per person, like Discord: joining from another device or window
+        // moves you there, and the other one is told (so it doesn't think it's still in).
+        for (const other of this.sockets(ws)) {
+          const p = this.peer(other);
+          if (p.userId !== me.userId || !p.voice) continue;
+          this.save(other, { ...p, voice: null });
+          this.send(other, { t: 'voice.kicked', reason: 'elsewhere' });
+        }
         const s = msg.state ?? {};
         this.save(ws, {
           ...me,
