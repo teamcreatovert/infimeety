@@ -7,7 +7,8 @@
   var android = /Android/.test(ua);
   var mac = /Macintosh/.test(ua) && !touchMac;
   var windows = /Windows/.test(ua);
-  var platform = ios ? 'ios' : android ? 'android' : mac ? 'mac' : windows ? 'windows' : null;
+  var linux = /Linux/.test(ua) && !android;
+  var platform = ios ? 'ios' : android ? 'android' : mac ? 'mac' : windows ? 'windows' : linux ? 'linux' : null;
 
   // Choosing the browser version remembers it (the home page then opens the app directly).
   document.addEventListener('click', function (e) {
@@ -33,7 +34,7 @@
       hero.href = document.getElementById('dl-windows').href;
       heroLabel.textContent = 'Download for Windows';
     } else if (platform) {
-      // Macs (until a release has the Mac app) and phones use Infimeety in the browser.
+      // Macs and Linux (until a release has their app) and phones use Infimeety in the browser.
       hero.href = '/web/';
       hero.setAttribute('data-web', '');
       heroLabel.textContent = 'Open Infimeety';
@@ -53,11 +54,27 @@
         return a.name;
       });
       var hasMac = names.indexOf('Infimeety.dmg') >= 0;
+      var hasLinux = names.indexOf('Infimeety.AppImage') >= 0;
+      var shown = 2 + (hasMac ? 1 : 0) + (hasLinux ? 1 : 0);
+      if (shown % 2) document.querySelector('.platforms').classList.add('odd');
+      // The browser card covers whoever has no app of their own yet.
+      var webTitle = document.querySelector('#p-web h3');
+      if (webTitle) webTitle.textContent = [!hasMac && 'Mac', 'iPhone', !hasLinux && 'Linux', 'Android'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1');
+      if (hasLinux) {
+        document.getElementById('p-linux').hidden = false;
+        if (platform === 'linux') {
+          if (card) card.classList.remove('mine');
+          document.getElementById('p-linux').classList.add('mine');
+          if (hero && heroLabel) {
+            hero.href = document.getElementById('dl-linux').href;
+            hero.removeAttribute('data-web');
+            heroLabel.textContent = 'Download for Linux';
+            hero.querySelector('svg').innerHTML = downloadIcon;
+          }
+        }
+      }
       if (hasMac) {
         document.getElementById('p-mac').hidden = false;
-        document.querySelector('.platforms').classList.add('three');
-        var webTitle = document.querySelector('#p-web h3');
-        if (webTitle) webTitle.textContent = 'iPhone and Android';
         if (platform === 'mac') {
           if (card) card.classList.remove('mine');
           document.getElementById('p-mac').classList.add('mine');
@@ -72,7 +89,7 @@
       }
       if (version) {
         var meta = document.getElementById('meta');
-        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11' + (hasMac ? ' · macOS 11 or later' : '') + ' · Every modern browser';
+        if (meta) meta.textContent = 'Version ' + version + ' · Windows 10 or 11' + (hasMac ? ' · macOS 11 or later' : '') + (hasLinux ? ' · Linux' : '') + ' · Every modern browser';
         var v = document.getElementById('version');
         if (v) v.insertBefore(document.createTextNode('Version ' + version + ' · '), v.firstChild);
       }

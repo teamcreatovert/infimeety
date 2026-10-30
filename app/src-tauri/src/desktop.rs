@@ -150,3 +150,70 @@ pub fn notify(app: AppHandle, title: String, body: String, target: String) -> bo
         false
     }
 }
+
+/// Windows: an update moves the old infimeety.exe aside, since a file in use can't be
+/// overwritten (installer-hooks.nsh). Tidy up what's left of it.
+#[cfg(windows)]
+pub fn remove_update_leftover() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::fs::remove_file(exe.with_file_name("infimeety.old.exe"));
+    }
+}
+
+/// Mac: opened straight from its installer (.dmg), the app disappears once that's ejected, and
+/// one macOS quarantined in place runs from a hidden read-only copy that can't update. Offer to
+/// move it into Applications, like Mac apps do, and reopen it from there.
+#[cfg(target_os = "macos")]
+pub fn offer_move_to_applications(app: &tauri::App) {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+    let Ok(exe) = std::env::current_exe() else { return };
+    let path = exe.to_string_lossy();
+    if !path.starts_with("/Volumes/") && !path.contains("/AppTranslocation/") {
+        return;
+    }
+    let Some(bundle) = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf) else {
+        return;
+    };
+
+    // ditto keeps the bundle exactly as signed; the copy then loses the download quarantine, so
+    // macOS doesn't stop it again or run it from a hidden copy.
+    fn copy_to(bundle: &Path, dir: PathBuf) -> Option<PathBuf> {
+        std::fs::create_dir_all(&dir).ok()?;
+        let target = dir.join("Infimeety.app");
+        if target.exists() {
+            std::fs::remove_dir_all(&target).ok()?;
+        }
+        Command::new("ditto").arg(bundle).arg(&target).status().ok()?.success().then_some(())?;
+        let _ = Command::new("xattr").args(["-dr", "com.apple.quarantine"]).arg(&target).status();
+        Some(target)
+    }
+
+    let handle = app.handle().clone();
+    app.dialog()
+        .message("Infimeety is running from its installer, so it would disappear once that's closed. Move it into your Applications folder? It reopens from there.")
+        .title("Move Infimeety to Applications")
+        .buttons(MessageDialogButtons::OkCancelCustom("Move to Applications".into(), "Not Now".into()))
+        .show(move |ok| {
+            if !ok {
+                return;
+            }
+            // /Applications needs an admin account; everyone else gets their own Applications folder.
+            let home = std::env::var("HOME").map(|h| PathBuf::from(h).join("Applications")).ok();
+            let moved = std::iter::once(PathBuf::from("/Applications")).chain(home).find_map(|dir| copy_to(&bundle, dir));
+            match moved {
+                Some(target) => {
+                    // Reopen once this copy has quit, or the single-instance check would keep this one.
+                    let _ = Command::new("sh").args(["-c", "sleep 1; open \"$0\""]).arg(&target).spawn();
+                    handle.exit(0);
+                }
+                None => handle
+                    .dialog()
+                    .message("Infimeety couldn't move itself. Open the installer again and drag Infimeety into the Applications folder.")
+                    .title("Move Infimeety to Applications")
+                    .show(|_| {}),
+            }
+        });
+}

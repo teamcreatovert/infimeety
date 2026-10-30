@@ -1,0 +1,74 @@
+name: Linux
+
+# The Linux app for the Release workflow: an AppImage (runs on most distributions and updates
+# itself) and a .deb for Debian and Ubuntu. Built on Ubuntu 22.04 so the AppImage also runs on
+# older systems. Without a desktop overlay or computer sound in screen shares (Windows only).
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The app version being released
+        type: string
+        required: true
+    outputs:
+      built:
+        description: '"true" once the app is built and kept as an artifact'
+        value: ${{ jobs.build.outputs.built }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    # A Linux build that fails doesn't hold back Windows, or mark the release failed.
+    continue-on-error: true
+    outputs:
+      built: ${{ steps.done.outputs.built }}
+    env:
+      VERSION: ${{ inputs.version }}
+      BUNDLE: src-tauri/target/release/bundle
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf build-essential file
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'app/src-tauri -> target'
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      # tauri build signs the AppImage for the updater (the .sig next to it) with the updater key.
+      - name: Build
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --bundles appimage,deb --ci
+
+      - name: Keep the app
+        uses: actions/upload-artifact@v7
+        with:
+          name: Infimeety-${{ env.VERSION }}-linux
+          path: |
+            app/${{ env.BUNDLE }}/appimage/Infimeety_${{ env.VERSION }}_amd64.AppImage
+            app/${{ env.BUNDLE }}/appimage/Infimeety_${{ env.VERSION }}_amd64.AppImage.sig
+            app/${{ env.BUNDLE }}/deb/Infimeety_${{ env.VERSION }}_amd64.deb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Done
+        id: done
+        run: echo "built=true" >> "$GITHUB_OUTPUT"

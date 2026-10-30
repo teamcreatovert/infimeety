@@ -103,8 +103,8 @@
       /* Platforms */
       .platforms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 44px; }
       .platforms .plat[hidden] { display: none; }
-      /* With the Mac card there are three: the browser card takes the whole last row. */
-      .platforms.three .plat:last-child { grid-column: 1 / -1; }
+      /* An odd number of cards: the browser card takes the whole last row. */
+      .platforms.odd .plat:last-child { grid-column: 1 / -1; }
       @media (max-width: 760px) { .platforms { grid-template-columns: 1fr; } }
       .plat { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 26px; border-radius: 24px; background: var(--card); box-shadow: inset 0 0 0 0.5px var(--hair); }
       .plat.mine { background: linear-gradient(160deg, rgba(10, 132, 255, 0.16), rgba(143, 91, 255, 0.1)); box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.45); }
@@ -316,6 +316,19 @@
                 <li>Open Infimeety from Applications. If macOS says it can’t check the app, open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. (On older macOS, Control-click the app and choose <b>Open</b>.)</li>
                 <li>Allow the microphone and camera when Infimeety asks, so friends can hear and see you.</li>
               </ol>
+            </details>
+          </div>
+          <!-- Shown by download.js once the latest release has the Linux app. -->
+          <div class="plat reveal" id="p-linux" hidden>
+            <div class="head">
+              <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2.5" /><path d="m7 9 3 2.5L7 14" /><path d="M12.5 14H17" /><path d="M8 21h8" /></svg></span>
+              <div><h3>Linux</h3><div class="req">Most distributions · 64-bit</div></div>
+            </div>
+            <p>An AppImage that runs on most distributions and updates itself, or a .deb for Ubuntu and Debian.</p>
+            <div class="row"><a class="btn primary" id="dl-linux" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.AppImage">Download AppImage</a><a class="btn" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.deb">.deb</a></div>
+            <details id="linux-help">
+              <summary>Opening the AppImage</summary>
+              <ol><li>Right-click the downloaded file, choose <b>Properties → Permissions</b> and allow it to run as a program (or run <code>chmod +x Infimeety.AppImage</code>).</li><li>Double-click it to open Infimeety. It keeps itself up to date.</li></ol>
             </details>
           </div>
           <div class="plat reveal" id="p-web">

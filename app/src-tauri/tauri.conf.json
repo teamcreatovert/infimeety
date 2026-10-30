@@ -55,12 +55,17 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "installerHooks": "./windows/installer-hooks.nsh"
+        "installerHooks": "./windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/installer-header.bmp",
+        "sidebarImage": "windows/installer-sidebar.bmp",
+        "uninstallerHeaderImage": "windows/installer-header.bmp"
       }
     },
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.13",
+      "minimumSystemVersion": "10.15",
       "dmg": {
         "windowSize": {
           "width": 660,

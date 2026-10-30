@@ -61,14 +61,22 @@ const mac = {
 };
 mac.signature = mac.archive && find('Infimeety.app.tar.gz.sig', 'universal-apple-darwin/release/bundle/macos');
 
+// Linux: the AppImage updates itself (it is its own update, signed); the .deb is for Debian and Ubuntu.
+const linux = {
+  appimage: find(`Infimeety_${version}_amd64.AppImage`, 'release/bundle/appimage'),
+  deb: find(`Infimeety_${version}_amd64.deb`, 'release/bundle/deb'),
+};
+linux.signature = linux.appimage && find(`Infimeety_${version}_amd64.AppImage.sig`, 'release/bundle/appimage');
+
 // The Android app has no updater entry: Android updates it when a newer APK is installed.
 const apk = assetsDir ? find('Infimeety.apk') : null;
 
 const hasWindows = !!(windows.installer && windows.signature);
 const hasMac = !!(mac.dmg && mac.archive && mac.signature);
+const hasLinux = !!(linux.appimage && linux.signature);
 if (windows.installer && !windows.signature) throw new Error(`Missing ${windows.installer}.sig. Sign it for the updater first.`);
 if (mac.archive && !mac.signature) throw new Error('Missing Infimeety.app.tar.gz.sig. Build the Mac app with TAURI_SIGNING_PRIVATE_KEY set.');
-if (!hasWindows && !hasMac) throw new Error('Nothing to publish. Run a signed `tauri build` first.');
+if (!hasWindows && !hasMac && !hasLinux) throw new Error('Nothing to publish. Run a signed `tauri build` first.');
 
 let codeSigned = false;
 if (hasWindows) {
@@ -118,6 +126,19 @@ if (hasMac) {
   files.push(mac.dmg, join(out, 'Infimeety.dmg'), join(out, archive), join(out, `${archive}.sig`));
 }
 
+if (hasLinux) {
+  const platform = { signature: readFileSync(linux.signature, 'utf8').trim(), url: download(`Infimeety_${version}_amd64.AppImage`) };
+  platforms['linux-x86_64'] = platform;
+  platforms['linux-x86_64-appimage'] = platform;
+  // Stable names for the download page (…/releases/latest/download/Infimeety.AppImage, Infimeety.deb).
+  copyFileSync(linux.appimage, join(out, 'Infimeety.AppImage'));
+  files.push(linux.appimage, linux.signature, join(out, 'Infimeety.AppImage'));
+  if (linux.deb) {
+    copyFileSync(linux.deb, join(out, 'Infimeety.deb'));
+    files.push(linux.deb, join(out, 'Infimeety.deb'));
+  }
+}
+
 if (apk) files.push(apk);
 
 const released = (() => {
@@ -144,7 +165,7 @@ if (released) {
 writeFileSync(join(out, 'latest.json'), JSON.stringify({ version, notes, pub_date: pubDate, platforms }, null, 2));
 files.push(join(out, 'latest.json'));
 
-const built = [hasWindows && 'Windows', hasMac && 'Mac', apk && 'Android'].filter(Boolean).join(' + ');
+const built = [hasWindows && 'Windows', hasMac && 'Mac', hasLinux && 'Linux', apk && 'Android'].filter(Boolean).join(' + ');
 if (released) {
   execFileSync('gh', ['release', 'upload', tag, ...files, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
   console.log(`\nAdded ${built} to ${tag}: https://github.com/${REPO}/releases/tag/${tag}`);

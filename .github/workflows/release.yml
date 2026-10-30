@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the Windows installer and the Mac app, code-signs the Windows one through SignPath
+# Builds the Windows installer, the Mac app and the Linux app, code-signs the Windows one through SignPath
 # once that is set up (docs/CODE-SIGNING.md), signs both for the updater and publishes one
 # GitHub release + the latest.json that installed apps auto-update from.
 #
@@ -246,13 +246,21 @@ jobs:
       version: ${{ needs.check.outputs.version }}
     secrets: inherit
 
+  # The Linux app (linux.yml): an AppImage that updates itself, and a .deb.
+  linux:
+    needs: check
+    uses: ./.github/workflows/linux.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+    secrets: inherit
+
   # Android is paused: releases don't build it. To bring it back, add the ANDROID_KEYSTORE
   # secrets (docs/MOBILE.md) and an `android` job calling mobile.yml with require-key: true,
   # and list it under publish's needs.
 
   publish:
-    needs: [check, windows, macos, macos-retry]
-    # Windows must have built; the Mac app joins the release if it built too.
+    needs: [check, windows, macos, macos-retry, linux]
+    # Windows must have built; the Mac and Linux apps join the release if they built too.
     if: ${{ !cancelled() && needs.windows.result == 'success' && inputs.dry-run != true }}
     runs-on: ubuntu-latest
     env:
@@ -272,6 +280,10 @@ jobs:
       - name: Note a missing Mac build
         if: needs.macos.outputs.built != 'true' && needs.macos-retry.outputs.built != 'true'
         run: echo "::warning::The Mac build failed, so this release is Windows-only. Mac users keep their current version."
+
+      - name: Note a missing Linux build
+        if: needs.linux.outputs.built != 'true'
+        run: echo "::warning::The Linux build failed, so this release has no Linux app. Linux users keep their current version."
 
       - name: Publish the release
         env:
