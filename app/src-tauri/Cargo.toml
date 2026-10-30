@@ -24,6 +24,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Push to talk while a game is in front: reads key state system-wide, like Discord.
+device_query = "4"
 tauri-plugin-notification = "2"
 mime_guess = "2"
 tar = "0.4"
@@ -33,7 +35,8 @@ uuid = { version = "1", features = ["v4"] }
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
+# A panic in a background thread (a device, the overlay) ends that thread, not the whole app.
+panic = "unwind"
 strip = true
 
 [target."cfg(windows)".dependencies]

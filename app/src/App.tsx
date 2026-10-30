@@ -28,6 +28,7 @@ import { startDeepLinks } from './lib/deeplink';
 import { startNotifications } from './lib/notify';
 import { startWebLinks } from './lib/weblinks';
 import { startDesktop } from './lib/desktop';
+import { startPushToTalk } from './lib/ptt';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
 import { startRevocationWatcher } from './lib/transfer';
@@ -76,6 +77,7 @@ export default function App() {
     startNotifications();
     startWebLinks();
     startDesktop();
+    startPushToTalk();
 
     // Feels like a native app: no browser context menu outside text.
     const onContext = (e: MouseEvent) => {
@@ -93,48 +95,11 @@ export default function App() {
       }
     };
 
-    // Push-to-talk handler
-    let pttReleaseTimer: ReturnType<typeof setTimeout> | undefined;
-    const onPttDown = (e: KeyboardEvent) => {
-      const s = useSettings.getState();
-      if (s.voiceInputMode === 'ptt' && voice.inCall) {
-        const target = e.target as HTMLElement;
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-        if (e.code === s.pttKey || e.key === s.pttKey) {
-          clearTimeout(pttReleaseTimer);
-          voice.setPttActive(true);
-        }
-      }
-    };
-    const onPttUp = (e: KeyboardEvent) => {
-      const s = useSettings.getState();
-      if (s.voiceInputMode === 'ptt' && voice.inCall) {
-        if (e.code === s.pttKey || e.key === s.pttKey) {
-          clearTimeout(pttReleaseTimer);
-          pttReleaseTimer = setTimeout(() => {
-            voice.setPttActive(false);
-          }, s.pttReleaseDelay ?? 150);
-        }
-      }
-    };
-    const onBlur = () => {
-      if (useSettings.getState().voiceInputMode === 'ptt') {
-        clearTimeout(pttReleaseTimer);
-        voice.setPttActive(false);
-      }
-    };
-
     window.addEventListener('contextmenu', onContext);
     window.addEventListener('keydown', onKey);
-    window.addEventListener('keydown', onPttDown);
-    window.addEventListener('keyup', onPttUp);
-    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('contextmenu', onContext);
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keydown', onPttDown);
-      window.removeEventListener('keyup', onPttUp);
-      window.removeEventListener('blur', onBlur);
     };
   }, []);
 

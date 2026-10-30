@@ -6,6 +6,8 @@ mod names;
 #[cfg(mobile)]
 mod phone;
 #[cfg(desktop)]
+mod ptt;
+#[cfg(desktop)]
 mod system_audio;
 #[cfg(desktop)]
 mod tarball;
@@ -49,6 +51,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             app.manage(media::Receivers::default());
             app.manage(system_audio::SystemAudio::default());
             app.manage(desktop::CloseToTray::default());
+            app.manage(ptt::PushToTalk::default());
             desktop::setup_tray(app)?;
             #[cfg(target_os = "macos")]
             desktop::offer_move_to_applications(app);
@@ -88,6 +91,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             media::media_receive_open,
             media::media_receive_write,
             media::media_receive_close,
+            ptt::ptt_watch,
             system_audio::system_audio_start,
             system_audio::system_audio_stop,
             desktop::set_close_to_tray,

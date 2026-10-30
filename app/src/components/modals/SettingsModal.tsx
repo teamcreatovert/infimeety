@@ -212,6 +212,16 @@ const NOISE_DETAIL: Record<NoiseFilter, string> = {
   off: 'Everything your mic hears is sent. Best for music.',
 };
 
+/** "KeyV" → "V", "Mouse4" → "Mouse button 4", "ShiftLeft" → "Left Shift". */
+function keyName(code: string) {
+  if (code === 'Space') return 'Spacebar';
+  if (code === 'Backquote') return '`';
+  if (code.startsWith('Mouse')) return `Mouse button ${code.slice(5)}`;
+  const side = /^(Shift|Control|Alt|Meta)(Left|Right)$/.exec(code);
+  if (side) return `${side[2]} ${side[1] === 'Control' ? 'Ctrl' : side[1]}`;
+  return code.replace(/^(Key|Digit)/, '');
+}
+
 function PttKeyRecorder({ currentKey, onChange }: { currentKey: string; onChange: (key: string) => void }) {
   const [recording, setRecording] = useState(false);
   const pttActive = useVoice((s) => s.pttActive);
@@ -222,16 +232,27 @@ function PttKeyRecorder({ currentKey, onChange }: { currentKey: string; onChange
       e.preventDefault();
       e.stopPropagation();
       const code = e.code || e.key;
-      if (code && code !== 'Escape') {
-        onChange(code);
-      }
+      if (code && code !== 'Escape') onChange(code);
       setRecording(false);
     };
-    window.addEventListener('keydown', onKey, { capture: true, once: true });
-    return () => window.removeEventListener('keydown', onKey, { capture: true });
+    // The middle and side mouse buttons work too (Discord-style); left and right stay clicks.
+    const onMouse = (e: MouseEvent) => {
+      if (e.button < 1) return setRecording(false);
+      if (e.button === 2) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onChange(`Mouse${e.button + 1}`);
+      setRecording(false);
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    window.addEventListener('mousedown', onMouse, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKey, { capture: true });
+      window.removeEventListener('mousedown', onMouse, { capture: true });
+    };
   }, [recording, onChange]);
 
-  const displayKey = currentKey === 'Space' ? 'Spacebar' : currentKey.replace(/^(Key|Digit)/, '');
+  const displayKey = keyName(currentKey);
 
   return (
     <div className="flex items-center gap-2">
@@ -241,7 +262,7 @@ function PttKeyRecorder({ currentKey, onChange }: { currentKey: string; onChange
         onClick={() => setRecording(true)}
         className="min-w-[110px]"
       >
-        {recording ? 'Press a key…' : displayKey}
+        {recording ? 'Press a key or mouse button…' : displayKey}
       </Button>
       {pttActive && (
         <span className="flex items-center gap-1 rounded-full bg-success/20 px-2 py-0.5 text-[11px] font-semibold text-success">
@@ -368,7 +389,7 @@ function VoiceTab() {
           />
         </Row>
         {s.voiceInputMode === 'ptt' && (
-          <Row label="Shortcut key" detail="Press the key you want to hold to speak">
+          <Row label="Shortcut key" detail="Works in games too. Like Discord, the game still gets the key, so pick one it doesn’t use: a mouse side button is ideal.">
             <PttKeyRecorder currentKey={s.pttKey} onChange={(key) => s.set({ pttKey: key })} />
           </Row>
         )}
