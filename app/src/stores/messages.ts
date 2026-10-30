@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Attachment, Message } from '../../../shared/protocol';
 import { api, randomId } from '@/lib/api';
+import { cleanMessages } from '@/lib/sanitize';
 
 export interface LocalMessage extends Message {
   /** Optimistic message waiting for the server echo. */
@@ -46,7 +47,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
       if (room?.loaded || room?.loading) return;
       update(roomId, () => ({ loading: true }));
       try {
-        const items = await api<Message[]>(`/channels/${channelId}/rooms/${roomId}/messages?limit=50`);
+        const items = cleanMessages(await api<unknown>(`/channels/${channelId}/rooms/${roomId}/messages?limit=50`));
         update(roomId, (r) => {
           // Keep anything that arrived over the socket while we were loading.
           const known = new Set(items.map((m) => m.id));
@@ -65,7 +66,7 @@ export const useMessages = create<MessagesState>()((set, get) => {
       if (!oldest) return;
       update(roomId, () => ({ loading: true }));
       try {
-        const older = await api<Message[]>(`/channels/${channelId}/rooms/${roomId}/messages?limit=50&before=${oldest.id}`);
+        const older = cleanMessages(await api<unknown>(`/channels/${channelId}/rooms/${roomId}/messages?limit=50&before=${oldest.id}`));
         update(roomId, (r) => ({ items: [...older, ...r.items], loading: false, hasMore: older.length === 50 }));
       } catch {
         update(roomId, () => ({ loading: false }));

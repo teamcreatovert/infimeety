@@ -1,7 +1,9 @@
 import type { ServerMsg } from '../../../shared/protocol';
+import { reportError } from './errors';
 import { notifyMessage } from './notify';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
+import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -69,23 +71,39 @@ function isViewing(roomId: string) {
   return document.hasFocus() && !!channel && s.activeRoom[channel.id] === roomId;
 }
 
+/**
+ * Everything a channel hub sends. A message an app of another version shapes differently is
+ * cleaned first (lib/sanitize); one that still trips a handler is reported and skipped, so it
+ * can never take the app down.
+ */
 function onMessage(hub: HubClient, msg: ServerMsg) {
+  try {
+    handle(hub, msg);
+  } catch (err) {
+    console.error('[realtime] message failed', msg.t, err);
+    reportError(err, `message:${msg.t}`);
+  }
+}
+
+function handle(hub: HubClient, msg: ServerMsg) {
   const channels = useChannels.getState();
   const cid = hub.channelId;
 
   switch (msg.t) {
     case 'welcome':
-      channels.set({ online: { ...channels.online, [cid]: msg.online }, voice: { ...channels.voice, [cid]: msg.voice } });
+      channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) }, voice: { ...channels.voice, [cid]: cleanVoiceSnapshot(msg.voice) } });
       voice.onWelcome(hub);
       onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
     case 'presence':
-      return channels.set({ online: { ...channels.online, [cid]: msg.online } });
-    case 'voice':
-      channels.set({ voice: { ...channels.voice, [cid]: msg.voice } });
-      return voice.onSnapshot(cid, msg.voice);
+      return channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) } });
+    case 'voice': {
+      const snapshot = cleanVoiceSnapshot(msg.voice);
+      channels.set({ voice: { ...channels.voice, [cid]: snapshot } });
+      return voice.onSnapshot(cid, snapshot);
+    }
     case 'voice.kicked':
       if (useVoice.getState().channelId === cid) voice.leave({ kicked: true });
       return;
@@ -98,26 +116,28 @@ function onMessage(hub: HubClient, msg: ServerMsg) {
     }
 
     case 'chat.new': {
-      useMessages.getState().receive(msg.message, msg.nonce);
-      const mine = msg.message.userId === useAuth.getState().me?.id;
+      const message = cleanMessage(msg.message);
+      if (!message) return;
+      useMessages.getState().receive(message, msg.nonce);
+      const mine = message.userId === useAuth.getState().me?.id;
       if (mine) return;
       const settings = useSettings.getState();
       settings.setDmClosed(cid, false); // a closed DM comes back when they write again
-      if (!isViewing(msg.message.roomId)) {
-        useMessages.getState().bumpUnread(msg.message.roomId);
+      if (!isViewing(message.roomId)) {
+        useMessages.getState().bumpUnread(message.roomId);
         if (settings.messageSounds && !settings.mutedChats[cid]) sounds.message();
       }
-      notifyMessage(cid, msg.message);
+      notifyMessage(cid, message);
       return;
     }
     case 'chat.edited':
-      return useMessages.getState().patch(msg.roomId, msg.id, { content: msg.content, editedAt: msg.editedAt });
+      return useMessages.getState().patch(msg.roomId, msg.id, { content: String(msg.content ?? ''), editedAt: typeof msg.editedAt === 'number' ? msg.editedAt : Date.now() });
     case 'chat.deleted':
       return useMessages.getState().remove(msg.roomId, msg.id);
     case 'chat.reactions':
-      return useMessages.getState().patch(msg.roomId, msg.id, { reactions: msg.reactions });
+      return useMessages.getState().patch(msg.roomId, msg.id, { reactions: cleanReactions(msg.reactions) });
     case 'chat.attachments':
-      return useMessages.getState().patch(msg.roomId, msg.id, { attachments: msg.attachments });
+      return useMessages.getState().patch(msg.roomId, msg.id, { attachments: cleanAttachments(msg.attachments) });
     case 'typing':
       return channels.setTyping(msg.roomId, msg.userId);
 

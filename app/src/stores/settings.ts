@@ -175,6 +175,18 @@ export const useSettings = create<SettingsState>()(
         }
         return s as unknown as SettingsState;
       },
+      // What's saved only replaces a default of the same kind: a value of the wrong type (an
+      // older version's, or a damaged save) can't break the app, it just falls back.
+      merge: (stored, current) => {
+        const out: Record<string, unknown> = { ...current };
+        for (const [key, value] of Object.entries((stored ?? {}) as Record<string, unknown>)) {
+          const fallback = out[key];
+          if (fallback === undefined || typeof fallback === 'function') continue;
+          const sameKind = fallback === null || (typeof value === typeof fallback && Array.isArray(value) === Array.isArray(fallback) && value !== null);
+          if (sameKind) out[key] = value;
+        }
+        return out as unknown as SettingsState;
+      },
       // Functions don't survive JSON anyway; listing them keeps the stored shape obvious.
       partialize: ({ set: _s, setUserVolume: _a, setStreamVolume: _b, setUserNoiseFilter: _h, toggleLocalMute: _c, toggleDmPin: _d, setDmClosed: _e, toggleChatMute: _f, setNote: _g, ...rest }) => rest,
     },

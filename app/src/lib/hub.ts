@@ -48,6 +48,8 @@ export class HubClient {
       } catch {
         return;
       }
+      // Not something this version knows how to read (no type): skip it.
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
       if (msg.t === 'pong') return;
       if (msg.t === 'welcome') {
         this.peerId = msg.peerId;
