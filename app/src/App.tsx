@@ -19,6 +19,9 @@ import { UserMenu } from './components/people/UserMenu';
 import { IncomingCall } from './components/home/IncomingCall';
 import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { SafeModeBanner } from './components/shell/SafeModeBanner';
+import { markHealthy, safeMode } from './lib/boot';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
 import { startNotifications } from './lib/notify';
@@ -155,6 +158,13 @@ export default function App() {
     if (status === 'ready') syncHubs(channelIds ? channelIds.split(',') : []);
   }, [channelIds, status]);
 
+  // Up and showing a screen for a few seconds: this start went fine (crash recovery, lib/boot).
+  useEffect(() => {
+    if (status === 'loading') return;
+    const t = setTimeout(markHealthy, 8000);
+    return () => clearTimeout(t);
+  }, [status]);
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="safe-area relative flex h-full w-full flex-col overflow-hidden">
@@ -178,25 +188,26 @@ export default function App() {
               )}
               {status === 'signedOut' && <SignIn />}
               {status === 'onboarding' && <Onboarding />}
+              {status === 'ready' && safeMode && <SafeModeBanner />}
               {status === 'ready' && <Shell />}
             </motion.div>
           </AnimatePresence>
         </div>
-        <Toasts />
-        <ConfirmDialog />
-        <UserMenu />
-        <ProfileCard />
-        <SettingsModal />
-        <CreateChannelModal />
-        <ChannelSettingsModal />
-        <InviteModal />
-        <PartyPlanner />
-        {status === 'ready' && <JoinInviteModal />}
-        <Lightbox />
-        <UpdatePrompt />
-        {status === 'ready' && <IncomingCall />}
-        {status === 'ready' && <JoinMeetingModal />}
-        {status === 'ready' && <MeetingKnocks />}
+        <ErrorBoundary quiet area="toasts"><Toasts /></ErrorBoundary>
+        <ErrorBoundary quiet area="confirm"><ConfirmDialog /></ErrorBoundary>
+        <ErrorBoundary quiet area="user-menu"><UserMenu /></ErrorBoundary>
+        <ErrorBoundary quiet area="profile-card"><ProfileCard /></ErrorBoundary>
+        <ErrorBoundary quiet area="settings"><SettingsModal /></ErrorBoundary>
+        <ErrorBoundary quiet area="create-channel"><CreateChannelModal /></ErrorBoundary>
+        <ErrorBoundary quiet area="channel-settings"><ChannelSettingsModal /></ErrorBoundary>
+        <ErrorBoundary quiet area="invite"><InviteModal /></ErrorBoundary>
+        <ErrorBoundary quiet area="party-planner"><PartyPlanner /></ErrorBoundary>
+        {status === 'ready' && <ErrorBoundary quiet area="join-invite"><JoinInviteModal /></ErrorBoundary>}
+        <ErrorBoundary quiet area="lightbox"><Lightbox /></ErrorBoundary>
+        <ErrorBoundary quiet area="update-prompt"><UpdatePrompt /></ErrorBoundary>
+        {status === 'ready' && <ErrorBoundary quiet area="incoming-call"><IncomingCall /></ErrorBoundary>}
+        {status === 'ready' && <ErrorBoundary quiet area="join-meeting"><JoinMeetingModal /></ErrorBoundary>}
+        {status === 'ready' && <ErrorBoundary quiet area="meeting-knocks"><MeetingKnocks /></ErrorBoundary>}
       </div>
     </MotionConfig>
   );

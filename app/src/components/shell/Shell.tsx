@@ -9,6 +9,7 @@ import { Spinner } from '../ui/primitives';
 import { VoiceRoomView } from '../voice/VoiceRoomView';
 import { ChannelRail } from './ChannelRail';
 import { Sidebar } from './Sidebar';
+import { ErrorBoundary } from '../ErrorBoundary';
 import { useCompact } from '@/lib/responsive';
 import { useActiveChannel, useActiveRoom, useChannels } from '@/stores/channels';
 import { showMain, useUI } from '@/stores/ui';
@@ -46,10 +47,16 @@ export function Shell() {
   return (
     <div className="relative flex h-full">
       <div className={clsx('flex min-w-0 shrink-0 compact:flex-1', navHidden && 'hidden')}>
-        <ChannelRail />
-        {space ? <Sidebar key={space.id} channel={space} /> : <HomeSidebar />}
+        <ErrorBoundary area="rail">
+          <ChannelRail />
+        </ErrorBoundary>
+        <ErrorBoundary area="sidebar" resetKey={space?.id}>
+          {space ? <Sidebar key={space.id} channel={space} /> : <HomeSidebar />}
+        </ErrorBoundary>
       </div>
       <main className={clsx('glass-main relative flex min-w-0 flex-1 flex-col', mainHidden && 'hidden')}>
+        {/* A broken room or call shows "Try again" here; the channel list keeps working. */}
+        <ErrorBoundary area="main" resetKey={`${channel?.id}:${room?.id}`}>
         {!loaded ? (
           <div className="grid h-full place-items-center text-fg-3">
             <Spinner size={22} />
@@ -67,6 +74,7 @@ export function Shell() {
         ) : (
           <FriendsPage />
         )}
+        </ErrorBoundary>
       </main>
     </div>
   );

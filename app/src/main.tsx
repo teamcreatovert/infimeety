@@ -1,3 +1,5 @@
+// First: crash recovery decides on Safe Mode before the stores read saved settings.
+import './lib/boot';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -5,6 +7,7 @@ import { GuestApp } from './guest/GuestApp';
 import { getToken } from './lib/api';
 import { meetingInLocation } from './lib/meeting';
 import { startPhoneApp } from './lib/phone';
+import { startErrorReports } from './lib/errors';
 import { isTauri } from './lib/platform';
 import './styles.css';
 
@@ -19,6 +22,7 @@ if (!isTauri) {
     /* private mode */
   }
 }
+startErrorReports();
 startPhoneApp();
 const asGuest = !!meeting && (!getToken() || new URLSearchParams(location.search).has('guest'));
 

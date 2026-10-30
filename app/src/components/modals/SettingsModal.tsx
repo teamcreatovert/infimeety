@@ -10,6 +10,8 @@ import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION, PRIVACY_PAGE } from '@/config';
 import { api } from '@/lib/api';
+import { resetApp, restartInSafeMode } from '@/lib/boot';
+import { confirmDialog } from '@/lib/confirm';
 import { isMac, isTauri, openExternal } from '@/lib/platform';
 import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
@@ -646,6 +648,24 @@ function UpdatesTab() {
         </Row>
         <Row label="Check automatically">
           <Switch checked={autoUpdate} onChange={(v) => useSettings.getState().set({ autoUpdate: v })} />
+        </Row>
+      </Group>
+      <Group title="Troubleshooting" footer="Safe Mode opens Infimeety once with default settings, keeping yours aside. A reset clears what this device remembers (settings, the last open screen). You stay signed in, and files you share keep sharing.">
+        <Row label="Restart in Safe Mode">
+          <Button size="sm" onClick={restartInSafeMode}>
+            Restart
+          </Button>
+        </Row>
+        <Row label="Reset Infimeety">
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() =>
+              void confirmDialog({ title: 'Reset Infimeety?', body: 'Your settings go back to how they were when you installed it. You stay signed in.', confirm: 'Reset', danger: true }).then((ok) => ok && resetApp())
+            }
+          >
+            Reset
+          </Button>
         </Row>
       </Group>
     </>

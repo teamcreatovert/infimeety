@@ -318,6 +318,29 @@ app.post('/auth/dev', limit('dev', 60), async (c) => {
   return c.json({ token: await createSession(c.env, userId) });
 });
 
+/**
+ * Crash reports from the apps (lib/errors.ts): the error, where it happened, the version and
+ * system. No sign-in needed (a crash can happen before it); nothing is stored, it goes to the
+ * Worker's logs, where they can be searched by version or message.
+ */
+app.post('/errors', limit('errors', 20), async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ ok: false }, 400);
+  const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+  console.error(
+    'client-error',
+    JSON.stringify({
+      where: text(body.where, 60),
+      message: text(body.message, 500),
+      stack: text(body.stack, 3000),
+      version: text(body.version, 20),
+      app: text(body.app, 10),
+      agent: text(body.agent, 200),
+    }),
+  );
+  return c.json({ ok: true });
+});
+
 app.post('/auth/logout', guestOk, async (c) => {
   const token = c.req.header('Authorization')!.slice(7);
   await c.env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256(token)).run();
