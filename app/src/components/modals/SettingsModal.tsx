@@ -7,6 +7,7 @@ import { AvatarEditor } from '../auth/AvatarEditor';
 import { DiscordLogo, GoogleLogo } from '../auth/SignIn';
 import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
 import { Modal } from '../ui/overlay';
+import { OtherVersions } from './OtherVersions';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION, PRIVACY_PAGE } from '@/config';
 import { api } from '@/lib/api';
@@ -671,6 +672,7 @@ function UpdatesTab() {
           <Switch checked={autoUpdate} onChange={(v) => useSettings.getState().set({ autoUpdate: v })} />
         </Row>
       </Group>
+      {isTauri && <OtherVersions />}
       <Group title="Troubleshooting" footer="Safe Mode opens Infimeety once with default settings, keeping yours aside. A reset clears what this device remembers (settings, the last open screen). You stay signed in, and files you share keep sharing.">
         <Row label="Restart in Safe Mode">
           <Button size="sm" onClick={restartInSafeMode}>

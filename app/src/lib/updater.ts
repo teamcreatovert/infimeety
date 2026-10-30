@@ -74,7 +74,8 @@ let started = false;
 export function startUpdateChecks() {
   if (started || !isTauri) return;
   started = true;
-  setTimeout(() => void useUpdater.getState().check(), 5000);
+  // With automatic checks off (say, staying on a version picked in Settings), no pop-up at start either.
+  setTimeout(() => useSettings.getState().autoUpdate && void useUpdater.getState().check(), 5000);
   setInterval(() => {
     if (useSettings.getState().autoUpdate) void useUpdater.getState().check();
   }, 30 * 60_000);
