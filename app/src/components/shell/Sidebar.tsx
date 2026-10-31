@@ -35,6 +35,7 @@ import {
   Volume2,
   Wifi,
   WifiOff,
+  Music,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { atLeast, type Category, type Channel, type Role, type Room, type VoiceParticipant } from '../../../../shared/protocol';
@@ -632,6 +633,8 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   const speaking = useVoice((s) => s.speaking);
   const participants = (snapshot?.participants ?? []).filter((p) => p.roomId === room.id).sort((a, b) => a.joinedAt - b.joinedAt);
   const roomMuted = snapshot?.mutedRooms.includes(room.id);
+  const music = snapshot?.music?.[room.id];
+  const song = music?.queue[music.index];
   const connected = myRoom === room.id;
 
   const open = () => {
@@ -674,6 +677,25 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
             <ParticipantIcons p={p} />
           </motion.div>
         ))}
+        {song && (
+          <motion.div
+            key="music-bot"
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 28 }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={spring}
+            title={`Playing ${song.title}`}
+            className="ml-6 flex items-center gap-2 overflow-hidden rounded-[7px] px-1.5"
+          >
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent text-white">
+              <Music size={11} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-2">
+              Music <span className="text-fg-3">· {music?.playing ? song.title : 'Paused'}</span>
+            </span>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
