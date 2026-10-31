@@ -8,6 +8,7 @@ import {
   Clapperboard,
   Drum,
   Ellipsis,
+  EyeOff,
   HeadphoneOff,
   Headphones,
   MessageSquareText,
@@ -518,6 +519,10 @@ function TileView({
   const isMe = p.peerId === myPeer;
   const speaking = kind === 'user' && speakingOf(p);
   const avatarSize = Math.round(Math.min(104, height * 0.42, width * 0.42));
+  // Someone else's screen stays a dark card until you click Watch, like Discord; then you see and hear it.
+  const watched = useUI((s) => s.watching.includes(p.peerId));
+  const preview = kind === 'screen' && !isMe && !watched;
+  const watch = () => useUI.getState().set({ watching: [...useUI.getState().watching.filter((w) => w !== p.peerId), p.peerId] });
 
   return (
     <motion.div
@@ -526,13 +531,24 @@ function TileView({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={spring}
-      onClick={() => kind === 'screen' && useUI.getState().set({ focusedPeer: p.peerId })}
+      onClick={() => kind === 'screen' && (preview ? watch() : useUI.getState().set({ focusedPeer: p.peerId }))}
       onDoubleClick={() => kind === 'screen' && useUI.getState().set({ focusedPeer: p.peerId })}
       onContextMenu={(e) => openMenu(e, channelId, p)}
       className={clsx('group relative overflow-hidden rounded-[22px] glass-tile', kind === 'screen' && 'cursor-pointer')}
       style={{ width, height }}
     >
-      {kind === 'screen' ? (
+      {preview ? (
+        <div className="relative grid h-full place-items-center bg-[#0e0f13]">
+          <div className="absolute inset-0 opacity-[0.16]" style={{ background: gradientFor(p.userId) }} />
+          <div className="relative flex flex-col items-center gap-3 px-4 text-center text-white">
+            <Avatar user={user} size={Math.round(Math.min(64, height * 0.24))} />
+            <div className="text-[13.5px] font-medium text-white/80">{user?.name ?? 'Someone'} is sharing their screen</div>
+            <span className="flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-[13px] font-semibold text-black shadow-lg transition-transform group-hover:scale-105">
+              <MonitorPlay size={15} /> Watch Stream
+            </span>
+          </div>
+        </div>
+      ) : kind === 'screen' ? (
         stream ? (
           <StreamVideo stream={stream} contain className="bg-black" />
         ) : (
@@ -557,7 +573,7 @@ function TileView({
         transition={{ duration: 0.15 }}
       />
 
-      {kind === 'screen' && <span className="absolute left-3 top-3 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">LIVE</span>}
+      {kind === 'screen' && !preview && <span className="absolute left-3 top-3 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">LIVE</span>}
 
       <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] items-center gap-1.5 rounded-full bg-black/45 px-2.5 py-1 text-[12px] font-medium text-white backdrop-blur-md">
         {kind === 'screen' && <MonitorPlay size={12} />}
@@ -579,16 +595,19 @@ function TileView({
       </div>
 
       <div className="absolute right-2.5 top-2.5 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 touch:opacity-100">
-        {kind === 'screen' && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              useUI.getState().set({ focusedPeer: p.peerId });
-            }}
-            className="flex h-8 items-center gap-1.5 rounded-full bg-danger px-3 text-[12px] font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95"
-          >
-            <MonitorPlay size={13} /> Watch Stream
-          </button>
+        {kind === 'screen' && !preview && !isMe && (
+          <Tooltip label="Stop watching">
+            <button
+              aria-label="Stop watching"
+              onClick={(e) => {
+                e.stopPropagation();
+                useUI.getState().set({ watching: useUI.getState().watching.filter((w) => w !== p.peerId) });
+              }}
+              className="grid h-8 w-8 place-items-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70"
+            >
+              <EyeOff size={15} />
+            </button>
+          </Tooltip>
         )}
         {!isMe && (
           <button aria-label="Options" onClick={(e) => openMenu(e, channelId, p)} className="grid h-8 w-8 place-items-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70">

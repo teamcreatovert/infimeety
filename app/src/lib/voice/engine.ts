@@ -152,7 +152,9 @@ class VoiceEngine {
     this.startMeter();
 
     this.unsubUI = useUI.subscribe((ui, prev) => {
-      if (ui.focusedPeer !== prev.focusedPeer) this.applyGains();
+      // Watching a stream full stage means watching it, also after going back to the grid.
+      if (ui.focusedPeer && ui.focusedPeer !== prev.focusedPeer && !ui.watching.includes(ui.focusedPeer)) return useUI.getState().set({ watching: [...ui.watching, ui.focusedPeer] });
+      if (ui.focusedPeer !== prev.focusedPeer || ui.watching !== prev.watching) this.applyGains();
     });
 
     this.unsubSettings = useSettings.subscribe((s, prev) => {
@@ -204,7 +206,7 @@ class VoiceEngine {
       localScreen: null,
       audioBlocked: false,
     });
-    useUI.getState().set({ focusedPeer: null, immersive: false });
+    useUI.getState().set({ focusedPeer: null, watching: [], immersive: false });
     if (!silent) sounds.leave();
     if (kicked) toast({ kind: 'info', title: 'An admin disconnected you from voice' });
     if (elsewhere) toast({ kind: 'info', title: 'You joined voice somewhere else', body: 'Your call moved to your other device or window.' });
@@ -609,6 +611,7 @@ class VoiceEngine {
       return { remote, connection };
     });
     if (useUI.getState().focusedPeer === peerId) useUI.getState().set({ focusedPeer: null });
+    stopWatching(peerId);
   }
 
   /**
@@ -671,6 +674,8 @@ class VoiceEngine {
     const screen = p.screen ? pick(p.streams.screen) : undefined;
     this.ensureChain(peerId, p.userId, 'mic', mic);
     this.ensureChain(peerId, p.userId, 'screen', screen);
+    // A share that ended needs a new click on Watch next time, like Discord.
+    if (!p.screen) stopWatching(peerId);
     useVoice.setState((s) => ({ remote: { ...s.remote, [peerId]: { mic, cam, screen } } }));
   }
 
@@ -778,7 +783,7 @@ class VoiceEngine {
           ? s.localMutes[c.userId] || p?.serverMuted
             ? 0
             : (s.userVolumes[c.userId] ?? 1)
-          : useUI.getState().focusedPeer === c.peerId ? (s.streamVolumes[c.userId] ?? 1) : 0;
+          : useUI.getState().watching.includes(c.peerId) ? (s.streamVolumes[c.userId] ?? 1) : 0;
       c.gain.gain.setTargetAtTime(v, now, 0.015);
     }
   }
@@ -823,6 +828,11 @@ class VoiceEngine {
 }
 
 export const voice = new VoiceEngine();
+
+function stopWatching(peerId: string) {
+  const { watching, set } = useUI.getState();
+  if (watching.includes(peerId)) set({ watching: watching.filter((w) => w !== peerId) });
+}
 
 if (import.meta.env.DEV) Object.assign(window, { __voice: voice, __voiceState: useVoice });
 // A live call can't be hot-swapped; reload the page in dev instead of running two engines.

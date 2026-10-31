@@ -27,6 +27,8 @@ interface UIState {
   voiceChat: boolean;
   /** Screen share shown full-stage ("theater"), by peer id. */
   focusedPeer: string | null;
+  /** Screen shares you clicked Watch on (peer ids), like Discord: you see and hear only those. */
+  watching: string[];
   /** Full screen watching: hides the sidebars entirely. */
   immersive: boolean;
   /** Watch mode's layout when not full screen. */
@@ -66,6 +68,7 @@ export const useUI = create<UIState>()((set) => ({
   memberList: !isCompactNow(),
   voiceChat: false,
   focusedPeer: null,
+  watching: [],
   immersive: false,
   watchLayout: 'theater',
   partyView: true,
