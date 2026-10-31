@@ -26,7 +26,7 @@ export function UpdatePrompt() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[13.5px] font-semibold">
-                {status === 'available' ? 'A new version is ready' : status === 'downloading' ? 'Downloading update…' : 'Installing — back in a moment'}
+                {status === 'available' ? 'A new version is ready' : status === 'downloading' ? 'Downloading update…' : 'Installing. Back in a moment'}
               </div>
               <div className="mt-0.5 text-[12px] leading-snug text-fg-2">
                 {status === 'available'

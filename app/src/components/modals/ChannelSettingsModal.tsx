@@ -158,7 +158,7 @@ export function ChannelSettingsModal() {
           </Row>
         </Group>
 
-        <Group title={`Members — ${members.length}`}>
+        <Group title={`Members · ${members.length}`}>
           {[...members]
             .sort((a, b) => rank[a.role] - rank[b.role] || a.name.localeCompare(b.name))
             .map((m) => {

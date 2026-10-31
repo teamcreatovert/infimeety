@@ -33,6 +33,7 @@ import { startPushToTalk } from './lib/ptt';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
 import { startRevocationWatcher } from './lib/transfer';
+import { syncSoundPack } from './lib/soundPack';
 import { startUpdateChecks } from './lib/updater';
 import { voice } from './lib/voice/engine';
 import { useAuth } from './stores/auth';
@@ -74,6 +75,8 @@ export default function App() {
   useEffect(() => {
     void useAuth.getState().init();
     startUpdateChecks();
+    // New soundboard sounds come down at each start (lib/soundPack).
+    void syncSoundPack();
     void startDeepLinks();
     startNotifications();
     startWebLinks();

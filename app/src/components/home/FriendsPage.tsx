@@ -85,7 +85,7 @@ export function FriendsPage() {
             ) : (
               <>
                 <div className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">
-                  {label} — {list.length}
+                  {label} · {list.length}
                 </div>
                 <div className="flex flex-col gap-px">
                   <AnimatePresence initial={false}>

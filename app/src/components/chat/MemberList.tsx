@@ -24,13 +24,13 @@ export function MemberList({ channel }: { channel: Channel }) {
 
   return (
     <div className="scroll h-full w-[248px] px-2.5 pb-4 pt-3" style={{ scrollbarGutter: 'auto' }}>
-      <Group title={`Online — ${on.length}`}>
+      <Group title={`Online · ${on.length}`}>
         {on.map((m) => (
           <MemberRow key={m.id} m={m} channelId={channel.id} online inVoice={inVoice.has(m.id)} />
         ))}
       </Group>
       {off.length > 0 && (
-        <Group title={`Offline — ${off.length}`}>
+        <Group title={`Offline · ${off.length}`}>
           {off.map((m) => (
             <MemberRow key={m.id} m={m} channelId={channel.id} online={false} inVoice={false} />
           ))}
