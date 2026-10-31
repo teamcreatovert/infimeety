@@ -1,10 +1,15 @@
-import clsx from 'clsx';
-import { AnimatePresence, motion } from 'motion/react';
+import clsx from "clsx";
+import { AnimatePresence, motion } from "motion/react";
 import {
   AudioLines,
   AudioWaveform,
+  Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
+  Clock,
+  FolderInput,
+  FolderPlus,
   Ellipsis,
   Hash,
   Headphones,
@@ -27,31 +32,52 @@ import {
   Volume2,
   Wifi,
   WifiOff,
-} from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
-import { Avatar } from '../ui/Avatar';
-import { ChannelIcon } from '../ui/ChannelIcon';
-import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
-import { IconButton, Switch } from '../ui/primitives';
-import { DeviceMenu } from '../voice/DeviceMenu';
-import { api } from '@/lib/api';
-import { useParty } from '@/lib/party';
-import { spring } from '@/lib/motion';
-import { voice } from '@/lib/voice/engine';
-import { useAuth } from '@/stores/auth';
-import { useActiveRoom, useChannels } from '@/stores/channels';
-import { useSettings } from '@/stores/settings';
-import { useMessages } from '@/stores/messages';
-import { openUserMenu, showMain, toast, useUI } from '@/stores/ui';
-import { useVoice } from '@/stores/voice';
+} from "lucide-react";
+import { useState, type ReactNode } from "react";
+import type {
+  Category,
+  Channel,
+  Room,
+  VoiceParticipant,
+} from "../../../../shared/protocol";
+import { Avatar } from "../ui/Avatar";
+import { ChannelIcon } from "../ui/ChannelIcon";
+import {
+  MenuItem,
+  MenuSeparator,
+  Popover,
+  SubMenu,
+  Tooltip,
+  type Anchor,
+} from "../ui/overlay";
+import { IconButton, Switch } from "../ui/primitives";
+import { DeviceMenu } from "../voice/DeviceMenu";
+import { api } from "@/lib/api";
+import { useParty } from "@/lib/party";
+import { spring } from "@/lib/motion";
+import { slowLabel } from "@/lib/slowMode";
+import { voice } from "@/lib/voice/engine";
+import { useAuth } from "@/stores/auth";
+import { useActiveRoom, useChannels } from "@/stores/channels";
+import { useSettings } from "@/stores/settings";
+import { useMessages } from "@/stores/messages";
+import { openUserMenu, showMain, toast, useUI } from "@/stores/ui";
+import { useVoice } from "@/stores/voice";
 
 export function Sidebar({ channel }: { channel: Channel }) {
   const [menu, setMenu] = useState<Anchor | null>(null);
-  const [adding, setAdding] = useState<Room['kind'] | null>(null);
-  const isAdmin = channel.role === 'owner' || channel.role === 'admin';
-  const text = channel.rooms.filter((r) => r.kind === 'text');
-  const voiceRooms = channel.rooms.filter((r) => r.kind === 'voice');
+  const [adding, setAdding] = useState<Room["kind"] | null>(null);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const isAdmin = channel.role === "owner" || channel.role === "admin";
+  const categories = channel.categories ?? [];
+  // Rooms in a category show under it; the rest in the plain lists.
+  const loose = (r: Room) =>
+    !r.categoryId || !categories.some((k) => k.id === r.categoryId);
+  const allText = channel.rooms.filter((r) => r.kind === "text");
+  const text = allText.filter(loose);
+  const voiceRooms = channel.rooms.filter(
+    (r) => r.kind === "voice" && loose(r),
+  );
   const ui = useUI((s) => s.set);
 
   const copyInvite = () => {
@@ -62,14 +88,17 @@ export function Sidebar({ channel }: { channel: Channel }) {
   const leave = async () => {
     setMenu(null);
     if (!confirm(`Leave ${channel.name}?`)) return;
-    await api(`/channels/${channel.id}/leave`, { method: 'POST' });
+    await api(`/channels/${channel.id}/leave`, { method: "POST" });
     if (useVoice.getState().channelId === channel.id) voice.leave();
     useChannels.getState().removeLocal(channel.id);
   };
 
   return (
     <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col compact:w-auto compact:min-w-0 compact:flex-1">
-      <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-0.5 px-2.5">
+      <header
+        data-tauri-drag-region
+        className="hairline-b flex h-[52px] shrink-0 items-center gap-0.5 px-2.5"
+      >
         <button
           onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] px-2 py-1.5 text-left transition-colors hover:bg-fill-2"
@@ -77,38 +106,71 @@ export function Sidebar({ channel }: { channel: Channel }) {
           <span className="h-[22px] w-[22px] shrink-0 overflow-hidden rounded-[7px] text-[13px] leading-none">
             <ChannelIcon channel={channel} />
           </span>
-          <span className="truncate font-display text-[14.5px] font-semibold tracking-[-0.015em]">{channel.name}</span>
+          <span className="truncate font-display text-[14.5px] font-semibold tracking-[-0.015em]">
+            {channel.name}
+          </span>
           <ChevronDown size={14} className="ml-auto shrink-0 text-fg-3" />
         </button>
-        <IconButton label="Add people" tooltipSide="bottom" onClick={copyInvite}>
+        <IconButton
+          label="Add people"
+          tooltipSide="bottom"
+          onClick={copyInvite}
+        >
           <UserPlus size={16} />
         </IconButton>
         {isAdmin && (
-          <IconButton label="Channel settings" tooltipSide="bottom" onClick={() => ui({ channelSettings: channel.id })}>
+          <IconButton
+            label="Channel settings"
+            tooltipSide="bottom"
+            onClick={() => ui({ channelSettings: channel.id })}
+          >
             <Settings size={16} />
           </IconButton>
         )}
       </header>
 
-      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} className="w-[230px] p-1.5">
+      <Popover
+        open={!!menu}
+        anchor={menu}
+        onClose={() => setMenu(null)}
+        className="w-[230px] p-1.5"
+      >
         <MenuItem icon={<UserPlus size={15} />} onClick={copyInvite}>
           Invite friends
         </MenuItem>
         {isAdmin && (
           <>
-            <MenuItem icon={<Settings size={15} />} onClick={() => (setMenu(null), ui({ channelSettings: channel.id }))}>
+            <MenuItem
+              icon={<Settings size={15} />}
+              onClick={() => (
+                setMenu(null),
+                ui({ channelSettings: channel.id })
+              )}
+            >
               Channel settings
             </MenuItem>
             <MenuSeparator />
-            <MenuItem icon={<Hash size={15} />} onClick={() => (setMenu(null), setAdding('text'))}>
+            <MenuItem
+              icon={<Hash size={15} />}
+              onClick={() => (setMenu(null), setAdding("text"))}
+            >
               New chat room
             </MenuItem>
-            <MenuItem icon={<Volume2 size={15} />} onClick={() => (setMenu(null), setAdding('voice'))}>
+            <MenuItem
+              icon={<Volume2 size={15} />}
+              onClick={() => (setMenu(null), setAdding("voice"))}
+            >
               New voice room
+            </MenuItem>
+            <MenuItem
+              icon={<FolderPlus size={15} />}
+              onClick={() => (setMenu(null), setAddingCategory(true))}
+            >
+              New category
             </MenuItem>
           </>
         )}
-        {channel.role !== 'owner' && (
+        {channel.role !== "owner" && (
           <>
             <MenuSeparator />
             <MenuItem danger icon={<LogOut size={15} />} onClick={leave}>
@@ -118,19 +180,68 @@ export function Sidebar({ channel }: { channel: Channel }) {
         )}
       </Popover>
 
-      <div className="scroll flex-1 px-2 pb-3 pt-2" style={{ scrollbarGutter: 'auto' }}>
-        <Section title="Chat rooms" onAdd={isAdmin ? () => setAdding('text') : undefined}>
-          {text.map((r) => (
-            <TextRoomRow key={r.id} channel={channel} room={r} canDelete={text.length > 1} />
-          ))}
-          {adding === 'text' && <AddRoom channelId={channel.id} kind="text" onDone={() => setAdding(null)} />}
-        </Section>
-        <Section title="Voice rooms" onAdd={isAdmin ? () => setAdding('voice') : undefined}>
-          {voiceRooms.map((r) => (
-            <VoiceRoomRow key={r.id} channel={channel} room={r} />
-          ))}
-          {adding === 'voice' && <AddRoom channelId={channel.id} kind="voice" onDone={() => setAdding(null)} />}
-        </Section>
+      <div
+        className="scroll flex-1 px-2 pb-3 pt-2"
+        style={{ scrollbarGutter: "auto" }}
+      >
+        {/* With categories, an emptied plain list goes away (rooms are added from the menus). */}
+        {(text.length > 0 || !categories.length || adding === "text") && (
+          <Section
+            title="Chat rooms"
+            onAdd={isAdmin ? () => setAdding("text") : undefined}
+          >
+            {text.map((r) => (
+              <TextRoomRow
+                key={r.id}
+                channel={channel}
+                room={r}
+                canDelete={allText.length > 1}
+              />
+            ))}
+            {adding === "text" && (
+              <AddRoom
+                channelId={channel.id}
+                kind="text"
+                onDone={() => setAdding(null)}
+              />
+            )}
+          </Section>
+        )}
+        {(voiceRooms.length > 0 ||
+          !categories.length ||
+          adding === "voice") && (
+          <Section
+            title="Voice rooms"
+            onAdd={isAdmin ? () => setAdding("voice") : undefined}
+          >
+            {voiceRooms.map((r) => (
+              <VoiceRoomRow key={r.id} channel={channel} room={r} />
+            ))}
+            {adding === "voice" && (
+              <AddRoom
+                channelId={channel.id}
+                kind="voice"
+                onDone={() => setAdding(null)}
+              />
+            )}
+          </Section>
+        )}
+        {categories.map((k, i) => (
+          <CategorySection
+            key={k.id}
+            channel={channel}
+            category={k}
+            first={i === 0}
+            last={i === categories.length - 1}
+            canDeleteText={allText.length > 1}
+          />
+        ))}
+        {addingCategory && (
+          <AddCategory
+            channelId={channel.id}
+            onDone={() => setAddingCategory(false)}
+          />
+        )}
       </div>
 
       <VoicePanel />
@@ -139,13 +250,27 @@ export function Sidebar({ channel }: { channel: Channel }) {
   );
 }
 
-function Section({ title, onAdd, children }: { title: string; onAdd?: () => void; children: ReactNode }) {
+function Section({
+  title,
+  onAdd,
+  children,
+}: {
+  title: string;
+  onAdd?: () => void;
+  children: ReactNode;
+}) {
   return (
     <div className="mb-3">
       <div className="group flex h-7 items-center px-2">
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">{title}</span>
+        <span className="flex-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3">
+          {title}
+        </span>
         {onAdd && (
-          <button aria-label={`Add ${title}`} onClick={onAdd} className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100 touch:opacity-100 compact:h-7 compact:w-7">
+          <button
+            aria-label={`Add ${title}`}
+            onClick={onAdd}
+            className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100 touch:opacity-100 compact:h-7 compact:w-7"
+          >
             <Plus size={14} />
           </button>
         )}
@@ -155,31 +280,326 @@ function Section({ title, onAdd, children }: { title: string; onAdd?: () => void
   );
 }
 
-function AddRoom({ channelId, kind, onDone }: { channelId: string; kind: Room['kind']; onDone: () => void }) {
-  const [name, setName] = useState('');
+/** Slow mode choices, in seconds (0 = off), like Discord's. */
+const SLOW_STEPS = [
+  0, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600,
+];
+
+const COLLAPSED_KEY = "infimeety.collapsedCategories";
+const readCollapsed = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+/** A category: a collapsible header over its rooms. Admins rename, reorder, delete it and add rooms to it. */
+function CategorySection({
+  channel,
+  category,
+  first,
+  last,
+  canDeleteText,
+}: {
+  channel: Channel;
+  category: Category;
+  first: boolean;
+  last: boolean;
+  canDeleteText: boolean;
+}) {
+  const [open, setOpen] = useState(
+    () => !readCollapsed().includes(category.id),
+  );
+  const [menu, setMenu] = useState<Anchor | null>(null);
+  const [adding, setAdding] = useState<Room["kind"] | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const isAdmin = channel.role === "owner" || channel.role === "admin";
+  const rooms = channel.rooms.filter((r) => r.categoryId === category.id);
+  const ordered = [
+    ...rooms.filter((r) => r.kind === "text"),
+    ...rooms.filter((r) => r.kind === "voice"),
+  ];
+  const activeRoomId = useChannels((s) => s.activeRoom[channel.id]);
+  const inVoice = useVoice((s) => s.roomId);
+  const store = useChannels.getState();
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    const rest = readCollapsed().filter((id) => id !== category.id);
+    try {
+      localStorage.setItem(
+        COLLAPSED_KEY,
+        JSON.stringify(next ? rest : [...rest, category.id]),
+      );
+    } catch {
+      /* private mode */
+    }
+  };
+  const act = (run: () => Promise<void>, what: string) => {
+    setMenu(null);
+    void run().catch(() => toast({ kind: "error", title: `Couldn’t ${what}` }));
+  };
+  const remove = () => {
+    if (
+      !confirm(
+        `Delete the ${category.name} category? Its rooms stay, outside any category.`,
+      )
+    )
+      return;
+    act(
+      () => store.deleteCategory(channel.id, category.id),
+      "delete the category",
+    );
+  };
+
+  // A collapsed category still shows the room you're in.
+  const shown = open
+    ? ordered
+    : ordered.filter((r) => r.id === activeRoomId || r.id === inVoice);
+
+  return (
+    <div className="mb-3">
+      <div
+        className="group flex h-7 items-center px-1"
+        onContextMenu={(e) =>
+          isAdmin &&
+          (e.preventDefault(), setMenu({ x: e.clientX, y: e.clientY }))
+        }
+      >
+        {renaming ? (
+          <InlineName
+            initial={category.name}
+            onDone={(name) => {
+              setRenaming(false);
+              if (name && name !== category.name)
+                act(
+                  () => store.renameCategory(channel.id, category.id, name),
+                  "rename the category",
+                );
+            }}
+          />
+        ) : (
+          <button
+            onClick={toggle}
+            aria-expanded={open}
+            className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 text-left text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-3 hover:text-fg-2"
+          >
+            <ChevronRight
+              size={12}
+              className={clsx(
+                "shrink-0 transition-transform",
+                open && "rotate-90",
+              )}
+            />
+            <span className="truncate">{category.name}</span>
+          </button>
+        )}
+        {isAdmin && !renaming && (
+          <>
+            <button
+              aria-label={`Options for ${category.name}`}
+              onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
+              className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100 touch:opacity-100 compact:h-7 compact:w-7"
+            >
+              <Ellipsis size={14} />
+            </button>
+            <button
+              aria-label={`Add a room to ${category.name}`}
+              onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
+              className="grid h-5 w-5 place-items-center rounded-md text-fg-3 opacity-0 transition hover:bg-fill-2 hover:text-fg group-hover:opacity-100 touch:opacity-100 compact:h-7 compact:w-7"
+            >
+              <Plus size={14} />
+            </button>
+          </>
+        )}
+      </div>
+      <div className="flex flex-col gap-px">
+        {shown.map((r) =>
+          r.kind === "text" ? (
+            <TextRoomRow
+              key={r.id}
+              channel={channel}
+              room={r}
+              canDelete={canDeleteText}
+            />
+          ) : (
+            <VoiceRoomRow key={r.id} channel={channel} room={r} />
+          ),
+        )}
+        {adding && (
+          <AddRoom
+            channelId={channel.id}
+            kind={adding}
+            categoryId={category.id}
+            onDone={() => setAdding(null)}
+          />
+        )}
+      </div>
+      <Popover
+        open={!!menu}
+        anchor={menu}
+        onClose={() => setMenu(null)}
+        className="w-[220px] p-1.5"
+      >
+        <MenuItem
+          icon={<Hash size={15} />}
+          onClick={() => (setMenu(null), setOpen(true), setAdding("text"))}
+        >
+          New chat room here
+        </MenuItem>
+        <MenuItem
+          icon={<Volume2 size={15} />}
+          onClick={() => (setMenu(null), setOpen(true), setAdding("voice"))}
+        >
+          New voice room here
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          icon={<Pencil size={15} />}
+          onClick={() => (setMenu(null), setRenaming(true))}
+        >
+          Rename
+        </MenuItem>
+        <MenuItem
+          icon={<ChevronUp size={15} />}
+          disabled={first}
+          onClick={() =>
+            act(
+              () => store.moveCategory(channel.id, category.id, -1),
+              "move the category",
+            )
+          }
+        >
+          Move up
+        </MenuItem>
+        <MenuItem
+          icon={<ChevronDown size={15} />}
+          disabled={last}
+          onClick={() =>
+            act(
+              () => store.moveCategory(channel.id, category.id, 1),
+              "move the category",
+            )
+          }
+        >
+          Move down
+        </MenuItem>
+        <MenuItem danger icon={<Trash2 size={15} />} onClick={remove}>
+          Delete category
+        </MenuItem>
+      </Popover>
+    </div>
+  );
+}
+
+/** A one-line name field that saves on Enter or when you click away. */
+function InlineName({
+  initial,
+  placeholder,
+  onDone,
+}: {
+  initial?: string;
+  placeholder?: string;
+  onDone: (name: string | null) => void;
+}) {
+  const [name, setName] = useState(initial ?? "");
+  return (
+    <div className="field mx-0.5 flex h-7 flex-1 items-center px-2">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => onDone(name.trim() || null)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") onDone(null);
+        }}
+        placeholder={placeholder}
+        maxLength={40}
+        className="h-full min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-fg-3"
+      />
+    </div>
+  );
+}
+
+function AddCategory({
+  channelId,
+  onDone,
+}: {
+  channelId: string;
+  onDone: () => void;
+}) {
+  return (
+    <div className="mb-3 px-1">
+      <InlineName
+        placeholder="Category name"
+        onDone={(name) => {
+          onDone();
+          if (name)
+            void useChannels
+              .getState()
+              .addCategory(channelId, name)
+              .catch(() =>
+                toast({ kind: "error", title: "Couldn’t create the category" }),
+              );
+        }}
+      />
+    </div>
+  );
+}
+
+function AddRoom({
+  channelId,
+  kind,
+  categoryId,
+  onDone,
+}: {
+  channelId: string;
+  kind: Room["kind"];
+  categoryId?: string;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState("");
   const submit = async () => {
     if (!name.trim()) return onDone();
     try {
       const room = await useChannels.getState().addRoom(channelId, kind, name);
-      if (kind === 'text') useChannels.getState().selectRoom(channelId, room.id);
+      if (categoryId)
+        await useChannels
+          .getState()
+          .setRoom(channelId, room.id, { categoryId });
+      if (kind === "text")
+        useChannels.getState().selectRoom(channelId, room.id);
     } catch {
-      toast({ kind: 'error', title: "Couldn't create the room" });
+      toast({ kind: "error", title: "Couldn't create the room" });
     }
     onDone();
   };
   return (
-    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 32 }} transition={spring} className="field mx-0.5 mt-1 flex items-center gap-2 px-2">
-      {kind === 'text' ? <Hash size={15} className="text-fg-3" /> : <Volume2 size={15} className="text-fg-3" />}
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 32 }}
+      transition={spring}
+      className="field mx-0.5 mt-1 flex items-center gap-2 px-2"
+    >
+      {kind === "text" ? (
+        <Hash size={15} className="text-fg-3" />
+      ) : (
+        <Volume2 size={15} className="text-fg-3" />
+      )}
       <input
         autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={submit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
-          if (e.key === 'Escape') onDone();
+          if (e.key === "Enter") void submit();
+          if (e.key === "Escape") onDone();
         }}
-        placeholder={kind === 'text' ? 'new-room' : 'New voice room'}
+        placeholder={kind === "text" ? "new-room" : "New voice room"}
         className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-fg-3"
       />
     </motion.div>
@@ -207,7 +627,7 @@ function RoomButton({
 }) {
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const isAdmin = channel.role === 'owner' || channel.role === 'admin';
+  const isAdmin = channel.role === "owner" || channel.role === "admin";
   const openMenu = (e: React.MouseEvent) => {
     if (!isAdmin) return;
     e.preventDefault();
@@ -217,36 +637,70 @@ function RoomButton({
 
   const remove = async () => {
     setMenu(null);
-    const what = room.kind === 'text' ? `#${room.name} and all its messages` : room.name;
+    const what =
+      room.kind === "text" ? `#${room.name} and all its messages` : room.name;
     if (!confirm(`Delete ${what}? This can’t be undone.`)) return;
     try {
-      if (room.kind === 'voice' && useVoice.getState().roomId === room.id) voice.leave();
+      if (room.kind === "voice" && useVoice.getState().roomId === room.id)
+        voice.leave();
       await useChannels.getState().deleteRoom(channel.id, room.id);
     } catch {
-      toast({ kind: 'error', title: 'Couldn’t delete the room' });
+      toast({ kind: "error", title: "Couldn’t delete the room" });
     }
+  };
+
+  const change = (patch: { categoryId?: string | null; slowMode?: number }) => {
+    setMenu(null);
+    void useChannels
+      .getState()
+      .setRoom(channel.id, room.id, patch)
+      .catch(() => toast({ kind: "error", title: "Couldn’t change the room" }));
   };
 
   const allowParties = async (on: boolean) => {
     // Switching off ends a party that's running here, for everyone in the room.
-    if (!on && useParty.getState().parties[room.id] && !confirm(`Turn off watch parties in ${room.name}? The watch party running here ends for everyone.`)) return;
+    if (
+      !on &&
+      useParty.getState().parties[room.id] &&
+      !confirm(
+        `Turn off watch parties in ${room.name}? The watch party running here ends for everyone.`,
+      )
+    )
+      return;
     try {
       await useChannels.getState().setRoomParty(channel.id, room.id, on);
     } catch {
-      toast({ kind: 'error', title: 'Couldn’t change the room' });
+      toast({ kind: "error", title: "Couldn’t change the room" });
     }
   };
 
-  if (renaming) return <RenameRoom channel={channel} room={room} onDone={() => setRenaming(false)} />;
+  if (renaming)
+    return (
+      <RenameRoom
+        channel={channel}
+        room={room}
+        onDone={() => setRenaming(false)}
+      />
+    );
 
   return (
     <div className="group/room relative">
       <button
         onClick={onClick}
         onContextMenu={openMenu}
-        className={clsx('relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors compact:h-11 compact:text-[15px]', active ? 'text-fg' : 'text-fg-2 hover:bg-fill-1 hover:text-fg', isAdmin && 'pr-8')}
+        className={clsx(
+          "relative flex h-[31px] w-full items-center gap-2 rounded-[8px] px-2 text-[13px] transition-colors compact:h-11 compact:text-[15px]",
+          active ? "text-fg" : "text-fg-2 hover:bg-fill-1 hover:text-fg",
+          isAdmin && "pr-8",
+        )}
       >
-        {active && <motion.span layoutId="room-selection" transition={spring} className="absolute inset-0 rounded-[8px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]" />}
+        {active && (
+          <motion.span
+            layoutId="room-selection"
+            transition={spring}
+            className="absolute inset-0 rounded-[8px] bg-fill-3 shadow-[inset_0_0.5px_0_var(--highlight)]"
+          />
+        )}
         {children}
       </button>
       {isAdmin && (
@@ -258,28 +712,95 @@ function RoomButton({
           <Ellipsis size={15} />
         </button>
       )}
-      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} className="w-[250px] p-1.5">
-        <MenuItem icon={<Pencil size={15} />} onClick={() => (setMenu(null), setRenaming(true))}>
+      <Popover
+        open={!!menu}
+        anchor={menu}
+        onClose={() => setMenu(null)}
+        className="w-[250px] p-1.5"
+      >
+        <MenuItem
+          icon={<Pencil size={15} />}
+          onClick={() => (setMenu(null), setRenaming(true))}
+        >
           Rename
         </MenuItem>
-        {room.kind === 'voice' && (
+        {room.kind === "voice" && (
           <div className="flex h-8 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px]">
             <span className="grid w-4 shrink-0 place-items-center opacity-80">
               <Popcorn size={15} />
             </span>
             <span className="flex-1 truncate">Allow watch parties</span>
-            <Switch checked={room.allowParty !== false} onChange={(on) => void allowParties(on)} />
+            <Switch
+              checked={room.allowParty !== false}
+              onChange={(on) => void allowParties(on)}
+            />
           </div>
         )}
-        <MenuItem danger disabled={!canDelete} icon={<Trash2 size={15} />} onClick={() => void remove()}>
-          {canDelete ? 'Delete room' : 'Can’t delete the only chat room'}
+        {room.kind === "text" && (
+          <SubMenu
+            icon={<Clock size={15} />}
+            label={
+              room.slowMode
+                ? `Slow mode: ${slowLabel(room.slowMode)}`
+                : "Slow mode"
+            }
+          >
+            {SLOW_STEPS.map((s) => (
+              <MenuItem
+                key={s}
+                trailing={
+                  (room.slowMode ?? 0) === s ? <Check size={13} /> : undefined
+                }
+                onClick={() => change({ slowMode: s })}
+              >
+                {s ? slowLabel(s) : "Off"}
+              </MenuItem>
+            ))}
+          </SubMenu>
+        )}
+        {!!channel.categories?.length && (
+          <SubMenu icon={<FolderInput size={15} />} label="Move to category">
+            <MenuItem
+              trailing={!room.categoryId ? <Check size={13} /> : undefined}
+              onClick={() => change({ categoryId: null })}
+            >
+              No category
+            </MenuItem>
+            {channel.categories.map((k) => (
+              <MenuItem
+                key={k.id}
+                trailing={
+                  room.categoryId === k.id ? <Check size={13} /> : undefined
+                }
+                onClick={() => change({ categoryId: k.id })}
+              >
+                {k.name}
+              </MenuItem>
+            ))}
+          </SubMenu>
+        )}
+        <MenuItem
+          danger
+          disabled={!canDelete}
+          icon={<Trash2 size={15} />}
+          onClick={() => void remove()}
+        >
+          {canDelete ? "Delete room" : "Can’t delete the only chat room"}
         </MenuItem>
       </Popover>
     </div>
   );
 }
 
-function RenameRoom({ channel, room, onDone }: { channel: Channel; room: Room; onDone: () => void }) {
+function RenameRoom({
+  channel,
+  room,
+  onDone,
+}: {
+  channel: Channel;
+  room: Room;
+  onDone: () => void;
+}) {
   const [name, setName] = useState(room.name);
   const submit = async () => {
     const clean = name.trim();
@@ -288,12 +809,16 @@ function RenameRoom({ channel, room, onDone }: { channel: Channel; room: Room; o
     try {
       await useChannels.getState().renameRoom(channel.id, room.id, clean);
     } catch {
-      toast({ kind: 'error', title: 'Couldn’t rename the room' });
+      toast({ kind: "error", title: "Couldn’t rename the room" });
     }
   };
   return (
     <div className="field mx-0.5 flex h-[31px] items-center gap-2 px-2 compact:h-11">
-      {room.kind === 'text' ? <Hash size={15} className="text-fg-3" /> : <Volume2 size={15} className="text-fg-3" />}
+      {room.kind === "text" ? (
+        <Hash size={15} className="text-fg-3" />
+      ) : (
+        <Volume2 size={15} className="text-fg-3" />
+      )}
       <input
         autoFocus
         value={name}
@@ -302,8 +827,8 @@ function RenameRoom({ channel, room, onDone }: { channel: Channel; room: Room; o
         onChange={(e) => setName(e.target.value)}
         onBlur={() => void submit()}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
-          if (e.key === 'Escape') onDone();
+          if (e.key === "Enter") void submit();
+          if (e.key === "Escape") onDone();
         }}
         className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
       />
@@ -311,15 +836,41 @@ function RenameRoom({ channel, room, onDone }: { channel: Channel; room: Room; o
   );
 }
 
-function TextRoomRow({ channel, room, canDelete }: { channel: Channel; room: Room; canDelete: boolean }) {
+function TextRoomRow({
+  channel,
+  room,
+  canDelete,
+}: {
+  channel: Channel;
+  room: Room;
+  canDelete: boolean;
+}) {
   const active = useActiveRoom()?.id === room.id;
   const unread = useMessages((s) => s.unread[room.id] ?? 0);
   return (
-    <RoomButton channel={channel} room={room} canDelete={canDelete} active={active} onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())}>
+    <RoomButton
+      channel={channel}
+      room={room}
+      canDelete={canDelete}
+      active={active}
+      onClick={() => (
+        useChannels.getState().selectRoom(channel.id, room.id),
+        showMain()
+      )}
+    >
       <Hash size={15} className="relative shrink-0 text-fg-3" />
-      <span className={clsx('relative flex-1 truncate text-left', unread > 0 && !active && 'font-semibold text-fg')}>{room.name}</span>
+      <span
+        className={clsx(
+          "relative flex-1 truncate text-left",
+          unread > 0 && !active && "font-semibold text-fg",
+        )}
+      >
+        {room.name}
+      </span>
       {unread > 0 && !active && (
-        <span className="relative grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10.5px] font-bold text-white">{unread}</span>
+        <span className="relative grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10.5px] font-bold text-white">
+          {unread}
+        </span>
       )}
     </RoomButton>
   );
@@ -331,7 +882,9 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   const users = useChannels((s) => s.users);
   const myRoom = useVoice((s) => s.roomId);
   const speaking = useVoice((s) => s.speaking);
-  const participants = (snapshot?.participants ?? []).filter((p) => p.roomId === room.id).sort((a, b) => a.joinedAt - b.joinedAt);
+  const participants = (snapshot?.participants ?? [])
+    .filter((p) => p.roomId === room.id)
+    .sort((a, b) => a.joinedAt - b.joinedAt);
   const roomMuted = snapshot?.mutedRooms.includes(room.id);
   const connected = myRoom === room.id;
 
@@ -344,10 +897,18 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   return (
     <div>
       <RoomButton channel={channel} room={room} active={active} onClick={open}>
-        {connected ? <AudioLines size={15} className="relative shrink-0 text-success" /> : <Volume2 size={15} className="relative shrink-0 text-fg-3" />}
+        {connected ? (
+          <AudioLines size={15} className="relative shrink-0 text-success" />
+        ) : (
+          <Volume2 size={15} className="relative shrink-0 text-fg-3" />
+        )}
         <span className="relative flex-1 truncate text-left">{room.name}</span>
         {roomMuted && <MicOff size={12} className="relative text-danger" />}
-        {participants.length > 0 && <span className="relative text-[11px] tabular-nums text-fg-3">{participants.length}</span>}
+        {participants.length > 0 && (
+          <span className="relative text-[11px] tabular-nums text-fg-3">
+            {participants.length}
+          </span>
+        )}
       </RoomButton>
       <AnimatePresence initial={false}>
         {participants.map((p) => (
@@ -358,11 +919,25 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
             animate={{ opacity: 1, height: 28 }}
             exit={{ opacity: 0, height: 0 }}
             transition={spring}
-            onContextMenu={(e) => openUserMenu(e, p.userId, { kind: 'voice', channelId: channel.id, peerId: p.peerId })}
+            onContextMenu={(e) =>
+              openUserMenu(e, p.userId, {
+                kind: "voice",
+                channelId: channel.id,
+                peerId: p.peerId,
+              })
+            }
             className="ml-6 flex items-center gap-2 overflow-hidden rounded-[7px] px-1.5 hover:bg-fill-1"
           >
-            <Avatar user={users[p.userId]} size={20} speaking={p.peerId === voice.peerId ? speaking.self : speaking[p.peerId]} />
-            <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-2">{users[p.userId]?.name ?? 'Someone'}</span>
+            <Avatar
+              user={users[p.userId]}
+              size={20}
+              speaking={
+                p.peerId === voice.peerId ? speaking.self : speaking[p.peerId]
+              }
+            />
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-2">
+              {users[p.userId]?.name ?? "Someone"}
+            </span>
             <ParticipantIcons p={p} />
           </motion.div>
         ))}
@@ -371,11 +946,17 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   );
 }
 
-export function ParticipantIcons({ p, size = 13 }: { p: VoiceParticipant; size?: number }) {
+export function ParticipantIcons({
+  p,
+  size = 13,
+}: {
+  p: VoiceParticipant;
+  size?: number;
+}) {
   const conn = useVoice((s) => s.connection[p.peerId]);
   const isMe = p.peerId === voice.peerId;
-  const peerTrouble = !isMe && (conn === 'failed' || conn === 'disconnected');
-  const peerConnecting = !isMe && (conn === 'connecting' || conn === 'new');
+  const peerTrouble = !isMe && (conn === "failed" || conn === "disconnected");
+  const peerConnecting = !isMe && (conn === "connecting" || conn === "new");
 
   return (
     <span className="flex shrink-0 items-center gap-1 text-fg-3">
@@ -389,9 +970,17 @@ export function ParticipantIcons({ p, size = 13 }: { p: VoiceParticipant; size?:
           <Wifi size={size} className="animate-pulse text-warning" />
         </Tooltip>
       )}
-      {p.screen && <span className="rounded-[4px] bg-danger px-1 text-[9px] font-bold leading-[14px] text-white">LIVE</span>}
+      {p.screen && (
+        <span className="rounded-[4px] bg-danger px-1 text-[9px] font-bold leading-[14px] text-white">
+          LIVE
+        </span>
+      )}
       {p.camera && <Video size={size} />}
-      {p.serverMuted ? <ShieldAlert size={size} className="text-danger" /> : p.muted && <MicOff size={size} className="text-danger" />}
+      {p.serverMuted ? (
+        <ShieldAlert size={size} className="text-danger" />
+      ) : (
+        p.muted && <MicOff size={size} className="text-danger" />
+      )}
       {p.deafened && <HeadphoneOff size={size} className="text-danger" />}
     </span>
   );
@@ -404,19 +993,32 @@ export function VoicePanel() {
   const camera = useVoice((s) => s.camera);
   const screen = useVoice((s) => s.screen);
   const connection = useVoice((s) => s.connection);
-  const channel = useChannels((s) => s.channels.find((c) => c.id === channelId));
+  const channel = useChannels((s) =>
+    s.channels.find((c) => c.id === channelId),
+  );
   const room = channel?.rooms.find((r) => r.id === roomId);
 
   const states = Object.values(connection);
   // Only show room-wide trouble for the local user if all peer paths failed (or local status is down)
-  const allFailed = states.length > 0 && states.every((s) => s === 'failed' || s === 'disconnected');
-  const trouble = status === 'connecting' ? false : allFailed;
-  const connecting = status === 'connecting' || (states.length > 0 && states.every((s) => s === 'new' || s === 'connecting'));
+  const allFailed =
+    states.length > 0 &&
+    states.every((s) => s === "failed" || s === "disconnected");
+  const trouble = status === "connecting" ? false : allFailed;
+  const connecting =
+    status === "connecting" ||
+    (states.length > 0 &&
+      states.every((s) => s === "new" || s === "connecting"));
 
   return (
     <AnimatePresence>
-      {status !== 'idle' && channel && room && (
-        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring} className="hairline-t overflow-hidden">
+      {status !== "idle" && channel && room && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={spring}
+          className="hairline-t overflow-hidden"
+        >
           <div className="px-3 pb-2.5 pt-2.5">
             <div className="flex items-center gap-2.5">
               <span className="flex h-4 items-end gap-[2px]">
@@ -424,29 +1026,79 @@ export function VoicePanel() {
                   <span
                     key={i}
                     className="w-[3px] rounded-full"
-                    style={{ height: `${h * 100}%`, background: trouble ? 'var(--danger)' : connecting ? 'var(--warning)' : 'var(--success)' }}
+                    style={{
+                      height: `${h * 100}%`,
+                      background: trouble
+                        ? "var(--danger)"
+                        : connecting
+                          ? "var(--warning)"
+                          : "var(--success)",
+                    }}
                   />
                 ))}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[12.5px] font-semibold" style={{ color: trouble ? 'var(--danger)' : connecting ? 'var(--warning)' : 'var(--success)' }}>
-                  {trouble ? 'Connection trouble' : connecting ? 'Connecting…' : 'Voice connected'}
+                <div
+                  className="text-[12.5px] font-semibold"
+                  style={{
+                    color: trouble
+                      ? "var(--danger)"
+                      : connecting
+                        ? "var(--warning)"
+                        : "var(--success)",
+                  }}
+                >
+                  {trouble
+                    ? "Connection trouble"
+                    : connecting
+                      ? "Connecting…"
+                      : "Voice connected"}
                 </div>
-                <button onClick={() => (useChannels.getState().selectRoom(channel.id, room.id), showMain())} className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline">
-                  {channel.kind === 'dm' ? `Call with ${channel.peer?.name ?? 'friend'}` : channel.kind === 'meeting' ? channel.name : `${room.name} · ${channel.name}`}
+                <button
+                  onClick={() => (
+                    useChannels.getState().selectRoom(channel.id, room.id),
+                    showMain()
+                  )}
+                  className="block max-w-full truncate text-[11.5px] text-fg-2 hover:text-fg hover:underline"
+                >
+                  {channel.kind === "dm"
+                    ? `Call with ${channel.peer?.name ?? "friend"}`
+                    : channel.kind === "meeting"
+                      ? channel.name
+                      : `${room.name} · ${channel.name}`}
                 </button>
               </div>
               <NoiseToggle />
-              <IconButton label="Disconnect" tone="danger" onClick={() => voice.leave()}>
+              <IconButton
+                label="Disconnect"
+                tone="danger"
+                onClick={() => voice.leave()}
+              >
                 <PhoneOff size={15} />
               </IconButton>
             </div>
             <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-              <PanelButton active={camera} onClick={() => void voice.toggleCamera()} icon={camera ? <VideoOff size={15} /> : <Video size={15} />}>
-                {camera ? 'Stop video' : 'Video'}
+              <PanelButton
+                active={camera}
+                onClick={() => void voice.toggleCamera()}
+                icon={camera ? <VideoOff size={15} /> : <Video size={15} />}
+              >
+                {camera ? "Stop video" : "Video"}
               </PanelButton>
-              <PanelButton active={screen} onClick={() => (screen ? voice.stopScreen() : void voice.startScreen())} icon={screen ? <ScreenShareOff size={15} /> : <ScreenShare size={15} />}>
-                {screen ? 'Stop share' : 'Share'}
+              <PanelButton
+                active={screen}
+                onClick={() =>
+                  screen ? voice.stopScreen() : void voice.startScreen()
+                }
+                icon={
+                  screen ? (
+                    <ScreenShareOff size={15} />
+                  ) : (
+                    <ScreenShare size={15} />
+                  )
+                }
+              >
+                {screen ? "Stop share" : "Share"}
               </PanelButton>
             </div>
           </div>
@@ -457,14 +1109,25 @@ export function VoicePanel() {
 }
 
 /** The small arrow beside the mic and headphone buttons that opens their device menu. */
-function MenuChevron({ label, open, onClick }: { label: string; open: boolean; onClick: (el: HTMLElement) => void }) {
+function MenuChevron({
+  label,
+  open,
+  onClick,
+}: {
+  label: string;
+  open: boolean;
+  onClick: (el: HTMLElement) => void;
+}) {
   return (
     <Tooltip label={label}>
       <button
         aria-label={label}
         aria-expanded={open}
         onClick={(e) => onClick(e.currentTarget)}
-        className={clsx('grid h-[30px] w-3.5 place-items-center rounded-[6px] transition-colors hover:bg-fill-2 hover:text-fg', open ? 'bg-fill-2 text-fg' : 'text-fg-3')}
+        className={clsx(
+          "grid h-[30px] w-3.5 place-items-center rounded-[6px] transition-colors hover:bg-fill-2 hover:text-fg",
+          open ? "bg-fill-2 text-fg" : "text-fg-3",
+        )}
       >
         <ChevronUp size={12} />
       </button>
@@ -474,29 +1137,43 @@ function MenuChevron({ label, open, onClick }: { label: string; open: boolean; o
 
 /** One click for noise suppression, like Discord's Krisp button: strong when on. */
 function NoiseToggle() {
-  const on = useSettings((s) => s.noiseFilter !== 'off');
+  const on = useSettings((s) => s.noiseFilter !== "off");
   return (
     <IconButton
-      label={on ? 'Noise suppression is on' : 'Noise suppression is off'}
+      label={on ? "Noise suppression is on" : "Noise suppression is off"}
       active={on}
-      onClick={() => useSettings.getState().set({ noiseFilter: on ? 'off' : 'strong' })}
+      onClick={() =>
+        useSettings.getState().set({ noiseFilter: on ? "off" : "strong" })
+      }
     >
       <span className="relative grid place-items-center">
         <AudioWaveform size={15} />
-        {!on && <span className="absolute h-[19px] w-[1.5px] rotate-45 rounded-full bg-current" />}
+        {!on && (
+          <span className="absolute h-[19px] w-[1.5px] rotate-45 rounded-full bg-current" />
+        )}
       </span>
     </IconButton>
   );
 }
 
-function PanelButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: ReactNode; children: ReactNode }) {
+function PanelButton({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <motion.button
       whileTap={{ scale: 0.96 }}
       onClick={onClick}
       className={clsx(
-        'flex h-8 items-center justify-center gap-1.5 rounded-[9px] text-[12px] font-medium transition-colors',
-        active ? 'bg-accent text-white' : 'bg-fill-2 text-fg hover:bg-fill-3',
+        "flex h-8 items-center justify-center gap-1.5 rounded-[9px] text-[12px] font-medium transition-colors",
+        active ? "bg-accent text-white" : "bg-fill-2 text-fg hover:bg-fill-3",
       )}
     >
       {icon}
@@ -511,41 +1188,76 @@ export function UserBar() {
   const deafened = useVoice((s) => s.deafened);
   const speaking = useVoice((s) => !!s.speaking.self);
   const ui = useUI((s) => s.set);
-  const [menu, setMenu] = useState<{ kind: 'input' | 'output'; anchor: Anchor } | null>(null);
-  const openMenu = (kind: 'input' | 'output', el: HTMLElement) => setMenu(menu?.kind === kind ? null : { kind, anchor: el.getBoundingClientRect() });
+  const [menu, setMenu] = useState<{
+    kind: "input" | "output";
+    anchor: Anchor;
+  } | null>(null);
+  const openMenu = (kind: "input" | "output", el: HTMLElement) =>
+    setMenu(
+      menu?.kind === kind ? null : { kind, anchor: el.getBoundingClientRect() },
+    );
   if (!me) return null;
   return (
     <div className="hairline-t flex h-[58px] shrink-0 items-center gap-0.5 px-2">
-      <button onClick={() => ui({ settingsTab: 'account' })} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-fill-2">
+      <button
+        onClick={() => ui({ settingsTab: "account" })}
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-fill-2"
+      >
         <Avatar user={me} size={32} speaking={speaking} presence="online" />
         <span className="min-w-0">
-          <span className="block truncate text-[13px] font-semibold leading-tight">{me.name}</span>
-          <span className="block truncate text-[11.5px] leading-tight text-fg-3">@{me.username}</span>
+          <span className="block truncate text-[13px] font-semibold leading-tight">
+            {me.name}
+          </span>
+          <span className="block truncate text-[11.5px] leading-tight text-fg-3">
+            @{me.username}
+          </span>
         </span>
       </button>
       <div className="flex items-center">
         <IconButton
-          label={muted || deafened ? 'Unmute' : 'Mute'}
-          tone={muted || deafened ? 'danger' : undefined}
+          label={muted || deafened ? "Unmute" : "Mute"}
+          tone={muted || deafened ? "danger" : undefined}
           onClick={() => void voice.toggleMute()}
-          onContextMenu={(e) => (e.preventDefault(), openMenu('input', e.currentTarget))}
+          onContextMenu={(e) => (
+            e.preventDefault(),
+            openMenu("input", e.currentTarget)
+          )}
         >
           {muted || deafened ? <MicOff size={16} /> : <Mic size={16} />}
         </IconButton>
-        <MenuChevron label="Microphone options" open={menu?.kind === 'input'} onClick={(el) => openMenu('input', el)} />
+        <MenuChevron
+          label="Microphone options"
+          open={menu?.kind === "input"}
+          onClick={(el) => openMenu("input", el)}
+        />
       </div>
       <div className="flex items-center">
         <IconButton
-          label={deafened ? 'Undeafen' : 'Deafen'}
-          tone={deafened ? 'danger' : undefined}
+          label={deafened ? "Undeafen" : "Deafen"}
+          tone={deafened ? "danger" : undefined}
           onClick={() => voice.toggleDeafen()}
-          onContextMenu={(e) => (e.preventDefault(), openMenu('output', e.currentTarget))}
+          onContextMenu={(e) => (
+            e.preventDefault(),
+            openMenu("output", e.currentTarget)
+          )}
         >
           {deafened ? <HeadphoneOff size={16} /> : <Headphones size={16} />}
         </IconButton>
-        <MenuChevron label="Speaker options" open={menu?.kind === 'output'} onClick={(el) => openMenu('output', el)} />
+        <MenuChevron
+          label="Speaker options"
+          open={menu?.kind === "output"}
+          onClick={(el) => openMenu("output", el)}
+        />
       </div>
-      <Popover open={!!menu} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[264px] p-1.5">
+      <Popover
+        open={!!menu}
+        anchor={menu?.anchor ?? null}
+        onClose={() => setMenu(null)}
+        side="top"
+        align="end"
+        offset={10}
+        className="w-[264px] p-1.5"
+      >
         {menu && <DeviceMenu kind={menu.kind} onClose={() => setMenu(null)} />}
       </Popover>
     </div>

@@ -22,6 +22,8 @@ import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { toast, useUI } from '@/stores/ui';
+import { canModerateRole } from '../../../../shared/protocol';
+import { noteSent, slowLabel, useSlowWait } from '@/lib/slowMode';
 
 interface Staged {
   file: SharedFile;
@@ -63,6 +65,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const me = useAuth((s) => s.me);
   const replyAuthor = useChannels((s) => (replyTo ? s.users[replyTo.userId] : undefined));
   const [text, setText] = useState(() => drafts.get(room.id) ?? '');
+  const slowWait = useSlowWait(room, channel.role);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [emoji, setEmoji] = useState<Anchor | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -207,7 +210,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
 
   const send = () => {
     const content = text.trim();
-    if ((!content && !staged.length) || !me) return;
+    if ((!content && !staged.length) || !me || slowWait) return;
     const attachments: Attachment[] = staged.map((s) => ({
       id: s.file.id,
       ownerId: me.id,
@@ -231,6 +234,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     const replyId = replyTo && !replyTo.pending ? replyTo.id : null;
     const nonce = useMessages.getState().addPending(room.id, me.id, content, attachments, replyId);
     getHub(channel.id)?.send({ t: 'chat.send', roomId: room.id, content, attachments, replyTo: replyId, nonce });
+    noteSent(room.id);
     setText('');
     setStaged([]);
     onCancelReply();
@@ -245,7 +249,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
     }
   };
 
-  const canSend = !!text.trim() || staged.length > 0;
+  const canSend = (!!text.trim() || staged.length > 0) && !slowWait;
 
   return (
     <div className="shrink-0 px-4 pb-4 compact:px-2.5 compact:pb-2.5">
@@ -342,7 +346,15 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
               }
               if (e.key === 'Escape' && replyTo) onCancelReply();
             }}
-            placeholder={channel.kind === 'dm' ? `Message ${channel.peer?.name ?? 'your friend'}` : room.kind === 'text' ? `Message #${room.name}` : `Chat in ${room.name}`}
+            placeholder={
+              slowWait
+                ? `Slow mode: you can post again in ${slowLabel(slowWait)}`
+                : channel.kind === 'dm'
+                  ? `Message ${channel.peer?.name ?? 'your friend'}`
+                  : room.kind === 'text'
+                    ? `Message #${room.name}${room.slowMode && !canModerateRole(channel.role) ? ` · slow mode ${slowLabel(room.slowMode)}` : ''}`
+                    : `Chat in ${room.name}`
+            }
             className="max-h-[220px] min-h-[34px] flex-1 resize-none bg-transparent px-1.5 py-[7px] text-[14.5px] leading-[1.4] outline-none placeholder:text-fg-3"
           />
           <IconButton label="Emoji" size={34} className="rounded-full!" onClick={(e) => setEmoji(e.currentTarget.getBoundingClientRect())}>

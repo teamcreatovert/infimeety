@@ -1,5 +1,5 @@
 import { MAX_FILE_SIZE } from '../../shared/protocol';
-import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, RemoteConfig, Role, Room } from '../../shared/protocol';
+import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, RemoteConfig, Role, Room, Category } from '../../shared/protocol';
 import type { ChannelHub } from './hub';
 import type { Lobby } from './lobby';
 
@@ -90,9 +90,13 @@ export const toRoom = (r: any): Room => ({
   name: r.name,
   position: r.position,
   allowParty: r.allow_party !== 0,
+  categoryId: r.category_id ?? null,
+  slowMode: r.slow_mode ?? 0,
 });
 
-export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => ({
+export const toCategory = (r: any): Category => ({ id: r.id, channelId: r.channel_id, name: r.name, position: r.position });
+
+export const toChannel = (r: any, rooms: Room[], peer?: PublicUser, categories: Category[] = []): Channel => ({
   id: r.id,
   kind: r.kind === 'dm' || r.kind === 'meeting' ? r.kind : 'space',
   peer,
@@ -104,6 +108,7 @@ export const toChannel = (r: any, rooms: Room[], peer?: PublicUser): Channel => 
   inviteCode: r.kind === 'dm' ? null : r.invite_code,
   role: r.role,
   rooms,
+  categories,
   iconUrl: r.icon_url ?? null,
   ...(r.kind === 'meeting' ? { expiresAt: r.expires_at } : {}),
 });

@@ -1,6 +1,7 @@
 import type { ServerMsg } from '../../../shared/protocol';
 import { reportError } from './errors';
 import { notifyMessage } from './notify';
+import { noteSent } from './slowMode';
 import { onRemoteConfig } from './remote';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
@@ -185,5 +186,12 @@ function handle(hub: HubClient, msg: ServerMsg) {
 
     case 'error':
       return toast({ kind: 'error', title: msg.message });
+    case 'chat.rejected': {
+      useMessages.getState().dropPending(msg.roomId, msg.nonce);
+      // Line the composer's countdown up with the server's.
+      const slow = useChannels.getState().channels.find((c) => c.id === cid)?.rooms.find((r) => r.id === msg.roomId)?.slowMode ?? 0;
+      noteSent(msg.roomId, Date.now() + msg.retryIn * 1000 - slow * 1000);
+      return toast({ kind: 'info', title: 'Slow mode is on here', body: `You can post again in ${msg.retryIn} s.` });
+    }
   }
 }

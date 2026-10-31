@@ -44,6 +44,14 @@ interface ChannelsState {
   deleteRoom: (channelId: string, roomId: string) => Promise<void>;
   /** Admins: watch parties on or off in a voice room (ending one that's running). */
   setRoomParty: (channelId: string, roomId: string, allowParty: boolean) => Promise<void>;
+  /** Admins: move a room into a category (null: out of it), or set a chat room's slow mode (seconds). */
+  setRoom: (channelId: string, roomId: string, patch: { categoryId?: string | null; slowMode?: number }) => Promise<void>;
+  addCategory: (channelId: string, name: string) => Promise<void>;
+  renameCategory: (channelId: string, categoryId: string, name: string) => Promise<void>;
+  /** Moves a category one place up (-1) or down (1). */
+  moveCategory: (channelId: string, categoryId: string, by: -1 | 1) => Promise<void>;
+  /** Its rooms stay, back in the plain lists. */
+  deleteCategory: (channelId: string, categoryId: string) => Promise<void>;
   /** Uploads a channel picture (a prepared image), or removes it with null. */
   setIcon: (channelId: string, image: { body: Blob; type: string } | null) => Promise<void>;
   upsertUser: (user: PublicUser) => void;
@@ -157,6 +165,45 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
     if (channel) set((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
   },
 
+  async setRoom(channelId, roomId, patch) {
+    set((s) => ({
+      channels: s.channels.map((c) => (c.id === channelId ? { ...c, rooms: c.rooms.map((r) => (r.id === roomId ? { ...r, ...patch } : r)) } : c)),
+    }));
+    try {
+      await api(`/channels/${channelId}/rooms/${roomId}`, { method: 'PATCH', json: patch });
+    } finally {
+      await reloadChannel(channelId);
+    }
+  },
+
+  async addCategory(channelId, name) {
+    await api(`/channels/${channelId}/categories`, { method: 'POST', json: { name } });
+    await reloadChannel(channelId);
+  },
+
+  async renameCategory(channelId, categoryId, name) {
+    await api(`/channels/${channelId}/categories/${categoryId}`, { method: 'PATCH', json: { name } });
+    await reloadChannel(channelId);
+  },
+
+  async moveCategory(channelId, categoryId, by) {
+    const list = [...(get().channels.find((c) => c.id === channelId)?.categories ?? [])];
+    const at = list.findIndex((k) => k.id === categoryId);
+    const to = at + by;
+    if (at < 0 || to < 0 || to >= list.length) return;
+    [list[at], list[to]] = [list[to], list[at]];
+    // Number them 0, 1, 2… in the new order (older categories may share a position).
+    await Promise.all(
+      list.map((k, i) => (k.position === i ? null : api(`/channels/${channelId}/categories/${k.id}`, { method: 'PATCH', json: { position: i } }))),
+    );
+    await reloadChannel(channelId);
+  },
+
+  async deleteCategory(channelId, categoryId) {
+    await api(`/channels/${channelId}/categories/${categoryId}`, { method: 'DELETE' });
+    await reloadChannel(channelId);
+  },
+
   async setRoomParty(channelId, roomId, allowParty) {
     const patch = (allow: boolean) =>
       set((s) => ({
@@ -224,4 +271,10 @@ export function useActiveRoom() {
     const chosen = s.activeRoom[channel.id];
     return channel.rooms.find((r) => r.id === chosen) ?? channel.rooms.find((r) => r.kind === 'text') ?? channel.rooms[0] ?? null;
   });
+}
+
+/** Shows exactly what the server saved for one channel. */
+async function reloadChannel(channelId: string) {
+  const channel = (await api<Channel[]>('/channels')).find((c) => c.id === channelId);
+  if (channel) useChannels.setState((s) => ({ channels: s.channels.map((c) => (c.id === channelId ? channel : c)) }));
 }

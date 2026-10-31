@@ -42,6 +42,8 @@ const MEETING_CHECK = 15 * 60_000;
 export class ChannelHub extends DurableObject<Env> {
   private mutedRooms = new Set<string>();
   private roomKinds = new Map<string, string>();
+  /** When each person last posted in each room ("roomId:userId"), for slow mode. */
+  private lastPost = new Map<string, number>();
   private meeting: MeetingState | null = null;
   private promoting = false;
   /** Watch parties by voice room. */
@@ -410,7 +412,22 @@ export class ChannelHub extends DurableObject<Env> {
     const content = String(msg.content ?? '').slice(0, 4000).trim();
     const attachments = sanitizeAttachments(msg.attachments, me.userId);
     if (!content && !attachments.length) return;
-    if (!(await this.roomKind(msg.roomId, me.channelId))) return this.send(ws, { t: 'error', message: 'Room not found' });
+    const room = typeof msg.roomId === 'string'
+      ? await this.env.DB.prepare('SELECT kind, slow_mode FROM rooms WHERE id = ? AND channel_id = ?').bind(msg.roomId, me.channelId).first<{ kind: string; slow_mode: number | null }>()
+      : null;
+    if (!room) return this.send(ws, { t: 'error', message: 'Room not found' });
+    const nonce = String(msg.nonce ?? '').slice(0, 64);
+    // Slow mode: one message per person every N seconds; moderators and up are exempt.
+    const slow = room.slow_mode ?? 0;
+    if (slow > 0 && !canModerateRole(me.role)) {
+      const key = `${msg.roomId}:${me.userId}`;
+      const last =
+        this.lastPost.get(key) ??
+        (await this.env.DB.prepare('SELECT MAX(created_at) AS at FROM messages WHERE room_id = ? AND user_id = ?').bind(msg.roomId, me.userId).first<{ at: number | null }>())?.at ??
+        0;
+      const wait = last + slow * 1000 - Date.now();
+      if (wait > 0) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'slow', retryIn: Math.ceil(wait / 1000) });
+    }
 
     const message: Message = {
       id: newId(),
@@ -428,7 +445,8 @@ export class ChannelHub extends DurableObject<Env> {
     )
       .bind(message.id, message.roomId, message.userId, content, attachments.length ? JSON.stringify(attachments) : null, message.replyTo, message.createdAt)
       .run();
-    this.broadcast({ t: 'chat.new', message, nonce: String(msg.nonce ?? '').slice(0, 64) });
+    this.lastPost.set(`${message.roomId}:${me.userId}`, message.createdAt);
+    this.broadcast({ t: 'chat.new', message, nonce });
   }
 
   private async findMessage(id: string, channelId: string) {

@@ -23,6 +23,8 @@ interface MessagesState {
   loadOlder: (channelId: string, roomId: string) => Promise<void>;
   addPending: (roomId: string, userId: string, content: string, attachments: Attachment[], replyTo: string | null) => string;
   receive: (msg: Message, nonce?: string) => void;
+  /** A message the server turned away (slow mode): take it back out. */
+  dropPending: (roomId: string, nonce: string) => void;
   patch: (roomId: string, id: string, patch: Partial<Message>) => void;
   remove: (roomId: string, id: string) => void;
   markRead: (roomId: string) => void;
@@ -103,6 +105,10 @@ export const useMessages = create<MessagesState>()((set, get) => {
         }
         return { items: [...r.items, msg] };
       });
+    },
+
+    dropPending(roomId, nonce) {
+      update(roomId, (r) => ({ items: r.items.filter((m) => !(m.pending && m.nonce === nonce)) }));
     },
 
     patch(roomId, id, patch) {

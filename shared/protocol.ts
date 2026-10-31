@@ -45,6 +45,18 @@ export interface Room {
   position: number;
   /** Voice rooms: whether watch parties can be held here. Admins switch it; on by default. */
   allowParty: boolean;
+  /** The category it's listed under; none puts it in the channel's plain room lists. */
+  categoryId?: string | null;
+  /** Chat rooms: seconds each person waits between messages (0 = off). Moderators are exempt. */
+  slowMode?: number;
+}
+
+/** A collapsible group of rooms in a channel's sidebar. */
+export interface Category {
+  id: string;
+  channelId: string;
+  name: string;
+  position: number;
 }
 
 export interface Channel {
@@ -64,6 +76,8 @@ export interface Channel {
   inviteCode: string | null;
   role: Role;
   rooms: Room[];
+  /** Spaces: room categories, in order. */
+  categories?: Category[];
   /** For DMs: the other person. */
   peer?: PublicUser;
   /** For meetings: when the link stops working at the latest. */
@@ -329,4 +343,6 @@ export type ServerMsg =
   | { t: 'party.status'; roomId: string; peerId: string; userId: string; status: PartyMemberStatus }
   | { t: 'clock'; c: number; s: number }
   | { t: 'error'; message: string }
+  /** Your message wasn't posted: slow mode (wait `retryIn` seconds). */
+  | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'slow'; retryIn: number }
   | { t: 'pong' };

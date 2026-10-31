@@ -47,6 +47,7 @@ import {
   toMessage,
   toPublicUser,
   toRoom,
+  toCategory,
 } from './util';
 
 /**
@@ -451,6 +452,14 @@ async function loadChannels(env: Env, userId: string, onlyId?: string) {
   )
     .bind(...binds)
     .all<any>();
+  const { results: categories } = await env.DB.prepare(
+    `SELECT k.* FROM categories k JOIN channel_members m ON m.channel_id = k.channel_id
+     WHERE m.user_id = ? ${onlyId ? 'AND k.channel_id = ?' : ''} ORDER BY k.position, k.created_at`,
+  )
+    .bind(...binds)
+    .all<any>()
+    // Deployed before `npm run db:migrate:remote` added categories: no categories yet.
+    .catch(() => ({ results: [] as any[] }));
   // For DMs, include the other person so the app can show their name and photo.
   const { results: peers } = await env.DB.prepare(
     `SELECT m.channel_id, u.id, u.name, u.username, u.avatar_url
@@ -467,6 +476,7 @@ async function loadChannels(env: Env, userId: string, onlyId?: string) {
       ch,
       rooms.filter((r) => r.channel_id === ch.id).map(toRoom),
       peer ? toPublicUser(peer) : undefined,
+      categories.filter((k) => k.channel_id === ch.id).map(toCategory),
     );
   });
 }
@@ -657,11 +667,11 @@ app.post('/channels/:id/rooms', auth, requireRole('admin'), async (c) => {
   return c.json(toRoom(room), 201);
 });
 
-/** Rename a room, and/or (voice rooms) turn watch parties on or off. */
+/** Rename a room, (voice rooms) turn watch parties on or off, move it to a category, set slow mode. */
 app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) => {
   const id = c.req.param('id');
   const roomId = c.req.param('roomId');
-  const { name, allowParty } = await c.req.json<{ name?: string; allowParty?: boolean }>();
+  const { name, allowParty, categoryId, slowMode } = await c.req.json<{ name?: string; allowParty?: boolean; categoryId?: string | null; slowMode?: number }>();
   const room = await c.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id).first<{ kind: string }>();
   if (!room) return c.json({ error: 'not_found' }, 404);
   const updates: D1PreparedStatement[] = [];
@@ -676,6 +686,18 @@ app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) =
     if (room.kind !== 'voice') return c.json({ error: 'not_a_voice_room' }, 400);
     updates.push(c.env.DB.prepare('UPDATE rooms SET allow_party = ? WHERE id = ? AND channel_id = ?').bind(allowParty ? 1 : 0, roomId, id));
   }
+  if (categoryId !== undefined) {
+    if (categoryId !== null) {
+      const cat = await c.env.DB.prepare('SELECT 1 FROM categories WHERE id = ? AND channel_id = ?').bind(String(categoryId), id).first();
+      if (!cat) return c.json({ error: 'no_such_category' }, 400);
+    }
+    updates.push(c.env.DB.prepare('UPDATE rooms SET category_id = ? WHERE id = ? AND channel_id = ?').bind(categoryId, roomId, id));
+  }
+  if (slowMode !== undefined) {
+    if (room.kind !== 'text') return c.json({ error: 'not_a_chat_room' }, 400);
+    const seconds = Math.max(0, Math.min(6 * 3600, Math.floor(Number(slowMode) || 0)));
+    updates.push(c.env.DB.prepare('UPDATE rooms SET slow_mode = ? WHERE id = ? AND channel_id = ?').bind(seconds, roomId, id));
+  }
   if (!updates.length) return c.json({ error: 'nothing_to_change' }, 400);
   await c.env.DB.batch(updates);
   const channelHub = hub(c.env, id);
@@ -685,6 +707,55 @@ app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) =
       await channelHub.notify({ t: 'channel.changed' });
     })(),
   );
+  return c.json({ ok: true });
+});
+
+// ─── Categories ────────────────────────────────────────────────────────────────
+
+app.post('/channels/:id/categories', auth, requireRole('admin'), limit('create', 20), async (c) => {
+  const id = c.req.param('id');
+  const { name } = await c.req.json<{ name?: string }>();
+  const clean = String(name ?? '').trim().slice(0, 40);
+  if (!clean) return c.json({ error: 'name_required' }, 400);
+  const count = await c.env.DB.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(position), -1) AS last FROM categories WHERE channel_id = ?').bind(id).first<{ n: number; last: number }>();
+  if ((count?.n ?? 0) >= 50) return c.json({ error: 'too_many' }, 400);
+  const category = { id: newId(), channel_id: id, name: clean, position: (count?.last ?? -1) + 1, created_at: Date.now() };
+  await c.env.DB.prepare('INSERT INTO categories (id, channel_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(category.id, id, category.name, category.position, category.created_at)
+    .run();
+  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  return c.json(toCategory(category), 201);
+});
+
+/** Rename a category, or move it up/down (`position`). */
+app.patch('/channels/:id/categories/:catId', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const catId = c.req.param('catId');
+  const { name, position } = await c.req.json<{ name?: string; position?: number }>();
+  const updates: D1PreparedStatement[] = [];
+  if (name !== undefined) {
+    const clean = String(name).trim().slice(0, 40);
+    if (!clean) return c.json({ error: 'name_required' }, 400);
+    updates.push(c.env.DB.prepare('UPDATE categories SET name = ? WHERE id = ? AND channel_id = ?').bind(clean, catId, id));
+  }
+  if (position !== undefined) {
+    updates.push(c.env.DB.prepare('UPDATE categories SET position = ? WHERE id = ? AND channel_id = ?').bind(Math.floor(Number(position) || 0), catId, id));
+  }
+  if (!updates.length) return c.json({ error: 'nothing_to_change' }, 400);
+  await c.env.DB.batch(updates);
+  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
+  return c.json({ ok: true });
+});
+
+/** Deleting a category keeps its rooms: they move back to the plain lists. */
+app.delete('/channels/:id/categories/:catId', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const catId = c.req.param('catId');
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE rooms SET category_id = NULL WHERE category_id = ? AND channel_id = ?').bind(catId, id),
+    c.env.DB.prepare('DELETE FROM categories WHERE id = ? AND channel_id = ?').bind(catId, id),
+  ]);
+  c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   return c.json({ ok: true });
 });
 
