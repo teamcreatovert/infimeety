@@ -6,6 +6,7 @@ import { onRemoteConfig } from './remote';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
+import { clock, setPenalty, usePenalties } from './penalties';
 import { onSound, onSoundStop } from './soundboard';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
@@ -192,12 +193,28 @@ function handle(hub: HubClient, msg: ServerMsg) {
 
     case 'error':
       return toast({ kind: 'error', title: msg.message });
+    case 'penalty': {
+      const knew = usePenalties.getState()[cid]?.voiceUntil;
+      setPenalty(cid, { chatUntil: msg.chatUntil, voiceUntil: msg.voiceUntil });
+      // The mute lifts by itself: when it ends, tell the hub, which then unmutes you for everyone.
+      if (msg.voiceUntil && msg.voiceUntil !== knew && useVoice.getState().channelId === cid) {
+        const left = msg.voiceUntil - Date.now();
+        toast({ kind: 'info', title: 'You’re muted', body: `A rule caught you. You can talk again in ${clock(Math.ceil(left / 1000))}.` });
+        setTimeout(() => voice.refreshState(), left + 600);
+      }
+      return;
+    }
     case 'chat.rejected': {
       useMessages.getState().dropPending(msg.roomId, msg.nonce);
+      if (msg.reason === 'trigger') return;
+      if (msg.reason === 'timeout') {
+        setPenalty(cid, { chatUntil: Date.now() + (msg.retryIn ?? 0) * 1000 });
+        return toast({ kind: 'info', title: 'You’re chat-banned', body: `You can chat again in ${clock(msg.retryIn ?? 0)}.` });
+      }
       if (msg.reason === 'automod') return toast({ kind: 'error', title: 'AutoMod blocked your message', body: AUTOMOD_WHY[msg.detail] ?? `It broke this channel’s rules (${msg.detail}).` });
       // Line the composer's countdown up with the server's.
       const slow = useChannels.getState().channels.find((c) => c.id === cid)?.rooms.find((r) => r.id === msg.roomId)?.slowMode ?? 0;
-      noteSent(msg.roomId, Date.now() + msg.retryIn * 1000 - slow * 1000);
+      noteSent(msg.roomId, Date.now() + (msg.retryIn ?? 0) * 1000 - slow * 1000);
       return toast({ kind: 'info', title: 'Slow mode is on here', body: `You can post again in ${msg.retryIn} s.` });
     }
   }

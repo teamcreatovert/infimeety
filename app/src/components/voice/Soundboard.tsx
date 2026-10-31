@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Drum, Play, Search, Square, Star, Volume2 } from 'lucide-react';
+import { Play, Search, Speaker, Square, Star, Volume1, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { spring } from '@/lib/motion';
@@ -44,7 +44,7 @@ export function SoundboardPanel() {
   return (
     <div className="flex w-[400px] max-w-[calc(100vw-24px)] flex-col">
       <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-        <Drum size={15} className="text-accent" />
+        <Speaker size={15} className="text-accent" />
         <span className="flex-1 text-[13.5px] font-semibold">Soundboard</span>
         <Segmented
           id="soundboard-tab"
@@ -118,7 +118,7 @@ export function SoundboardPanel() {
           }}
         />
         <span className="shrink-0 text-[12px] text-fg-2">Hear others’ sounds</span>
-        <Volume2 size={14} className="ml-auto shrink-0 text-fg-3" />
+        <Volume1 size={14} className="ml-auto shrink-0 text-fg-3" />
         <Slider value={volume} onChange={(v) => useSettings.getState().set({ soundboardVolume: v })} className="w-[92px]" />
       </div>
     </div>
@@ -189,7 +189,7 @@ export function SoundBursts() {
             transition={spring}
             className="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12.5px] glass-pop"
           >
-            <Drum size={13} className="text-accent" />
+            <Speaker size={13} className="text-accent" />
             <span className="font-semibold">{b.who}</span>
             <span className="max-w-[180px] truncate text-fg-2">{b.name}</span>
           </motion.div>

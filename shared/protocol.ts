@@ -82,9 +82,25 @@ export interface AutoModRules {
   mentions: number;
   /** Block the same message sent 3 times within 30 s. */
   spam: boolean;
+  /** Fun rules: saying one of these words in chat gets you a chat ban, a voice mute or a move. */
+  triggers?: AutoModTrigger[];
 }
 
-export const DEFAULT_AUTOMOD: AutoModRules = { words: [], links: false, allowedSites: [], mentions: 0, spam: false };
+export type TriggerAction = 'chatBan' | 'voiceMute' | 'move' | 'disconnect';
+
+export interface AutoModTrigger {
+  id: string;
+  words: string[];
+  action: TriggerAction;
+  /** How long a chat ban or voice mute lasts. */
+  seconds: number;
+  /** Where "move" sends them (a voice room). */
+  roomId?: string;
+  /** Admins and moderators get caught too. */
+  everyone?: boolean;
+}
+
+export const DEFAULT_AUTOMOD: AutoModRules = { words: [], links: false, allowedSites: [], mentions: 0, spam: false, triggers: [] };
 
 /** A collapsible group of rooms in a channel's sidebar. */
 export interface Category {
@@ -211,6 +227,8 @@ export interface VoiceParticipant extends VoiceLocalState {
   roomId: string;
   /** Effective server mute: set by an admin directly or through a room-wide mute. */
   serverMuted: boolean;
+  /** Muted by a fun rule until then (ms); `serverMuted` covers it until it passes. */
+  mutedUntil?: number;
   joinedAt: number;
 }
 
@@ -391,4 +409,8 @@ export type ServerMsg =
   | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'slow'; retryIn: number }
   /** AutoMod blocked it: `detail` says which rule ("a blocked word", "links", …). */
   | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'automod'; detail: string }
+  /** Chat-banned by a fun rule for `retryIn` more seconds; or ('trigger') the message set off a rule. */
+  | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'timeout' | 'trigger'; retryIn?: number }
+  /** Your fun-rule penalties in this channel (ms timestamps; absent = none). */
+  | { t: 'penalty'; chatUntil?: number; voiceUntil?: number }
   | { t: 'pong' };

@@ -1,9 +1,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
-import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
-import { blockedBy, parseRules, type History } from './automod';
-import { BOT_DAILY_LIMIT, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
+import { blockedBy, parseRules, triggeredBy, type History } from './automod';
+import { BOT_DAILY_LIMIT, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, asRole, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
@@ -58,6 +58,8 @@ export class ChannelHub extends DurableObject<Env> {
   private lastPost = new Map<string, number>();
   /** This channel's AutoMod rules, loaded on first use (undefined: not loaded yet). */
   private automod: AutoModRules | undefined;
+  /** Fun-rule penalties by user (ms timestamps), kept in storage so they outlast a restart. */
+  private penalties: Map<string, { chat?: number; voice?: number }> | null = null;
   private recentPosts: History = new Map();
   private meeting: MeetingState | null = null;
   private promoting = false;
@@ -109,6 +111,8 @@ export class ChannelHub extends DurableObject<Env> {
 
     this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
+    const pen = await this.penaltiesOf(peer.userId);
+    if (pen.chat || pen.voice) this.send(server, { t: 'penalty', chatUntil: pen.chat, voiceUntil: pen.voice });
 
     return new Response(null, { status: 101, webSocket: client, headers: { 'Sec-WebSocket-Protocol': 'infimeety' } });
   }
@@ -291,6 +295,7 @@ export class ChannelHub extends DurableObject<Env> {
           this.send(other, { t: 'voice.kicked', reason: 'elsewhere' });
         }
         const s = msg.state ?? {};
+        const mutedUntil = (await this.penaltiesOf(me.userId)).voice;
         this.save(ws, {
           ...me,
           voice: {
@@ -303,6 +308,7 @@ export class ChannelHub extends DurableObject<Env> {
             screen: !!s.screen,
             streams: streamIds(s.streams),
             forceMuted: false,
+            ...(mutedUntil ? { mutedUntil } : {}),
             joinedAt: Date.now(),
           },
         });
@@ -362,7 +368,7 @@ export class ChannelHub extends DurableObject<Env> {
       case 'sound.play': {
         // Soundboard: relayed live to the others in your voice room, never stored. Muted people stay quiet.
         const v = me.voice;
-        if (!v || v.forceMuted || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) return;
+        if (!v || v.forceMuted || (v.mutedUntil ?? 0) > Date.now() || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) return;
         const sound = cleanSound(msg.sound);
         if (!sound) return;
         for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound', peerId: me.peerId, userId: me.userId, sound });
@@ -491,6 +497,13 @@ export class ChannelHub extends DurableObject<Env> {
       const wait = last + slow * 1000 - Date.now();
       if (wait > 0) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'slow', retryIn: Math.ceil(wait / 1000) });
     }
+    const banned = (await this.penaltiesOf(me.userId)).chat;
+    if (banned) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'timeout', retryIn: Math.ceil((banned - Date.now()) / 1000) });
+    const trigger = content ? triggeredBy(await this.rules(me.channelId), content, canModerateRole(me.role)) : null;
+    if (trigger) {
+      this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'trigger' });
+      return this.punish(me, trigger, msg.roomId);
+    }
     if (content && !canModerateRole(me.role)) {
       const blocked = blockedBy(await this.rules(me.channelId), content, me.userId, this.recentPosts);
       if (blocked) {
@@ -521,6 +534,84 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   // ─── AI bots ─────────────────────────────────────────────────────────────────
+
+  /** `userId`'s fun-rule penalties that are still running. */
+  private async penaltiesOf(userId: string) {
+    this.penalties ??= new Map(Object.entries((await this.ctx.storage.get<Record<string, { chat?: number; voice?: number }>>('penalties')) ?? {}));
+    const p = this.penalties.get(userId) ?? {};
+    const now = Date.now();
+    return { chat: (p.chat ?? 0) > now ? p.chat : undefined, voice: (p.voice ?? 0) > now ? p.voice : undefined };
+  }
+
+  private async setPenalty(userId: string, kind: 'chat' | 'voice', until: number) {
+    await this.penaltiesOf(userId);
+    const now = Date.now();
+    const next: Record<string, { chat?: number; voice?: number }> = {};
+    for (const [u, p] of this.penalties!) {
+      const keep = { ...((p.chat ?? 0) > now ? { chat: p.chat } : {}), ...((p.voice ?? 0) > now ? { voice: p.voice } : {}) };
+      if (keep.chat || keep.voice) next[u] = keep;
+    }
+    next[userId] = { ...next[userId], [kind]: until };
+    this.penalties = new Map(Object.entries(next));
+    await this.ctx.storage.put('penalties', next);
+    const mine = next[userId];
+    for (const s of this.sockets()) if (this.peer(s).userId === userId) this.send(s, { t: 'penalty', chatUntil: mine.chat, voiceUntil: mine.voice });
+  }
+
+  /** A fun rule went off: the penalty, then a plain notice from Nova in the room where it happened. */
+  private async punish(me: Peer, t: AutoModTrigger, roomId: string) {
+    const until = Date.now() + t.seconds * 1000;
+    const name = (await this.env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(me.userId).first<{ name: string }>())?.name ?? 'Someone';
+    const length = t.seconds % 60 === 0 ? `${t.seconds / 60} minute${t.seconds === 60 ? '' : 's'}` : `${t.seconds} seconds`;
+    const inVoice = this.sockets().filter((s) => this.peer(s).userId === me.userId && this.peer(s).voice);
+    let outcome: string;
+    switch (t.action) {
+      case 'chatBan':
+        await this.setPenalty(me.userId, 'chat', until);
+        outcome = `is chat-banned for ${length}`;
+        break;
+      case 'voiceMute':
+        await this.setPenalty(me.userId, 'voice', until);
+        for (const s of inVoice) this.save(s, { ...this.peer(s), voice: { ...this.peer(s).voice!, mutedUntil: until } });
+        if (inVoice.length) await this.broadcastVoice();
+        outcome = `is muted for ${length}`;
+        break;
+      case 'move': {
+        const room = t.roomId ? await this.access(t.roomId, me.channelId) : null;
+        if (room?.kind !== 'voice' || !inVoice.length || inVoice.every((s) => this.peer(s).voice?.roomId === t.roomId)) return;
+        for (const s of inVoice) this.send(s, { t: 'voice.moved', roomId: t.roomId! });
+        const target = await this.env.DB.prepare('SELECT name FROM rooms WHERE id = ?').bind(t.roomId).first<{ name: string }>();
+        outcome = `was sent to ${target?.name ?? 'another room'}`;
+        break;
+      }
+      case 'disconnect':
+        if (!inVoice.length) return;
+        for (const s of inVoice) {
+          this.save(s, { ...this.peer(s), voice: null });
+          this.send(s, { t: 'voice.kicked' });
+        }
+        await this.broadcastVoice();
+        outcome = 'was disconnected from voice';
+        break;
+    }
+    void audit(this.env, me.channelId, null, 'automod.trigger', me.userId, { action: t.action, seconds: t.seconds, room: roomId });
+    const notice: Message = {
+      id: newId(),
+      roomId,
+      userId: NOVA_ID,
+      content: `${name} said a forbidden word and ${outcome}.`,
+      attachments: [],
+      replyTo: null,
+      reactions: {},
+      createdAt: Date.now(),
+      editedAt: null,
+    };
+    await this.env.DB.prepare('INSERT INTO messages (id, room_id, user_id, content, attachments, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(notice.id, notice.roomId, notice.userId, notice.content, null, null, notice.createdAt)
+      .run();
+    await this.broadcastRoom(roomId, me.channelId, { t: 'member.updated', user: { id: NOVA_ID, name: 'Nova', username: null, avatarUrl: null, bot: true } });
+    await this.broadcastRoom(roomId, me.channelId, { t: 'chat.new', message: notice });
+  }
 
   /** The Worker changed this channel's bots: load them again when next needed. */
   async botsChanged() {
@@ -829,7 +920,7 @@ export class ChannelHub extends DurableObject<Env> {
       if (!p.voice || p.userId === exceptUser) continue;
       const { forceMuted, ...v } = p.voice;
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
-      participants.push({ ...v, serverMuted: forceMuted || roomMuted });
+      participants.push({ ...v, serverMuted: forceMuted || roomMuted || (v.mutedUntil ?? 0) > Date.now() });
     }
     return { participants, mutedRooms: [...this.mutedRooms] };
   }

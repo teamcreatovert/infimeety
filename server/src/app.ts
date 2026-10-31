@@ -829,12 +829,12 @@ app.delete('/channels/:id/bots/:botId', auth, requireRole('admin'), async (c) =>
 
 // ─── AutoMod ───────────────────────────────────────────────────────────────────
 
-app.get('/channels/:id/automod', auth, requireRole('admin'), async (c) => {
+app.get('/channels/:id/automod', auth, requireRole('moderator'), async (c) => {
   const row = await c.env.DB.prepare('SELECT rules FROM automod WHERE channel_id = ?').bind(c.req.param('id')).first<{ rules: string }>();
   return c.json(parseRules(row?.rules));
 });
 
-app.put('/channels/:id/automod', auth, requireRole('admin'), limit('automod', 30), async (c) => {
+app.put('/channels/:id/automod', auth, requireRole('moderator'), limit('automod', 30), async (c) => {
   const id = c.req.param('id');
   const rules = cleanRules(await c.req.json());
   await c.env.DB.prepare(

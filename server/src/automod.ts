@@ -1,4 +1,4 @@
-import { DEFAULT_AUTOMOD, type AutoModRules } from '../../shared/protocol';
+import { DEFAULT_AUTOMOD, type AutoModRules, type AutoModTrigger, type TriggerAction } from '../../shared/protocol';
 
 /** Rules as an admin sent them, made safe to store: sizes capped, words trimmed and lower-cased. */
 export function cleanRules(input: unknown): AutoModRules {
@@ -11,7 +11,35 @@ export function cleanRules(input: unknown): AutoModRules {
     allowedSites: list(r.allowedSites, 50, 100).map((s) => s.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')),
     mentions: Math.max(0, Math.min(50, Math.floor(Number(r.mentions) || 0))),
     spam: r.spam === true,
+    triggers: (Array.isArray(r.triggers) ? r.triggers : []).slice(0, 20).map(cleanTrigger).filter((t): t is AutoModTrigger => !!t),
   };
+}
+
+const ACTIONS: TriggerAction[] = ['chatBan', 'voiceMute', 'move', 'disconnect'];
+
+function cleanTrigger(input: unknown): AutoModTrigger | null {
+  const t = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const words = [...new Set((Array.isArray(t.words) ? t.words : []).map((w) => String(w ?? '').trim().toLowerCase().slice(0, 40)).filter(Boolean))].slice(0, 30);
+  const action = ACTIONS.includes(t.action as TriggerAction) ? (t.action as TriggerAction) : null;
+  if (!words.length || !action) return null;
+  return {
+    id: typeof t.id === 'string' && /^[\w-]{1,32}$/.test(t.id) ? t.id : crypto.randomUUID().slice(0, 8),
+    words,
+    action,
+    seconds: Math.max(10, Math.min(3600, Math.floor(Number(t.seconds) || 60))),
+    ...(action === 'move' && typeof t.roomId === 'string' ? { roomId: t.roomId.slice(0, 64) } : {}),
+    ...(t.everyone === true ? { everyone: true } : {}),
+  };
+}
+
+/** The first fun rule this message sets off, if any (whole words, like blocked words). */
+export function triggeredBy(rules: AutoModRules, content: string, moderator: boolean): AutoModTrigger | null {
+  const text = content.normalize('NFKC');
+  for (const t of rules.triggers ?? []) {
+    if (moderator && !t.everyone) continue;
+    if (wordPattern(t.words)?.test(text)) return t;
+  }
+  return null;
 }
 
 export function parseRules(json: string | null | undefined): AutoModRules {

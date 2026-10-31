@@ -6,7 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clapperboard,
-  Drum,
+  Speaker,
   Ellipsis,
   EyeOff,
   HeadphoneOff,
@@ -43,6 +43,7 @@ import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty } from '@/lib/party';
 import { useFeatureOn } from '@/lib/remote';
+import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -703,6 +704,7 @@ function Dock({
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const serverMuted = useVoice((s) => s.serverMuted);
+  const muteLeft = useSecondsLeft(usePenalties((s) => s[channel.id]?.voiceUntil));
   const camera = useVoice((s) => s.camera);
   const screen = useVoice((s) => s.screen);
   const roomMuted = useChannels((s) => s.voice[channel.id]?.mutedRooms.includes(room.id) ?? false);
@@ -737,8 +739,8 @@ function Dock({
         className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[22px] p-1.5 glass-pop"
       >
         <SoundBursts />
-        <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
-          {micOff ? <MicOff size={20} /> : <Mic size={20} />}
+        <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
+          {muteLeft ? <span className="text-[12px] font-semibold tabular-nums">{clock(muteLeft)}</span> : micOff ? <MicOff size={20} /> : <Mic size={20} />}
         </DockButton>
         <DockButton label={camera ? 'Turn camera off' : 'Turn camera on'} state={camera ? 'on' : 'normal'} onClick={() => void voice.toggleCamera()}>
           {camera ? <Video size={20} /> : <VideoOff size={20} />}
@@ -774,7 +776,7 @@ function Dock({
             {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
           {soundboard && (
-            <MenuItem icon={<Drum size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
+            <MenuItem icon={<Speaker size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
               Soundboard
             </MenuItem>
           )}
@@ -811,8 +813,8 @@ function Dock({
       className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-2 glass-pop"
     >
       <SoundBursts />
-      <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
-        {micOff ? <MicOff size={19} /> : <Mic size={19} />}
+      <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
+        {muteLeft ? <span className="text-[12px] font-semibold tabular-nums">{clock(muteLeft)}</span> : micOff ? <MicOff size={19} /> : <Mic size={19} />}
       </DockButton>
       <DockButton label={deafened ? 'Undeafen' : 'Deafen'} state={deafened ? 'off' : 'normal'} onClick={() => voice.toggleDeafen()}>
         {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
@@ -849,7 +851,7 @@ function Dock({
       )}
       {soundboard && (
         <DockButton label="Soundboard" state={soundMenu ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
-          <Drum size={19} />
+          <Speaker size={19} />
         </DockButton>
       )}
       {isAdmin && (

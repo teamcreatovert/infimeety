@@ -24,6 +24,7 @@ import { useMessages, type LocalMessage } from '@/stores/messages';
 import { toast, useUI } from '@/stores/ui';
 import { canModerateRole } from '../../../../shared/protocol';
 import { noteSent, slowLabel, useSlowWait } from '@/lib/slowMode';
+import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
 
 interface Staged {
   file: SharedFile;
@@ -118,6 +119,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const replyAuthor = useChannels((s) => (replyTo ? s.users[replyTo.userId] : undefined));
   const [text, setText] = useState(() => drafts.get(room.id) ?? '');
   const slowWait = useSlowWait(room, channel.role);
+  const banLeft = useSecondsLeft(usePenalties((s) => s[channel.id]?.chatUntil));
   const [staged, setStaged] = useState<Staged[]>([]);
   const [emoji, setEmoji] = useState<Anchor | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -282,7 +284,7 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
 
   const send = () => {
     const content = text.trim();
-    if ((!content && !staged.length) || !me || slowWait) return;
+    if ((!content && !staged.length) || !me || slowWait || banLeft) return;
     const attachments: Attachment[] = staged.map((s) => ({
       id: s.file.id,
       ownerId: me.id,
@@ -466,8 +468,11 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
               }
               if (e.key === 'Escape' && replyTo) onCancelReply();
             }}
+            disabled={banLeft > 0}
             placeholder={
-              slowWait
+              banLeft
+                ? `You’re chat-banned. You can chat again in ${clock(banLeft)}`
+                : slowWait
                 ? `Slow mode: you can post again in ${slowLabel(slowWait)}`
                 : channel.kind === 'dm'
                   ? `Message ${channel.peer?.name ?? 'your friend'}`

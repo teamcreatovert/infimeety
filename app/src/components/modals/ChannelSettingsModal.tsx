@@ -199,7 +199,7 @@ export function ChannelSettingsModal() {
             })}
         </Group>
 
-        {(channel.role === 'owner' || channel.role === 'admin') && <AutoModSettings channelId={channel.id} />}
+        {channel.role !== 'member' && <AutoModSettings channelId={channel.id} voiceRooms={channel.rooms.filter((r) => r.kind === 'voice')} />}
         <BotSettings channel={channel} />
         {(channel.role === 'owner' || channel.role === 'admin') && <AuditLog channelId={channel.id} />}
 

@@ -473,6 +473,11 @@ class VoiceEngine {
     };
   }
 
+  /** Sends your voice state again, so the hub re-checks a fun-rule mute that just ended. */
+  refreshState() {
+    this.pushState();
+  }
+
   private pushState() {
     if (this.inCall) this.hub?.send({ t: 'voice.update', state: this.localState() });
   }
