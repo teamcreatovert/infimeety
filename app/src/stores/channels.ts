@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Channel, Member, PublicUser, Room, VoiceSnapshot } from '../../../shared/protocol';
+import type { Channel, Member, PublicUser, Role, Room, VoiceSnapshot } from '../../../shared/protocol';
 import { api } from '@/lib/api';
 import type { HubStatus } from '@/lib/hub';
 
@@ -45,7 +45,7 @@ interface ChannelsState {
   /** Admins: watch parties on or off in a voice room (ending one that's running). */
   setRoomParty: (channelId: string, roomId: string, allowParty: boolean) => Promise<void>;
   /** Admins: move a room into a category (null: out of it), or set a chat room's slow mode (seconds). */
-  setRoom: (channelId: string, roomId: string, patch: { categoryId?: string | null; slowMode?: number }) => Promise<void>;
+  setRoom: (channelId: string, roomId: string, patch: { categoryId?: string | null; slowMode?: number; viewRole?: Role; postRole?: Role }) => Promise<void>;
   addCategory: (channelId: string, name: string) => Promise<void>;
   renameCategory: (channelId: string, categoryId: string, name: string) => Promise<void>;
   /** Moves a category one place up (-1) or down (1). */

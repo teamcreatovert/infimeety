@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { outranks, type Member, type Role } from '../../../../shared/protocol';
 import { prepareAvatar } from '../auth/AvatarEditor';
 import { EmojiPicker } from '../chat/EmojiPicker';
+import { AuditLog } from './AuditLog';
 import { AutoModSettings } from './AutoModSettings';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, Modal, Popover, type Anchor } from '../ui/overlay';
@@ -198,6 +199,7 @@ export function ChannelSettingsModal() {
         </Group>
 
         {(channel.role === 'owner' || channel.role === 'admin') && <AutoModSettings channelId={channel.id} />}
+        {(channel.role === 'owner' || channel.role === 'admin') && <AuditLog channelId={channel.id} />}
 
         {isOwner && (
           <Group title="Danger zone">

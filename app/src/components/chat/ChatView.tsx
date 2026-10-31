@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { PartyBanner } from '../voice/PartyBanner';
-import { Hash, Users } from 'lucide-react';
+import { Hash, Megaphone, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { Channel, PublicUser, Room } from '../../../../shared/protocol';
+import { atLeast, type Channel, type PublicUser, type Room } from '../../../../shared/protocol';
 import { MobileBack } from '../shell/MobileBack';
 import { IconButton } from '../ui/primitives';
 import { Composer, TypingIndicator } from './Composer';
@@ -58,7 +58,15 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
         {!compact && <PartyBanner channel={channel} />}
         <MessageList channel={channel} room={room} onReply={setReplyTo} compact={compact} dmPeer={dmPeer} />
         <TypingIndicator roomId={room.id} />
-        <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
+        {atLeast(channel.role, room.postRole) ? (
+          <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
+        ) : (
+          // Only moderators or admins post here (an announcements room): members read.
+          <div className="mx-4 mb-4 mt-1 flex items-center justify-center gap-2 rounded-[14px] bg-fill-1 px-4 py-3 text-[13px] text-fg-2 shadow-[inset_0_0_0_0.5px_var(--hairline-strong)] compact:mx-2.5 compact:mb-2.5">
+            <Megaphone size={15} className="shrink-0 text-fg-3" />
+            Only {room.postRole === 'admin' ? 'admins' : 'moderators and admins'} can post in #{room.name}
+          </div>
+        )}
       </div>
       {/* Phones: the member list slides over the chat instead of squeezing it. */}
       <AnimatePresence initial={false}>
