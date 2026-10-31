@@ -10,6 +10,8 @@ export type Role = 'owner' | 'admin' | 'moderator' | 'member';
 export const ROLE_RANK: Record<Role, number> = { owner: 3, admin: 2, moderator: 1, member: 0 };
 /** Moderators and up. */
 export const canModerateRole = (role: Role | null | undefined) => !!role && ROLE_RANK[role] >= ROLE_RANK.moderator;
+/** Whether `role` is `min` or higher (a room's view/post permission). */
+export const atLeast = (role: Role | null | undefined, min: Role | null | undefined) => ROLE_RANK[role ?? 'member'] >= ROLE_RANK[min ?? 'member'];
 /** Whether `me` can act on someone with `target`'s role: only on lower roles. */
 export const outranks = (me: Role | null | undefined, target: Role | null | undefined) => !!me && ROLE_RANK[me] > ROLE_RANK[target ?? 'member'];
 
@@ -49,6 +51,22 @@ export interface Room {
   categoryId?: string | null;
   /** Chat rooms: seconds each person waits between messages (0 = off). Moderators are exempt. */
   slowMode?: number;
+  /** The lowest role that sees this room ('member' = everyone). Others don't get it at all. */
+  viewRole?: Role;
+  /** The lowest role that can post here (chat rooms) or join (voice rooms). */
+  postRole?: Role;
+}
+
+/** One line of a channel's audit log. */
+export interface AuditEntry {
+  id: string;
+  actorId: string | null;
+  /** e.g. 'room.create', 'room.update', 'member.role', 'message.delete', 'automod.block'. */
+  action: string;
+  /** A room, category or user id, depending on the action. */
+  target: string | null;
+  detail: Record<string, unknown>;
+  createdAt: number;
 }
 
 /** AutoMod: what a channel blocks before a message is posted. Moderators and up are exempt. */

@@ -12,7 +12,10 @@ import {
   FolderPlus,
   Ellipsis,
   Hash,
+  Eye,
   Headphones,
+  Lock,
+  Megaphone,
   HeadphoneOff,
   LogOut,
   Mic,
@@ -34,7 +37,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import type { Category, Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
+import { atLeast, type Category, type Channel, type Role, type Room, type VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { ChannelIcon } from '../ui/ChannelIcon';
 import { MenuItem, MenuSeparator, Popover, SubMenu, Tooltip, type Anchor } from '../ui/overlay';
@@ -179,6 +182,24 @@ function Section({ title, onAdd, children }: { title: string; onAdd?: () => void
       </div>
       <div className="flex flex-col gap-px">{children}</div>
     </div>
+  );
+}
+
+/** Room permissions: the lowest role allowed. */
+const ROOM_ROLES: Role[] = ['member', 'moderator', 'admin'];
+const ROLE_LABELS: Record<Role, string> = { member: 'Everyone', moderator: 'Moderators and up', admin: 'Admins only', owner: 'Only the owner' };
+const ROLE_GROUPS: Record<Role, string> = { member: 'members', moderator: 'moderators and admins', admin: 'admins', owner: 'the owner' };
+
+/** A lock on private rooms, a megaphone where only some people can post or join. */
+function RoomBadges({ room }: { room: Room }) {
+  const hidden = (room.viewRole ?? 'member') !== 'member';
+  const limited = (room.postRole ?? 'member') !== 'member';
+  if (!hidden && !limited) return null;
+  return (
+    <span className="relative flex shrink-0 items-center gap-1 text-fg-3" title={[hidden && `Only ${ROLE_GROUPS[room.viewRole!]} see this room`, limited && `Only ${ROLE_GROUPS[room.postRole!]} can ${room.kind === 'text' ? 'post' : 'join'}`].filter(Boolean).join('. ')}>
+      {hidden && <Lock size={11} />}
+      {limited && <Megaphone size={11} />}
+    </span>
   );
 }
 
@@ -443,7 +464,7 @@ function RoomButton({
     }
   };
 
-  const change = (patch: { categoryId?: string | null; slowMode?: number }) => {
+  const change = (patch: { categoryId?: string | null; slowMode?: number; viewRole?: Role; postRole?: Role }) => {
     setMenu(null);
     void useChannels
       .getState()
@@ -515,6 +536,20 @@ function RoomButton({
             ))}
           </SubMenu>
         )}
+        <SubMenu icon={<Eye size={15} />} label="Who can see it">
+          {ROOM_ROLES.map((r) => (
+            <MenuItem key={r} trailing={(room.viewRole ?? 'member') === r ? <Check size={13} /> : undefined} onClick={() => change({ viewRole: r })}>
+              {ROLE_LABELS[r]}
+            </MenuItem>
+          ))}
+        </SubMenu>
+        <SubMenu icon={<Megaphone size={15} />} label={room.kind === 'text' ? 'Who can post' : 'Who can join'}>
+          {ROOM_ROLES.map((r) => (
+            <MenuItem key={r} trailing={(room.postRole ?? 'member') === r ? <Check size={13} /> : undefined} onClick={() => change({ postRole: r })}>
+              {ROLE_LABELS[r]}
+            </MenuItem>
+          ))}
+        </SubMenu>
         {!!channel.categories?.length && (
           <SubMenu icon={<FolderInput size={15} />} label="Move to category">
             <MenuItem trailing={!room.categoryId ? <Check size={13} /> : undefined} onClick={() => change({ categoryId: null })}>
@@ -580,6 +615,7 @@ function TextRoomRow({ channel, room, canDelete }: { channel: Channel; room: Roo
     >
       <Hash size={15} className="relative shrink-0 text-fg-3" />
       <span className={clsx('relative flex-1 truncate text-left', unread > 0 && !active && 'font-semibold text-fg')}>{room.name}</span>
+      <RoomBadges room={room} />
       {unread > 0 && !active && (
         <span className="relative grid h-[17px] min-w-[17px] place-items-center rounded-full bg-accent px-1 text-[10.5px] font-bold text-white">{unread}</span>
       )}
@@ -600,7 +636,9 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
   const open = () => {
     useChannels.getState().selectRoom(channel.id, room.id);
     showMain();
-    if (!connected) void voice.join(channel.id, room.id);
+    if (connected) return;
+    if (!atLeast(channel.role, room.postRole)) return toast({ kind: 'info', title: `Only ${ROLE_GROUPS[room.postRole ?? 'member']} can join ${room.name}` });
+    void voice.join(channel.id, room.id);
   };
 
   return (
@@ -608,6 +646,7 @@ function VoiceRoomRow({ channel, room }: { channel: Channel; room: Room }) {
       <RoomButton channel={channel} room={room} active={active} onClick={open}>
         {connected ? <AudioLines size={15} className="relative shrink-0 text-success" /> : <Volume2 size={15} className="relative shrink-0 text-fg-3" />}
         <span className="relative flex-1 truncate text-left">{room.name}</span>
+        <RoomBadges room={room} />
         {roomMuted && <MicOff size={12} className="relative text-danger" />}
         {participants.length > 0 && <span className="relative text-[11px] tabular-nums text-fg-3">{participants.length}</span>}
       </RoomButton>

@@ -1,8 +1,8 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
-import { canModerateRole, outranks } from '../../shared/protocol';
-import type { Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
+import { atLeast, canModerateRole, outranks } from '../../shared/protocol';
+import type { AuditEntry, Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
 import {
   authorizeUrl,
   callbackCsp,
@@ -48,7 +48,9 @@ import {
   toPublicUser,
   toRoom,
   toCategory,
+  asRole,
 } from './util';
+import { audit } from './audit';
 import { cleanRules, parseRules } from './automod';
 
 /**
@@ -475,12 +477,17 @@ async function loadChannels(env: Env, userId: string, onlyId?: string) {
     const peer = peers.find((p) => p.channel_id === ch.id);
     return toChannel(
       ch,
-      rooms.filter((r) => r.channel_id === ch.id).map(toRoom),
+      // Rooms this person's role can't see aren't sent at all.
+      rooms.filter((r) => r.channel_id === ch.id && atLeast(ch.role, asRole(r.view_role))).map(toRoom),
       peer ? toPublicUser(peer) : undefined,
       categories.filter((k) => k.channel_id === ch.id).map(toCategory),
     );
   });
 }
+
+/** Records an admin or moderator action in the channel's audit log, without holding up the reply. */
+const log = (c: Context<App & { Variables: { role: Role } }>, action: string, target: string | null = null, detail: Record<string, unknown> = {}) =>
+  c.executionCtx.waitUntil(audit(c.env, c.req.param('id')!, c.get('user').id, action, target, detail));
 
 const requireRole = (min: 'member' | 'moderator' | 'admin' | 'owner') =>
   createMiddleware<App & { Variables: { role: Role } }>(async (c, next) => {
@@ -549,6 +556,7 @@ app.patch('/channels/:id', auth, requireRole('admin'), async (c) => {
   await c.env.DB.prepare('UPDATE channels SET name = COALESCE(?, name), emoji = COALESCE(?, emoji), color = COALESCE(?, color) WHERE id = ?')
     .bind(name || null, body.emoji?.slice(0, 16) ?? null, body.color?.slice(0, 16) ?? null, id)
     .run();
+  log(c, 'channel.update', null, { ...(name ? { name } : {}), ...(body.emoji ? { emoji: body.emoji.slice(0, 16) } : {}), ...(body.color ? { color: body.color.slice(0, 16) } : {}) });
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   const [channel] = await loadChannels(c.env, c.get('user').id, id);
   return c.json(channel);
@@ -581,6 +589,7 @@ app.put('/channels/:id/icon', limit('avatar', 10), auth, requireRole('admin'), a
   await c.env.AVATARS.put(key, data, { metadata: { type } });
   await c.env.DB.prepare('UPDATE channels SET icon_key = ?, icon_url = ? WHERE id = ?').bind(key, `${c.env.PUBLIC_URL}/avatars/${key}`, id).run();
   if (old?.icon_key) await c.env.AVATARS.delete(old.icon_key);
+  log(c, 'channel.icon', null, { set: true });
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   const [channel] = await loadChannels(c.env, c.get('user').id, id);
   return c.json(channel);
@@ -591,6 +600,7 @@ app.delete('/channels/:id/icon', auth, requireRole('admin'), async (c) => {
   const old = await c.env.DB.prepare('SELECT icon_key FROM channels WHERE id = ?').bind(id).first<{ icon_key: string | null }>();
   await c.env.DB.prepare('UPDATE channels SET icon_key = NULL, icon_url = NULL WHERE id = ?').bind(id).run();
   if (old?.icon_key) await c.env.AVATARS.delete(old.icon_key);
+  log(c, 'channel.icon', null, { set: false });
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   const [channel] = await loadChannels(c.env, c.get('user').id, id);
   return c.json(channel);
@@ -599,6 +609,7 @@ app.delete('/channels/:id/icon', auth, requireRole('admin'), async (c) => {
 app.post('/channels/:id/invite/reset', auth, requireRole('admin'), async (c) => {
   const code = inviteCode();
   await c.env.DB.prepare('UPDATE channels SET invite_code = ? WHERE id = ?').bind(code, c.req.param('id')).run();
+  log(c, 'invite.reset');
   return c.json({ inviteCode: code });
 });
 
@@ -630,7 +641,9 @@ app.patch('/channels/:id/members/:userId', auth, requireRole('owner'), async (c)
   // Meeting co-hosts must have an account; browser guests can't run a meeting.
   const guest = await c.env.DB.prepare('SELECT 1 FROM users WHERE id = ? AND guest_of IS NOT NULL').bind(target).first();
   if (guest && role !== 'member') return c.json({ error: 'guest' }, 400);
+  const before = await memberRole(c.env, id, target);
   await c.env.DB.prepare('UPDATE channel_members SET role = ? WHERE channel_id = ? AND user_id = ?').bind(role, id, target).run();
+  log(c, 'member.role', target, { from: before, to: role });
   c.executionCtx.waitUntil(hub(c.env, id).setRole(target, role));
   return c.json({ ok: true });
 });
@@ -649,6 +662,7 @@ app.delete('/channels/:id/members/:userId', auth, requireRole('moderator'), asyn
       "INSERT OR REPLACE INTO meeting_access (channel_id, user_id, status, created_at) SELECT ?1, ?2, 'removed', ?3 FROM channels WHERE id = ?1 AND kind = 'meeting'",
     ).bind(id, target, Date.now()),
   ]);
+  log(c, 'member.remove', target, { role: targetRole });
   c.executionCtx.waitUntil(hub(c.env, id).removeUser(target));
   return c.json({ ok: true });
 });
@@ -664,6 +678,7 @@ app.post('/channels/:id/rooms', auth, requireRole('admin'), async (c) => {
   await c.env.DB.prepare('INSERT INTO rooms (id, channel_id, kind, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(room.id, id, room.kind, room.name, room.position, Date.now())
     .run();
+  log(c, 'room.create', room.id, { name: room.name, kind: room.kind });
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   return c.json(toRoom(room), 201);
 });
@@ -672,8 +687,15 @@ app.post('/channels/:id/rooms', auth, requireRole('admin'), async (c) => {
 app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) => {
   const id = c.req.param('id');
   const roomId = c.req.param('roomId');
-  const { name, allowParty, categoryId, slowMode } = await c.req.json<{ name?: string; allowParty?: boolean; categoryId?: string | null; slowMode?: number }>();
-  const room = await c.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id).first<{ kind: string }>();
+  const { name, allowParty, categoryId, slowMode, viewRole, postRole } = await c.req.json<{
+    name?: string;
+    allowParty?: boolean;
+    categoryId?: string | null;
+    slowMode?: number;
+    viewRole?: Role;
+    postRole?: Role;
+  }>();
+  const room = await c.env.DB.prepare('SELECT kind, name FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id).first<{ kind: string; name: string }>();
   if (!room) return c.json({ error: 'not_found' }, 404);
   const updates: D1PreparedStatement[] = [];
   if (name !== undefined) {
@@ -699,16 +721,67 @@ app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) =
     const seconds = Math.max(0, Math.min(6 * 3600, Math.floor(Number(slowMode) || 0)));
     updates.push(c.env.DB.prepare('UPDATE rooms SET slow_mode = ? WHERE id = ? AND channel_id = ?').bind(seconds, roomId, id));
   }
+  // Who can see it / post or join: everyone ('member'), moderators and up, or admins and up.
+  const allowed = (r: unknown): r is Role => r === 'member' || r === 'moderator' || r === 'admin';
+  if (viewRole !== undefined) {
+    if (!allowed(viewRole)) return c.json({ error: 'bad_role' }, 400);
+    updates.push(c.env.DB.prepare('UPDATE rooms SET view_role = ? WHERE id = ? AND channel_id = ?').bind(viewRole, roomId, id));
+  }
+  if (postRole !== undefined) {
+    if (!allowed(postRole)) return c.json({ error: 'bad_role' }, 400);
+    updates.push(c.env.DB.prepare('UPDATE rooms SET post_role = ? WHERE id = ? AND channel_id = ?').bind(postRole, roomId, id));
+  }
   if (!updates.length) return c.json({ error: 'nothing_to_change' }, 400);
   await c.env.DB.batch(updates);
+  log(c, 'room.update', roomId, {
+    room: room.name,
+    ...(name !== undefined ? { name: name.trim().slice(0, 40) } : {}),
+    ...(typeof allowParty === 'boolean' ? { allowParty } : {}),
+    ...(categoryId !== undefined ? { categoryId } : {}),
+    ...(slowMode !== undefined ? { slowMode: Math.max(0, Math.floor(Number(slowMode) || 0)) } : {}),
+    ...(viewRole !== undefined ? { viewRole } : {}),
+    ...(postRole !== undefined ? { postRole } : {}),
+  });
   const channelHub = hub(c.env, id);
   c.executionCtx.waitUntil(
     (async () => {
+      await channelHub.roomsChanged();
       if (allowParty === false) await channelHub.endPartyIn(roomId);
       await channelHub.notify({ t: 'channel.changed' });
     })(),
   );
   return c.json({ ok: true });
+});
+
+// ─── Audit log ─────────────────────────────────────────────────────────────────
+
+/** Newest first, 50 at a time (`before` = the last entry's createdAt), with the people named in it. */
+app.get('/channels/:id/audit', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const before = Number(c.req.query('before')) || Date.now() + 1;
+  const { results } = await c.env.DB.prepare('SELECT * FROM audit_log WHERE channel_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 50')
+    .bind(id, before)
+    .all<any>()
+    .catch(() => ({ results: [] as any[] }));
+  const entries: AuditEntry[] = results.map((r) => ({
+    id: r.id,
+    actorId: r.actor_id,
+    action: r.action,
+    target: r.target,
+    detail: (() => {
+      try {
+        return JSON.parse(r.detail ?? '{}');
+      } catch {
+        return {};
+      }
+    })(),
+    createdAt: r.created_at,
+  }));
+  const ids = [...new Set(entries.flatMap((e) => [e.actorId, e.target]).filter((x): x is string => !!x))];
+  const users = ids.length
+    ? (await c.env.DB.prepare(`SELECT * FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all<any>()).results.map(toPublicUser)
+    : [];
+  return c.json({ entries, users });
 });
 
 // ─── AutoMod ───────────────────────────────────────────────────────────────────
@@ -726,6 +799,7 @@ app.put('/channels/:id/automod', auth, requireRole('admin'), limit('automod', 30
   )
     .bind(id, JSON.stringify(rules), Date.now())
     .run();
+  log(c, 'automod.update');
   await hub(c.env, id).automodChanged();
   return c.json(rules);
 });
@@ -743,6 +817,7 @@ app.post('/channels/:id/categories', auth, requireRole('admin'), limit('create',
   await c.env.DB.prepare('INSERT INTO categories (id, channel_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)')
     .bind(category.id, id, category.name, category.position, category.created_at)
     .run();
+  log(c, 'category.create', category.id, { name: category.name });
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   return c.json(toCategory(category), 201);
 });
@@ -757,6 +832,7 @@ app.patch('/channels/:id/categories/:catId', auth, requireRole('admin'), async (
     const clean = String(name).trim().slice(0, 40);
     if (!clean) return c.json({ error: 'name_required' }, 400);
     updates.push(c.env.DB.prepare('UPDATE categories SET name = ? WHERE id = ? AND channel_id = ?').bind(clean, catId, id));
+    log(c, 'category.rename', catId, { name: clean });
   }
   if (position !== undefined) {
     updates.push(c.env.DB.prepare('UPDATE categories SET position = ? WHERE id = ? AND channel_id = ?').bind(Math.floor(Number(position) || 0), catId, id));
@@ -775,6 +851,7 @@ app.delete('/channels/:id/categories/:catId', auth, requireRole('admin'), async 
     c.env.DB.prepare('UPDATE rooms SET category_id = NULL WHERE category_id = ? AND channel_id = ?').bind(catId, id),
     c.env.DB.prepare('DELETE FROM categories WHERE id = ? AND channel_id = ?').bind(catId, id),
   ]);
+  log(c, 'category.delete', catId);
   c.executionCtx.waitUntil(hub(c.env, id).notify({ t: 'channel.changed' }));
   return c.json({ ok: true });
 });
@@ -782,6 +859,8 @@ app.delete('/channels/:id/categories/:catId', auth, requireRole('admin'), async 
 app.delete('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) => {
   const id = c.req.param('id');
   const roomId = c.req.param('roomId');
+  const gone = await c.env.DB.prepare('SELECT name, kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id).first<{ name: string; kind: string }>();
+  if (gone) log(c, 'room.delete', roomId, { name: gone.name, kind: gone.kind });
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM messages WHERE room_id = (SELECT id FROM rooms WHERE id = ? AND channel_id = ?)').bind(roomId, id),
     c.env.DB.prepare('DELETE FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, id),
@@ -791,6 +870,11 @@ app.delete('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) 
 });
 
 app.get('/channels/:id/rooms/:roomId/messages', guestOk, requireRole('member'), async (c) => {
+  const room = await c.env.DB.prepare('SELECT view_role FROM rooms WHERE id = ? AND channel_id = ?')
+    .bind(c.req.param('roomId'), c.req.param('id'))
+    .first<{ view_role: string | null }>()
+    .catch(() => ({ view_role: 'member' })); // before the permissions migration
+  if (!room || !atLeast(c.get('role'), asRole(room.view_role))) return c.json({ error: 'not_found' }, 404);
   const before = c.req.query('before') ?? null;
   const limit = Math.min(Number(c.req.query('limit') ?? 50) || 50, 100);
   const { results } = await c.env.DB.prepare(

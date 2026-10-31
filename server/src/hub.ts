@@ -1,12 +1,21 @@
 import { DurableObject } from 'cloudflare:workers';
-import { DEFAULT_PARTY_SETTINGS, canModerateRole, outranks } from '../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
 import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { audit } from './audit';
 import { blockedBy, parseRules, type History } from './automod';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
-import { type Env, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
+import { type Env, asRole, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
 
 /** Per-socket state. Survives hibernation via serializeAttachment. */
+/** What the hub needs to know about a room: its kind, slow mode, and who can see / post in it. */
+interface RoomAccess {
+  kind: string;
+  slow: number;
+  view: Role;
+  post: Role;
+}
+
 interface Peer {
   peerId: string;
   userId: string;
@@ -42,7 +51,8 @@ const MEETING_CHECK = 15 * 60_000;
  */
 export class ChannelHub extends DurableObject<Env> {
   private mutedRooms = new Set<string>();
-  private roomKinds = new Map<string, string>();
+  /** Each room's kind, slow mode and permissions (cleared when an admin changes rooms). */
+  private roomAccess = new Map<string, RoomAccess>();
   /** When each person last posted in each room ("roomId:userId"), for slow mode. */
   private lastPost = new Map<string, number>();
   /** This channel's AutoMod rules, loaded on first use (undefined: not loaded yet). */
@@ -94,7 +104,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.voiceSnapshot(), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
 
     return new Response(null, { status: 101, webSocket: client, headers: { 'Sec-WebSocket-Protocol': 'infimeety' } });
@@ -103,12 +113,26 @@ export class ChannelHub extends DurableObject<Env> {
   // ─── RPC from the Worker ─────────────────────────────────────────────────────
 
   async notify(msg: ServerMsg) {
-    if (msg.t === 'channel.changed') this.roomKinds.clear();
+    if (msg.t === 'channel.changed') await this.roomsChanged();
     this.broadcast(msg);
     if (msg.t === 'channel.removed') for (const s of this.sockets()) s.close(4004, 'Channel deleted');
   }
 
   /** An admin turned watch parties off in a room: end the one running there, if any. */
+  /** An admin changed a room (slow mode, permissions…) or deleted one: look rooms up afresh. */
+  async roomsChanged() {
+    this.roomAccess.clear();
+    // Load every room again now, so the call list is filtered by the new permissions at once.
+    const channelId = this.sockets().map((s) => this.peer(s).channelId)[0];
+    if (!channelId) return;
+    const { results } = await this.env.DB.prepare('SELECT id, kind, slow_mode, view_role, post_role FROM rooms WHERE channel_id = ?')
+      .bind(channelId)
+      .all<any>()
+      .catch(() => ({ results: [] as any[] }));
+    for (const r of results) this.roomAccess.set(r.id, { kind: r.kind, slow: r.slow_mode ?? 0, view: asRole(r.view_role), post: asRole(r.post_role) });
+    this.broadcastVoice();
+  }
+
   /** An admin saved new AutoMod rules: use them from the next message. */
   async automodChanged() {
     this.automod = undefined;
@@ -127,7 +151,7 @@ export class ChannelHub extends DurableObject<Env> {
     for (const s of rest) {
       this.send(s, { t: 'channel.changed' });
       this.send(s, { t: 'presence', online: this.online(userId) });
-      this.send(s, { t: 'voice', voice: this.voiceSnapshot(userId) });
+      this.send(s, { t: 'voice', voice: this.visibleTo(this.voiceSnapshot(userId), this.peer(s).role) });
     }
   }
 
@@ -246,10 +270,15 @@ export class ChannelHub extends DurableObject<Env> {
       case 'chat.react':
         return this.chatReact(me, msg.id, msg.emoji);
       case 'typing':
-        return this.broadcast({ t: 'typing', roomId: String(msg.roomId).slice(0, 32), userId: me.userId }, ws);
+        return this.broadcastRoom(String(msg.roomId).slice(0, 32), me.channelId, { t: 'typing', roomId: String(msg.roomId).slice(0, 32), userId: me.userId }, ws);
 
       case 'voice.join': {
-        if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        const room = await this.access(msg.roomId, me.channelId);
+        if (room?.kind !== 'voice' || !atLeast(me.role, room.view)) return;
+        if (!atLeast(me.role, room.post)) {
+          this.send(ws, { t: 'voice.kicked' });
+          return this.send(ws, { t: 'error', message: 'Only moderators and admins can join this voice room.' });
+        }
         // One voice connection per person, like Discord: joining from another device or window
         // moves you there, and the other one is told (so it doesn't think it's still in).
         for (const other of this.sockets(ws)) {
@@ -298,6 +327,7 @@ export class ChannelHub extends DurableObject<Env> {
         const t = this.peer(target);
         if (!t.voice) return;
         this.save(target, { ...t, voice: { ...t.voice, forceMuted: !!msg.muted } });
+        void audit(this.env, me.channelId, me.userId, 'voice.mute', t.userId, { muted: !!msg.muted, room: t.voice.roomId });
         return this.broadcastVoice();
       }
       case 'voice.roomMute': {
@@ -305,11 +335,13 @@ export class ChannelHub extends DurableObject<Env> {
         if (msg.muted) this.mutedRooms.add(msg.roomId);
         else this.mutedRooms.delete(msg.roomId);
         await this.ctx.storage.put('mutedRooms', [...this.mutedRooms]);
+        void audit(this.env, me.channelId, me.userId, 'voice.roomMute', msg.roomId, { muted: !!msg.muted });
         return this.broadcastVoice();
       }
       case 'voice.disconnect': {
         const target = this.byPeer(msg.peerId);
         if (!target || !this.canModerate(me, this.peer(target))) return;
+        void audit(this.env, me.channelId, me.userId, 'voice.disconnect', this.peer(target).userId, { room: this.peer(target).voice?.roomId });
         this.save(target, { ...this.peer(target), voice: null });
         this.send(target, { t: 'voice.kicked' });
         return this.broadcastVoice();
@@ -317,7 +349,10 @@ export class ChannelHub extends DurableObject<Env> {
       case 'voice.move': {
         const target = this.byPeer(msg.peerId);
         if (!target || !this.canModerate(me, this.peer(target)) || !this.peer(target).voice) return;
-        if ((await this.roomKind(msg.roomId, me.channelId)) !== 'voice') return;
+        const to = await this.access(msg.roomId, me.channelId);
+        // Only into a room they're allowed in.
+        if (to?.kind !== 'voice' || !atLeast(this.peer(target).role, to.view) || !atLeast(this.peer(target).role, to.post)) return;
+        void audit(this.env, me.channelId, me.userId, 'voice.move', this.peer(target).userId, { room: msg.roomId });
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
       }
 
@@ -421,13 +456,12 @@ export class ChannelHub extends DurableObject<Env> {
     const content = String(msg.content ?? '').slice(0, 4000).trim();
     const attachments = sanitizeAttachments(msg.attachments, me.userId);
     if (!content && !attachments.length) return;
-    const room = typeof msg.roomId === 'string'
-      ? await this.env.DB.prepare('SELECT kind, slow_mode FROM rooms WHERE id = ? AND channel_id = ?').bind(msg.roomId, me.channelId).first<{ kind: string; slow_mode: number | null }>()
-      : null;
-    if (!room) return this.send(ws, { t: 'error', message: 'Room not found' });
+    const room = await this.access(msg.roomId, me.channelId);
+    if (!room || !atLeast(me.role, room.view)) return this.send(ws, { t: 'error', message: 'Room not found' });
+    if (!atLeast(me.role, room.post)) return this.send(ws, { t: 'error', message: 'Only moderators and admins can post in this room.' });
     const nonce = String(msg.nonce ?? '').slice(0, 64);
     // Slow mode: one message per person every N seconds; moderators and up are exempt.
-    const slow = room.slow_mode ?? 0;
+    const slow = room.slow;
     if (slow > 0 && !canModerateRole(me.role)) {
       const key = `${msg.roomId}:${me.userId}`;
       const last =
@@ -439,7 +473,10 @@ export class ChannelHub extends DurableObject<Env> {
     }
     if (content && !canModerateRole(me.role)) {
       const blocked = blockedBy(await this.rules(me.channelId), content, me.userId, this.recentPosts);
-      if (blocked) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'automod', detail: blocked });
+      if (blocked) {
+        void audit(this.env, me.channelId, null, 'automod.block', me.userId, { rule: blocked, room: msg.roomId, excerpt: content.slice(0, 80) });
+        return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'automod', detail: blocked });
+      }
     }
 
     const message: Message = {
@@ -459,20 +496,23 @@ export class ChannelHub extends DurableObject<Env> {
       .bind(message.id, message.roomId, message.userId, content, attachments.length ? JSON.stringify(attachments) : null, message.replyTo, message.createdAt)
       .run();
     this.lastPost.set(`${message.roomId}:${me.userId}`, message.createdAt);
-    this.broadcast({ t: 'chat.new', message, nonce });
+    await this.broadcastRoom(message.roomId, me.channelId, { t: 'chat.new', message, nonce });
   }
 
-  private async findMessage(id: string, channelId: string) {
+  /** A message in this channel, if `role` can see its room. */
+  private async findMessage(id: string, channelId: string, role?: Role) {
     const row = await this.env.DB.prepare(
       'SELECT m.* FROM messages m JOIN rooms r ON r.id = m.room_id WHERE m.id = ? AND r.channel_id = ?',
     )
       .bind(String(id), channelId)
       .first<any>();
-    return row ? toMessage(row) : null;
+    if (!row) return null;
+    const room = await this.access(row.room_id, channelId);
+    return room && atLeast(role, room.view) ? toMessage(row) : null;
   }
 
   private async chatEdit(ws: WebSocket, me: Peer, id: string, content: string) {
-    const msg = await this.findMessage(id, me.channelId);
+    const msg = await this.findMessage(id, me.channelId, me.role);
     const clean = String(content ?? '').slice(0, 4000).trim();
     if (!msg || msg.userId !== me.userId || !clean) return;
     if (!canModerateRole(me.role)) {
@@ -481,21 +521,22 @@ export class ChannelHub extends DurableObject<Env> {
     }
     const editedAt = Date.now();
     await this.env.DB.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').bind(clean, editedAt, msg.id).run();
-    this.broadcast({ t: 'chat.edited', id: msg.id, roomId: msg.roomId, content: clean, editedAt });
+    await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.edited', id: msg.id, roomId: msg.roomId, content: clean, editedAt });
   }
 
   private async chatDelete(me: Peer, id: string) {
-    const msg = await this.findMessage(id, me.channelId);
+    const msg = await this.findMessage(id, me.channelId, me.role);
     if (!msg || (msg.userId !== me.userId && !canModerateRole(me.role))) return;
     await this.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(msg.id).run();
-    this.broadcast({ t: 'chat.deleted', id: msg.id, roomId: msg.roomId });
+    if (msg.userId !== me.userId) void audit(this.env, me.channelId, me.userId, 'message.delete', msg.userId, { room: msg.roomId, excerpt: msg.content.slice(0, 80) });
+    await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.deleted', id: msg.id, roomId: msg.roomId });
   }
 
   /** One reaction per person (like iMessage): a new emoji replaces yours, the same one removes it. */
   private async chatReact(me: Peer, id: string, emoji: string) {
     const e = String(emoji ?? '');
     if (!e || e.length > 16) return;
-    const msg = await this.findMessage(id, me.channelId);
+    const msg = await this.findMessage(id, me.channelId, me.role);
     if (!msg) return;
     const hadThis = msg.reactions[e]?.includes(me.userId) ?? false;
     const reactions: Record<string, string[]> = {};
@@ -505,7 +546,7 @@ export class ChannelHub extends DurableObject<Env> {
     }
     if (!hadThis && (Object.keys(reactions).length < 20 || reactions[e])) reactions[e] = [...(reactions[e] ?? []), me.userId];
     await this.env.DB.prepare('UPDATE messages SET reactions = ? WHERE id = ?').bind(JSON.stringify(reactions), msg.id).run();
-    this.broadcast({ t: 'chat.reactions', id: msg.id, roomId: msg.roomId, reactions });
+    await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.reactions', id: msg.id, roomId: msg.roomId, reactions });
   }
 
   /** The owner deleted local files: mark them removed for good and tell everyone. */
@@ -523,7 +564,7 @@ export class ChannelHub extends DurableObject<Env> {
       if (!msg.attachments.some((a) => revoked.has(a.id) && !a.removed)) continue;
       const attachments = msg.attachments.map((a) => (revoked.has(a.id) ? { ...a, removed: true } : a));
       await this.env.DB.prepare('UPDATE messages SET attachments = ? WHERE id = ?').bind(JSON.stringify(attachments), msg.id).run();
-      this.broadcast({ t: 'chat.attachments', id: msg.id, roomId: msg.roomId, attachments });
+      await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.attachments', id: msg.id, roomId: msg.roomId, attachments });
     }
     this.broadcast({ t: 'media.revoked', ownerId: me.userId, attachmentIds: [...revoked] });
   }
@@ -658,12 +699,38 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   private async roomKind(roomId: string, channelId: string): Promise<string | null> {
+    return (await this.access(roomId, channelId))?.kind ?? null;
+  }
+
+  /** A room's kind, slow mode and permissions, or null if it isn't in this channel. */
+  private async access(roomId: unknown, channelId: string): Promise<RoomAccess | null> {
     if (typeof roomId !== 'string') return null;
-    const cached = this.roomKinds.get(roomId);
-    if (cached) return cached;
-    const row = await this.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, channelId).first<{ kind: string }>();
-    if (row) this.roomKinds.set(roomId, row.kind);
-    return row?.kind ?? null;
+    const hit = this.roomAccess.get(roomId);
+    if (hit) return hit;
+    const row = await this.env.DB.prepare('SELECT kind, slow_mode, view_role, post_role FROM rooms WHERE id = ? AND channel_id = ?')
+      .bind(roomId, channelId)
+      .first<any>()
+      // Before the permissions migration: everyone can see and post everywhere.
+      .catch(() => this.env.DB.prepare('SELECT kind FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, channelId).first<any>());
+    if (!row) return null;
+    const access: RoomAccess = { kind: row.kind, slow: row.slow_mode ?? 0, view: asRole(row.view_role), post: asRole(row.post_role) };
+    this.roomAccess.set(roomId, access);
+    return access;
+  }
+
+  /** Sends to everyone whose role can see the room. */
+  private async broadcastRoom(roomId: string, channelId: string, msg: ServerMsg, except?: WebSocket) {
+    const room = await this.access(roomId, channelId);
+    if (!room) return;
+    const data = JSON.stringify(msg);
+    for (const s of this.sockets(except)) {
+      if (!atLeast(this.peer(s).role, room.view)) continue;
+      try {
+        s.send(data);
+      } catch {
+        /* socket went away */
+      }
+    }
   }
 
   /** Moderators and up act on lower roles only: owners on anyone, admins on moderators and members, moderators on members. */
@@ -703,8 +770,19 @@ export class ChannelHub extends DurableObject<Env> {
     return { participants, mutedRooms: [...this.mutedRooms] };
   }
 
+  /** The call list as `role` may see it: nobody in voice rooms that role can't see. */
+  private visibleTo(snapshot: VoiceSnapshot, role: Role): VoiceSnapshot {
+    const hidden = (roomId: string) => {
+      const room = this.roomAccess.get(roomId);
+      return !!room && !atLeast(role, room.view);
+    };
+    if (!snapshot.participants.some((p) => hidden(p.roomId))) return snapshot;
+    return { ...snapshot, participants: snapshot.participants.filter((p) => !hidden(p.roomId)) };
+  }
+
   private broadcastVoice(exceptSocket?: WebSocket) {
-    this.broadcast({ t: 'voice', voice: this.voiceSnapshot(undefined, exceptSocket) }, exceptSocket);
+    const snapshot = this.voiceSnapshot(undefined, exceptSocket);
+    for (const s of this.sockets(exceptSocket)) this.send(s, { t: 'voice', voice: this.visibleTo(snapshot, this.peer(s).role) });
     this.tendParties(exceptSocket).catch((err) => console.error('party upkeep failed', err));
     if (this.meeting) this.meetingCallChanged(exceptSocket).catch((err) => console.error('meeting check failed', err));
   }

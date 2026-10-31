@@ -92,7 +92,12 @@ export const toRoom = (r: any): Room => ({
   allowParty: r.allow_party !== 0,
   categoryId: r.category_id ?? null,
   slowMode: r.slow_mode ?? 0,
+  viewRole: asRole(r.view_role),
+  postRole: asRole(r.post_role),
 });
+
+const ROLES: Role[] = ['owner', 'admin', 'moderator', 'member'];
+export const asRole = (v: unknown): Role => (ROLES.includes(v as Role) ? (v as Role) : 'member');
 
 export const toCategory = (r: any): Category => ({ id: r.id, channelId: r.channel_id, name: r.name, position: r.position });
 
