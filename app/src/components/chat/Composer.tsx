@@ -1,8 +1,8 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Popcorn, Reply, Smile, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { MAX_FILE_SIZE, type Attachment, type Channel, type Room } from '../../../../shared/protocol';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MAX_FILE_SIZE, type Attachment, type Channel, type Member, type Room } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, type Anchor } from '../ui/overlay';
 import { IconButton } from '../ui/primitives';
@@ -18,7 +18,7 @@ import { getHub } from '@/lib/realtime';
 import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
 import { useAuth } from '@/stores/auth';
-import { useChannels } from '@/stores/channels';
+import { useChannels, type Bot } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { toast, useUI } from '@/stores/ui';
@@ -33,6 +33,58 @@ interface Staged {
 }
 
 const drafts = new Map<string, string>();
+
+/** The @name being typed right before the caret, if any: where it starts and what's typed so far. */
+function mentionAt(text: string, caret: number) {
+  const m = /(?:^|\s)@([\p{L}\p{N}_.-]{0,24})$/u.exec(text.slice(0, caret));
+  return m ? { query: m[1], start: caret - m[1].length - 1 } : null;
+}
+
+interface Suggestion {
+  id: string;
+  name: string;
+  /** What goes after the @: a person's username, a bot's name. */
+  handle: string;
+  avatarUrl: string | null;
+  bot: boolean;
+  online: boolean;
+  about?: string;
+}
+
+const NO_MEMBERS: Member[] = [];
+const NO_BOTS: Bot[] = [];
+const NO_IDS: string[] = [];
+
+/** Who `@query` could mean, like Discord's list: best matches first, then bots, then who's online. */
+function useMentionSuggestions(channelId: string, meId: string | undefined, query: string | undefined) {
+  const members = useChannels((s) => s.members[channelId] ?? NO_MEMBERS);
+  const bots = useChannels((s) => s.bots[channelId] ?? NO_BOTS);
+  const online = useChannels((s) => s.online[channelId] ?? NO_IDS);
+  return useMemo(() => {
+    if (query === undefined) return [];
+    const q = query.toLowerCase();
+    const all: Suggestion[] = [
+      ...bots.map((b) => ({ id: b.id, name: b.name, handle: b.name, avatarUrl: b.avatarUrl, bot: true, online: true, about: b.instructions })),
+      ...members
+        .filter((m) => m.id !== meId && m.username)
+        .map((m) => ({ id: m.id, name: m.name, handle: m.username!, avatarUrl: m.avatarUrl, bot: false, online: online.includes(m.id) })),
+    ];
+    const score = (x: Suggestion) => {
+      if (!q) return 1;
+      const name = x.name.toLowerCase();
+      const handle = x.handle.toLowerCase();
+      if (handle.startsWith(q) || name.startsWith(q)) return 3;
+      if (name.split(/\s+/).some((w) => w.startsWith(q))) return 2;
+      return handle.includes(q) || name.includes(q) ? 1 : 0;
+    };
+    return all
+      .map((x) => ({ x, score: score(x) }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || Number(b.x.bot) - Number(a.x.bot) || Number(b.x.online) - Number(a.x.online) || a.x.name.localeCompare(b.x.name))
+      .slice(0, 8)
+      .map((r) => r.x);
+  }, [members, bots, online, meId, query]);
+}
 /** Shared across message boxes so one insert lands once, even if two boxes are mounted. */
 let lastInsert = 0;
 
@@ -71,6 +123,26 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const [dragging, setDragging] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
+
+  // @mentions: a list of people and bots while you type a name; arrows, Enter or Tab pick one.
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const mention = mentionAt(text, caret);
+  const suggestions = useMentionSuggestions(channel.id, me?.id, mention?.query);
+  const mentioning = !!mention && suggestions.length > 0 && dismissed !== mention.start;
+  useEffect(() => setPick(0), [mention?.query]);
+  const chooseMention = (s: Suggestion) => {
+    if (!mention) return;
+    const insert = `@${s.handle} `;
+    const pos = mention.start + insert.length;
+    setText(text.slice(0, mention.start) + insert + text.slice(caret));
+    setCaret(pos);
+    requestAnimationFrame(() => {
+      ta.current?.focus();
+      ta.current?.setSelectionRange(pos, pos);
+    });
+  };
 
   // "Mention" from a person's menu types @username here.
   const insert = useUI((s) => s.composerInsert);
@@ -252,7 +324,39 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const canSend = (!!text.trim() || staged.length > 0) && !slowWait;
 
   return (
-    <div className="shrink-0 px-4 pb-4 compact:px-2.5 compact:pb-2.5">
+    <div className="relative shrink-0 px-4 pb-4 compact:px-2.5 compact:pb-2.5">
+      <AnimatePresence>
+        {mentioning && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6, transition: { duration: 0.12 } }}
+            transition={snappy}
+            className="absolute inset-x-4 bottom-full z-20 mb-1 rounded-[16px] p-1.5 glass-pop compact:inset-x-2.5"
+          >
+            <div className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-fg-3">{mention?.query ? `Matching @${mention.query}` : 'Mention someone'}</div>
+            {suggestions.map((s, i) => (
+              <button
+                key={s.id}
+                // Keeps the caret in the message box.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => chooseMention(s)}
+                onMouseEnter={() => setPick(i)}
+                className={clsx('flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left', i === pick && 'bg-fill-2')}
+              >
+                <Avatar user={s} size={24} presence={s.bot ? null : s.online ? 'online' : 'offline'} />
+                <span className="shrink-0 truncate text-[13.5px] font-medium">{s.name}</span>
+                {s.bot ? (
+                  <span className="shrink-0 rounded-[4px] bg-accent px-1 text-[9.5px] font-bold leading-[15px] text-white">AI BOT</span>
+                ) : (
+                  <span className="truncate text-[12.5px] text-fg-3">@{s.handle}</span>
+                )}
+                {s.about && <span className="ml-auto min-w-0 truncate pl-3 text-[12px] text-fg-3">{s.about}</span>}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="field rounded-[20px]! bg-[var(--glass-tile)]!">
         <AnimatePresence initial={false}>
           {replyTo && (
@@ -337,9 +441,25 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
             ref={ta}
             rows={1}
             value={text}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => (onChange(e.target.value), setCaret(e.target.selectionStart))}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onPaste={(e) => void onPaste(e)}
             onKeyDown={(e) => {
+              if (mentioning && mention) {
+                const n = suggestions.length;
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  return setPick((p) => (p + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+                }
+                if ((e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) || e.key === 'Tab') {
+                  e.preventDefault();
+                  return chooseMention(suggestions[Math.min(pick, n - 1)]);
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  return setDismissed(mention.start);
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
