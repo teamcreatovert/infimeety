@@ -1,14 +1,17 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserRound, Video, VideoOff, X } from 'lucide-react';
+import { AppWindow, AtSign, Bell, Download, FolderDown, LogOut, Mic, MonitorUp, Palette, UserPlus, UserRound, Video, VideoOff, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Me } from '../../../../shared/protocol';
 import { AvatarEditor } from '../auth/AvatarEditor';
 import { DiscordLogo, GoogleLogo } from '../auth/SignIn';
 import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
+import { MAX_ACCOUNTS, okToLeaveCall } from '../shell/AccountMenu';
+import { Avatar } from '../ui/Avatar';
 import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION, PRIVACY_PAGE } from '@/config';
+import { addAccount, savedAccounts, switchAccount } from '@/lib/accounts';
 import { api } from '@/lib/api';
 import { resetApp, restartInSafeMode } from '@/lib/boot';
 import { confirmDialog } from '@/lib/confirm';
@@ -129,6 +132,7 @@ function AccountForm({ me }: { me: Me }) {
         </Row>
       </Group>
       <ConnectedAccounts me={me} />
+      <DeviceAccounts me={me} />
       <div className="flex justify-between">
         <Button variant="ghost" className="text-danger!" icon={<LogOut size={14} />} onClick={() => (voice.leave({ silent: true }), useUI.getState().set({ settingsTab: null }), void useAuth.getState().signOut())}>
           Sign out
@@ -143,6 +147,56 @@ function AccountForm({ me }: { me: Me }) {
         </button>
       </p>
     </>
+  );
+}
+
+/** Every account signed in on this device, like Discord's switcher: one click to change, or add another. */
+function DeviceAccounts({ me }: { me: Me }) {
+  const saved = savedAccounts();
+  const accounts = saved.some((a) => a.id === me.id) ? saved : [{ id: me.id, name: me.name, username: me.username ?? '', avatarUrl: me.avatarUrl ?? null }, ...saved];
+  const full = accounts.length >= MAX_ACCOUNTS;
+  const go = async (action: () => void) => {
+    if (await okToLeaveCall()) action();
+  };
+  return (
+    <Group title="Accounts on this device" footer={`Switch without signing out: every account here stays signed in, up to ${MAX_ACCOUNTS}.`}>
+      {accounts.map((a) => (
+        <Row
+          key={a.id}
+          label={
+            <span className="flex items-center gap-2.5">
+              <Avatar user={a} size={28} />
+              <span className="min-w-0">
+                <span className="block truncate">{a.name}</span>
+                <span className="block truncate text-[11.5px] text-fg-3">@{a.username}</span>
+              </span>
+            </span>
+          }
+        >
+          {a.id === me.id ? (
+            <span className="text-[12px] font-medium text-fg-3">Using now</span>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={() => void go(() => switchAccount(a.id))}>
+              Switch
+            </Button>
+          )}
+        </Row>
+      ))}
+      <Row
+        label={
+          <span className="flex items-center gap-2.5">
+            <span className="grid h-7 w-7 place-items-center rounded-full bg-fill-2 text-fg-2">
+              <UserPlus size={14} />
+            </span>
+            Add an account
+          </span>
+        }
+      >
+        <Button size="sm" variant="primary" disabled={full} onClick={() => void go(addAccount)}>
+          {full ? `Up to ${MAX_ACCOUNTS}` : 'Add'}
+        </Button>
+      </Row>
+    </Group>
   );
 }
 

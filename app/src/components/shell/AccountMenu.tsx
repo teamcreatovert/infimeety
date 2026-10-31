@@ -9,10 +9,10 @@ import { useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 /** Up to this many accounts on one device. */
-const MAX_ACCOUNTS = 5;
+export const MAX_ACCOUNTS = 5;
 
 /** Leaving a call to change accounts asks first, like leaving it for another call. */
-async function okToLeaveCall() {
+export async function okToLeaveCall() {
   if (!useVoice.getState().roomId) return true;
   const ok = await confirmDialog({ title: 'Switch accounts?', body: 'You’ll leave the call you’re in.', confirm: 'Switch', cancel: 'Stay' });
   if (ok) voice.leave({ silent: true });
