@@ -8,6 +8,7 @@ import { IconButton } from '../ui/primitives';
 import { Composer, TypingIndicator } from './Composer';
 import { MemberList } from './MemberList';
 import { MessageList } from './MessageList';
+import { PinnedMessages } from './PinnedMessages';
 import { useCompact } from '@/lib/responsive';
 import { useChannels } from '@/stores/channels';
 import { useMessages, type LocalMessage } from '@/stores/messages';
@@ -50,6 +51,7 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
               {onlineCount} online · {memberCount} members
             </span>
             <div data-tauri-drag-region className="flex-1 self-stretch" />
+            <PinnedMessages channel={channel} room={room} />
             <IconButton label={memberList ? 'Hide members' : 'Show members'} active={memberList} onClick={() => useUI.getState().set({ memberList: !memberList })} tooltipSide="bottom">
               <Users size={17} />
             </IconButton>

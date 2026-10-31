@@ -205,6 +205,8 @@ export interface Message {
   reactions: Record<string, string[]>;
   createdAt: number;
   editedAt: number | null;
+  /** When a moderator pinned it (absent or null: not pinned). */
+  pinnedAt?: number | null;
 }
 
 export interface StreamIds {
@@ -333,6 +335,8 @@ export type ClientMsg =
   | { t: 'chat.edit'; id: string; content: string }
   | { t: 'chat.delete'; id: string }
   | { t: 'chat.react'; id: string; emoji: string }
+  /** Moderators and admins: pin a message to its room, or unpin it. */
+  | { t: 'chat.pin'; id: string; pinned: boolean }
   | { t: 'typing'; roomId: string }
   | { t: 'voice.join'; roomId: string; state: VoiceLocalState }
   | { t: 'voice.leave' }
@@ -387,6 +391,7 @@ export type ServerMsg =
   | { t: 'chat.edited'; id: string; roomId: string; content: string; editedAt: number }
   | { t: 'chat.deleted'; id: string; roomId: string }
   | { t: 'chat.reactions'; id: string; roomId: string; reactions: Record<string, string[]> }
+  | { t: 'chat.pinned'; id: string; roomId: string; pinnedAt: number | null }
   | { t: 'chat.attachments'; id: string; roomId: string; attachments: Attachment[] }
   | { t: 'typing'; roomId: string; userId: string }
   | { t: 'rtc'; from: string; fromUser: string; data: RtcPayload }

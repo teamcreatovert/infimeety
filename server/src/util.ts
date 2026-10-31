@@ -133,6 +133,7 @@ export const toMessage = (r: any): Message => ({
   reactions: r.reactions ? JSON.parse(r.reactions) : {},
   createdAt: r.created_at,
   editedAt: r.edited_at,
+  ...(r.pinned_at ? { pinnedAt: r.pinned_at } : {}),
 });
 
 export const isAdmin = (role: Role | null | undefined) => role === 'owner' || role === 'admin';

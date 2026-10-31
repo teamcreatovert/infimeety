@@ -48,6 +48,7 @@ export function cleanMessage(v: unknown): Message | null {
     reactions: cleanReactions(m.reactions),
     createdAt: num(m.createdAt, Date.now()),
     editedAt: typeof m.editedAt === 'number' ? m.editedAt : null,
+    ...(typeof m.pinnedAt === 'number' ? { pinnedAt: m.pinnedAt } : {}),
   };
 }
 

@@ -2,9 +2,9 @@ import { FixerCard } from './FixerCard';
 import { FIXER_ID } from '@/lib/fixer';
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { Copy, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { Copy, Pencil, Pin, PinOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { memo, useState } from 'react';
-import type { Channel } from '../../../../shared/protocol';
+import { canModerateRole, type Channel } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { AttachmentView } from './AttachmentView';
@@ -108,6 +108,11 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
             <Tooltip label={formatFull(msg.createdAt)}>
               <span className="text-[11px] tabular-nums text-fg-3">{formatTime(msg.createdAt)}</span>
             </Tooltip>
+            {msg.pinnedAt && (
+              <span className="flex items-center gap-0.5 text-[11px] font-medium text-accent">
+                <Pin size={11} /> Pinned
+              </span>
+            )}
           </div>
         )}
 
@@ -201,6 +206,11 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
           <ToolButton label="Reply" onClick={() => onReply(msg)}>
             <Reply size={15} />
           </ToolButton>
+          {canModerateRole(channel.role) && (
+            <ToolButton label={msg.pinnedAt ? 'Unpin' : 'Pin'} onClick={() => hub()?.send({ t: 'chat.pin', id: msg.id, pinned: !msg.pinnedAt })}>
+              {msg.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
+            </ToolButton>
+          )}
           {mine && msg.content && (
             <ToolButton label="Edit" onClick={() => (setDraft(msg.content), setEditing(true))}>
               <Pencil size={14} />

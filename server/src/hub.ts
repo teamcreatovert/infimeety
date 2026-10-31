@@ -287,6 +287,8 @@ export class ChannelHub extends DurableObject<Env> {
         return this.chatDelete(me, msg.id);
       case 'chat.react':
         return this.chatReact(me, msg.id, msg.emoji);
+      case 'chat.pin':
+        return this.chatPin(me, msg.id, !!msg.pinned);
       case 'typing':
         return this.broadcastRoom(String(msg.roomId).slice(0, 32), me.channelId, { t: 'typing', roomId: String(msg.roomId).slice(0, 32), userId: me.userId }, ws);
 
@@ -731,6 +733,21 @@ export class ChannelHub extends DurableObject<Env> {
     await this.env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(msg.id).run();
     if (msg.userId !== me.userId) void audit(this.env, me.channelId, me.userId, 'message.delete', msg.userId, { room: msg.roomId, excerpt: msg.content.slice(0, 80) });
     await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.deleted', id: msg.id, roomId: msg.roomId });
+  }
+
+  /** Moderators and admins pin a message to its room (up to 50 per room), or unpin it. */
+  private async chatPin(me: Peer, id: string, pinned: boolean) {
+    if (!canModerateRole(me.role)) return;
+    const msg = await this.findMessage(id, me.channelId, me.role);
+    if (!msg || !!msg.pinnedAt === pinned) return;
+    if (pinned) {
+      const count = await this.env.DB.prepare('SELECT COUNT(*) AS n FROM messages WHERE room_id = ? AND pinned_at IS NOT NULL').bind(msg.roomId).first<{ n: number }>();
+      if ((count?.n ?? 0) >= 50) return this.send(this.ctx.getWebSockets().find((s) => this.peer(s).peerId === me.peerId)!, { t: 'error', message: 'This room has 50 pins already. Unpin one first.' });
+    }
+    const pinnedAt = pinned ? Date.now() : null;
+    await this.env.DB.prepare('UPDATE messages SET pinned_at = ?, pinned_by = ? WHERE id = ?').bind(pinnedAt, pinned ? me.userId : null, msg.id).run();
+    void audit(this.env, me.channelId, me.userId, pinned ? 'message.pin' : 'message.unpin', msg.userId, { room: msg.roomId, excerpt: msg.content.slice(0, 80) });
+    await this.broadcastRoom(msg.roomId, me.channelId, { t: 'chat.pinned', id: msg.id, roomId: msg.roomId, pinnedAt });
   }
 
   /** One reaction per person (like iMessage): a new emoji replaces yours, the same one removes it. */

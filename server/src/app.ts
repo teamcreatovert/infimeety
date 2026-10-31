@@ -930,6 +930,21 @@ app.get('/channels/:id/rooms/:roomId/messages', guestOk, requireRole('member'), 
   return c.json(results.reverse().map(toMessage));
 });
 
+/** A room's pinned messages, newest pin first. */
+app.get('/channels/:id/rooms/:roomId/pins', guestOk, requireRole('member'), async (c) => {
+  const room = await c.env.DB.prepare('SELECT view_role FROM rooms WHERE id = ? AND channel_id = ?')
+    .bind(c.req.param('roomId'), c.req.param('id'))
+    .first<{ view_role: string | null }>()
+    .catch(() => ({ view_role: 'member' }));
+  if (!room || !atLeast(c.get('role'), asRole(room.view_role))) return c.json({ error: 'not_found' }, 404);
+  const { results } = await c.env.DB.prepare('SELECT * FROM messages WHERE room_id = ? AND pinned_at IS NOT NULL ORDER BY pinned_at DESC LIMIT 50')
+    .bind(c.req.param('roomId'))
+    .all<any>()
+    // Before the pins migration.
+    .catch(() => ({ results: [] as any[] }));
+  return c.json(results.map(toMessage));
+});
+
 // ─── Friends & direct messages ─────────────────────────────────────────────────
 
 app.get('/friends', auth, async (c) => {

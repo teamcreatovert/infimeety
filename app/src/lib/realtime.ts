@@ -142,6 +142,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return useMessages.getState().remove(msg.roomId, msg.id);
     case 'chat.reactions':
       return useMessages.getState().patch(msg.roomId, msg.id, { reactions: cleanReactions(msg.reactions) });
+    case 'chat.pinned':
+      return useMessages.getState().patch(msg.roomId, msg.id, { pinnedAt: typeof msg.pinnedAt === 'number' ? msg.pinnedAt : null });
     case 'chat.attachments':
       return useMessages.getState().patch(msg.roomId, msg.id, { attachments: cleanAttachments(msg.attachments) });
     case 'typing':
