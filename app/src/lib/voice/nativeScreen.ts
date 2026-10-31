@@ -58,6 +58,21 @@ export async function startNativeScreen(id: string, fps: number, onEnded: () => 
   let slotSize = 0;
   let latest = 0;
   let stopped = false;
+  // Windows only sends a frame when something on screen changes. On a still screen the last
+  // picture is sent again a few times a second, so someone who starts watching sees it at once.
+  let last: VideoFrame | null = null;
+  let lastAt = 0;
+  const send = (frame: VideoFrame) => {
+    last?.close();
+    last = frame.clone();
+    lastAt = performance.now();
+    writer.write(frame).catch(() => frame.close());
+  };
+  const repeat = setInterval(() => {
+    if (!last || stopped || performance.now() - lastAt < 240) return;
+    if (writer.desiredSize !== null && writer.desiredSize <= 0) return;
+    send(new VideoFrame(last, { timestamp: Math.round(performance.now() * 1000) }));
+  }, 250);
 
   const onBuffer = (e: { additionalData?: { infimeety?: string; slot?: number }; getBuffer(): ArrayBuffer }) => {
     if (e.additionalData?.infimeety !== 'screen') return;
@@ -74,18 +89,22 @@ export async function startNativeScreen(id: string, fps: number, onEnded: () => 
     latest = m.seq;
     // The encoder is behind: skip a frame rather than pile them up.
     if (writer.desiredSize !== null && writer.desiredSize <= 0) return;
-    const frame = new VideoFrame(new Uint8Array(buffer, m.slot * slotSize, m.w * m.h * 4), {
-      format: 'BGRX',
-      codedWidth: m.w,
-      codedHeight: m.h,
-      timestamp: m.time,
-    });
-    writer.write(frame).catch(() => frame.close());
+    send(
+      new VideoFrame(new Uint8Array(buffer, m.slot * slotSize, m.w * m.h * 4), {
+        format: 'BGRX',
+        codedWidth: m.w,
+        codedHeight: m.h,
+        timestamp: Math.round(performance.now() * 1000),
+      }),
+    );
   };
 
   function stop(ended = false) {
     if (stopped) return;
     stopped = true;
+    clearInterval(repeat);
+    last?.close();
+    last = null;
     void invoke('screen_share_stop');
     webview!.removeEventListener('sharedbufferreceived', onBuffer as never);
     webview!.removeEventListener('message', onMessage as never);
