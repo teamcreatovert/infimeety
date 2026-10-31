@@ -179,6 +179,25 @@ export function ChatToggle() {
   );
 }
 
+/** Discord-style icons at the top right of a call: each opens the side panel on its tab, or closes it. */
+function PanelToggle({ tab, label, children }: { tab: 'chat' | 'people'; label: string; children: ReactNode }) {
+  const open = useUI((s) => s.voiceChat && s.sideTab === tab);
+  return (
+    <Tooltip label={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} side="bottom">
+      <button
+        aria-label={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+        onClick={() => useUI.getState().set(open ? { voiceChat: false } : { voiceChat: true, sideTab: tab })}
+        className={clsx(
+          'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] transition-colors compact:h-9 compact:w-9',
+          open ? 'bg-fill-3 text-fg' : 'text-fg-2 hover:bg-fill-2 hover:text-fg',
+        )}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
+
 /**
  * The call's side panel: Chat, plus People and Watch party when the call's `people` and voice
  * room are given. `room` is the chat's room (a DM call chats in the DM).
@@ -421,6 +440,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           </span>
           <div data-tauri-drag-region className="flex-1 self-stretch" />
           {extras}
+          <PanelToggle tab="people" label="People">
+            <Users size={17} />
+          </PanelToggle>
+          <PanelToggle tab="chat" label="Chat">
+            <MessageSquareText size={17} />
+          </PanelToggle>
         </header>
 
         {soundPrompt}
@@ -818,11 +843,6 @@ function Dock({
       {soundboard && (
         <DockButton label="Soundboard" state={soundMenu ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
           <Drum size={19} />
-        </DockButton>
-      )}
-      {!watching && (
-        <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
-          <MessageSquareText size={19} />
         </DockButton>
       )}
       {isAdmin && (
