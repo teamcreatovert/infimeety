@@ -1,3 +1,5 @@
+import { FixerCard } from './FixerCard';
+import { FIXER_ID } from '@/lib/fixer';
 import clsx from 'clsx';
 import { motion } from 'motion/react';
 import { Copy, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-react';
@@ -102,7 +104,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
             >
               {author?.name ?? 'Someone'}
             </button>
-            {author?.bot && <span className="rounded-[4px] bg-accent px-1 text-[9.5px] font-bold leading-[15px] text-white">AI BOT</span>}
+            {author?.bot && <span className="rounded-[4px] bg-accent px-1 text-[9.5px] font-bold leading-[15px] text-white">{author.id === FIXER_ID ? 'SYSTEM' : 'AI BOT'}</span>}
             <Tooltip label={formatFull(msg.createdAt)}>
               <span className="text-[11px] tabular-nums text-fg-3">{formatTime(msg.createdAt)}</span>
             </Tooltip>
@@ -137,6 +139,8 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         )}
 
         {inviteCode && !msg.pending && <InviteCard code={inviteCode} />}
+        {msg.fixer && <FixerCard report={msg.fixer} />}
+        {msg.local && <div className="mt-1 text-[11px] text-fg-3">Only you can see this</div>}
 
         {msg.attachments.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-2">
@@ -171,7 +175,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         )}
       </div>
 
-      {!msg.pending && !editing && (
+      {!msg.pending && !msg.local && !editing && (
         <div
           className={clsx(
             'absolute -top-3.5 right-4 z-10 flex items-center gap-px rounded-[10px] p-[3px] opacity-0 glass-pop transition-opacity duration-100 group-hover:opacity-100 compact:right-2',

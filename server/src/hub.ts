@@ -3,7 +3,7 @@ import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../.
 import type { AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
-import { BOT_DAILY_LIMIT, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
+import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, asRole, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
@@ -668,7 +668,7 @@ export class ChannelHub extends DurableObject<Env> {
   private async answerBot(me: Peer, asked: Message) {
     this.botList ??= await loadBots(this.env, me.channelId);
     const bot = mentionedBot(asked.content, this.botList);
-    if (!bot) return;
+    if (!bot || bot.id === FIXER_ID) return;
     const day = `botReplies:${new Date().toISOString().slice(0, 10)}`;
     const used = (await this.ctx.storage.get<number>(day)) ?? 0;
     const botUser = { id: bot.id, name: bot.name, username: null, avatarUrl: null, bot: true } as const;

@@ -14,6 +14,8 @@ export interface BotInfo {
 }
 
 export const NOVA_ID = 'bot-nova';
+/** Built in like Nova, but answered by the asker's own app (it checks that device). */
+export const FIXER_ID = 'bot-fixer';
 /** Replies per server per day: keeps everyone inside the free allowance. */
 export const BOT_DAILY_LIMIT = 150;
 /**

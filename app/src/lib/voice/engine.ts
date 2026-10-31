@@ -473,6 +473,25 @@ class VoiceEngine {
     };
   }
 
+  /** How loud your mic is right now (0 to 1), for Fixer's mic check. */
+  micLevel() {
+    return this.micMeter ? rms(this.micMeter.analyser, this.micMeter.data) : 0;
+  }
+
+  /** Starts the call's sound if the browser held it back (Fixer's "Turn sound on"). */
+  async resumeAudio() {
+    if (this.ctx && this.ctx.state !== 'running') await this.ctx.resume().catch(() => {});
+    useVoice.setState({ audioBlocked: !!this.ctx && this.ctx.state !== 'running' && this.inCall });
+  }
+
+  /** Leaves and joins the same room again: fresh connections to everyone. */
+  async rejoin() {
+    const { channelId, roomId } = useVoice.getState();
+    if (!channelId || !roomId) return;
+    this.leave({ silent: true });
+    await this.join(channelId, roomId, { confirmed: true });
+  }
+
   /** Sends your voice state again, so the hub re-checks a fun-rule mute that just ended. */
   refreshState() {
     this.pushState();

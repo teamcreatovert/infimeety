@@ -7,6 +7,9 @@ export interface LocalMessage extends Message {
   /** Optimistic message waiting for the server echo. */
   pending?: boolean;
   nonce?: string;
+  /** Only in this app, for you (a question to Fixer and its answer). */
+  local?: boolean;
+  fixer?: import('@/lib/fixer').FixerReport;
 }
 
 interface RoomState {
@@ -22,6 +25,8 @@ interface MessagesState {
   load: (channelId: string, roomId: string) => Promise<void>;
   loadOlder: (channelId: string, roomId: string) => Promise<void>;
   addPending: (roomId: string, userId: string, content: string, attachments: Attachment[], replyTo: string | null) => string;
+  /** A private message only this app shows. */
+  addLocal: (msg: LocalMessage) => void;
   receive: (msg: Message, nonce?: string) => void;
   /** A message the server turned away (slow mode): take it back out. */
   dropPending: (roomId: string, nonce: string) => void;
@@ -92,6 +97,10 @@ export const useMessages = create<MessagesState>()((set, get) => {
       };
       update(roomId, (r) => ({ items: [...r.items, msg] }));
       return nonce;
+    },
+
+    addLocal(msg) {
+      update(msg.roomId, (r) => ({ items: [...r.items, msg] }));
     },
 
     receive(msg, nonce) {

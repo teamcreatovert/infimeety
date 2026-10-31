@@ -25,6 +25,7 @@ import { toast, useUI } from '@/stores/ui';
 import { canModerateRole } from '../../../../shared/protocol';
 import { noteSent, slowLabel, useSlowWait } from '@/lib/slowMode';
 import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
+import { askFixer } from '@/lib/fixerChat';
 
 interface Staged {
   file: SharedFile;
@@ -285,6 +286,12 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const send = () => {
     const content = text.trim();
     if ((!content && !staged.length) || !me || slowWait || banLeft) return;
+    // Fixer checks this device, so the question never leaves it.
+    if (/(?:^|\s)@fixer\b/i.test(content) && !staged.length) {
+      askFixer(room.id, me.id, content);
+      setText('');
+      return;
+    }
     const attachments: Attachment[] = staged.map((s) => ({
       id: s.file.id,
       ownerId: me.id,
