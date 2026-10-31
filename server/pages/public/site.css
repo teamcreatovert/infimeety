@@ -107,3 +107,4 @@ h2.section-title { margin: 14px 0 12px; font-size: clamp(30px, 4vw, 48px); line-
 .footer a { text-decoration: none; }
 .footer a:hover { color: var(--fg); }
 .footer .spacer { flex: 1; }
+.footer .by { margin-left: -4px; font-weight: 500; font-size: 13.5px; letter-spacing: 0; color: var(--fg3); }

@@ -44,6 +44,8 @@
     ],
     "createUpdaterArtifacts": true,
     "publisher": "Infimeety",
+    "copyright": "Copyright © 2026 Creatovert",
+    "homepage": "https://infimeety.pages.dev",
     "shortDescription": "Unlimited voice rooms, chat and watch-together",
     "icon": [
       "icons/32x32.png",
@@ -61,6 +63,10 @@
         "headerImage": "windows/installer-header.bmp",
         "sidebarImage": "windows/installer-sidebar.bmp",
         "uninstallerHeaderImage": "windows/installer-header.bmp"
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
       }
     },
     "macOS": {

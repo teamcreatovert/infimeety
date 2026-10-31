@@ -48,6 +48,14 @@
   ${EndIf}
 !macroend
 
+; Runs after the files are in place and Windows' list of installed apps is written.
+!macro NSIS_HOOK_POSTINSTALL
+  ; Apps & features shows Creatovert as the publisher. bundle.publisher stays "Infimeety":
+  ; Tauri's installer keeps the install folder under Software\<publisher>\Infimeety, and
+  ; changing it would make updates forget a folder someone picked.
+  WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "Creatovert"
+!macroend
+
 ; Runs after the app's files are removed: take the leftover from an update along.
 !macro NSIS_HOOK_POSTUNINSTALL
   Delete "$INSTDIR\${MAINBINARYNAME}.old.exe"

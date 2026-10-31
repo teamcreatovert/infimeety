@@ -60,7 +60,11 @@ export function SettingsModal() {
               <span className="relative">{t.label}</span>
             </button>
           ))}
-          <div className="mt-auto px-2.5 pb-1 text-[11px] text-fg-3 compact:hidden">Infimeety {APP_VERSION}</div>
+          <div className="mt-auto px-2.5 pb-1 text-[11px] leading-snug text-fg-3 compact:hidden">
+            Infimeety {APP_VERSION}
+            <br />
+            by Creatovert
+          </div>
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* The page's title and the close button stay put; only the page below scrolls. */}
