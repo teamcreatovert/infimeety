@@ -43,6 +43,7 @@ import { ChannelIcon } from '../ui/ChannelIcon';
 import { MenuItem, MenuSeparator, Popover, SubMenu, Tooltip, type Anchor } from '../ui/overlay';
 import { IconButton, Switch } from '../ui/primitives';
 import { DeviceMenu } from '../voice/DeviceMenu';
+import { AccountMenu } from './AccountMenu';
 import { api } from '@/lib/api';
 import { useParty } from '@/lib/party';
 import { spring } from '@/lib/motion';
@@ -845,17 +846,17 @@ export function UserBar() {
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const speaking = useVoice((s) => !!s.speaking.self);
-  const ui = useUI((s) => s.set);
   const [menu, setMenu] = useState<{
     kind: 'input' | 'output';
     anchor: Anchor;
   } | null>(null);
+  const [accounts, setAccounts] = useState<Anchor | null>(null);
   const openMenu = (kind: 'input' | 'output', el: HTMLElement) => setMenu(menu?.kind === kind ? null : { kind, anchor: el.getBoundingClientRect() });
   if (!me) return null;
   return (
     <div className="hairline-t flex h-[58px] shrink-0 items-center gap-0.5 px-2">
       <button
-        onClick={() => ui({ settingsTab: 'account' })}
+        onClick={(e) => setAccounts(accounts ? null : e.currentTarget.getBoundingClientRect())}
         className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[10px] p-1.5 text-left transition-colors hover:bg-fill-2"
       >
         <Avatar user={me} size={32} speaking={speaking} presence="online" />
@@ -888,6 +889,9 @@ export function UserBar() {
       </div>
       <Popover open={!!menu} anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[264px] p-1.5">
         {menu && <DeviceMenu kind={menu.kind} onClose={() => setMenu(null)} />}
+      </Popover>
+      <Popover open={!!accounts} anchor={accounts} onClose={() => setAccounts(null)} side="top" align="start" offset={10} className="w-[264px] p-1.5">
+        {accounts && <AccountMenu onClose={() => setAccounts(null)} />}
       </Popover>
     </div>
   );

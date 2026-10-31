@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Me } from '../../../shared/protocol';
+import { currentAccountId, forgetAccount, rememberAccount, savedAccounts, switchAccount } from '@/lib/accounts';
 import { api, ApiError, getToken, handleUnauthorized, randomId, setToken, sha256 } from '@/lib/api';
 import { isApp, isTauri, openExternal } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
@@ -80,13 +81,21 @@ async function openIn(tab: Window | null, url: string) {
 export const useAuth = create<AuthState>()((set, get) => {
   async function loadMe() {
     const me = await api<Me>('/me');
+    rememberAccount(me);
     set({ me, status: me.onboarded ? 'ready' : 'onboarding', error: null });
   }
 
-  handleUnauthorized(() => {
+  /** This account's session is over: forget it here, and carry on with the next one if there is one. */
+  function leaveAccount() {
+    const current = currentAccountId();
+    if (current) forgetAccount(current);
     setToken(null);
+    const next = savedAccounts()[0];
+    if (next) return switchAccount(next.id);
     set({ me: null, status: 'signedOut' });
-  });
+  }
+
+  handleUnauthorized(leaveAccount);
 
   return {
     status: 'loading',
@@ -215,11 +224,11 @@ export const useAuth = create<AuthState>()((set, get) => {
       } catch {
         /* already invalid */
       }
-      setToken(null);
-      set({ me: null, status: 'signedOut' });
+      leaveAccount();
     },
 
     setMe(me) {
+      rememberAccount(me);
       set({ me, status: me.onboarded ? 'ready' : 'onboarding' });
     },
   };

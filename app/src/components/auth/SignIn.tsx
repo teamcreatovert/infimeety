@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Button, Spinner, TextField } from '../ui/primitives';
 import { API_URL, DOWNLOAD_PAGE, PRIVACY_PAGE } from '@/config';
+import { addingAccount, cancelAddAccount, savedAccounts } from '@/lib/accounts';
 import { isApp, openExternal } from '@/lib/platform';
 import { pendingLink } from '@/lib/weblinks';
 import { softSpring, spring } from '@/lib/motion';
@@ -123,6 +124,13 @@ export function SignIn() {
 
         {error && <p className="mt-4 text-[12.5px] text-danger">{error === 'offline' ? 'You’re offline. Retrying…' : error}</p>}
         {!providers && !pending && <p className="mt-4 text-[12px] text-fg-3">Can’t reach the server at {API_URL}</p>}
+
+        {/* Adding another account: the one you came from is still signed in. */}
+        {addingAccount() && savedAccounts()[0] && !pending && (
+          <button onClick={cancelAddAccount} className="mt-5 text-[13px] font-medium text-accent hover:underline">
+            Back to {savedAccounts()[0].name}
+          </button>
+        )}
       </motion.div>
 
       <p className="absolute bottom-5 px-4 text-center text-[11.5px] text-fg-3 compact:hidden">
