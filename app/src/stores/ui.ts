@@ -29,6 +29,8 @@ interface UIState {
   focusedPeer: string | null;
   /** Screen shares you clicked Watch on (peer ids), like Discord: you see and hear only those. */
   watching: string[];
+  /** The Windows app's own screen picker is open. */
+  screenPicker: boolean;
   /** Full screen watching: hides the sidebars entirely. */
   immersive: boolean;
   /** Watch mode's layout when not full screen. */
@@ -69,6 +71,7 @@ export const useUI = create<UIState>()((set) => ({
   voiceChat: false,
   focusedPeer: null,
   watching: [],
+  screenPicker: false,
   immersive: false,
   watchLayout: 'theater',
   partyView: true,

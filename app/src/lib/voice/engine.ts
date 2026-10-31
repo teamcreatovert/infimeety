@@ -11,6 +11,7 @@ import { useVoice } from '@/stores/voice';
 import { confirmCallSwitch } from './callSwitch';
 import { denoise, resumeDenoise, voiceFilter, type Denoised } from './denoise';
 import { Peer, VOICE_BITRATE, type Signal } from './peer';
+import { canShareNatively, startNativeScreen } from './nativeScreen';
 import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
 
 const DEFAULT_ICE: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
@@ -102,6 +103,7 @@ class VoiceEngine {
   private cam: MediaStream | null = null;
   private screen: MediaStream | null = null;
   private systemAudio: SystemAudioCapture | null = null;
+  private nativeScreen: { stop: () => void } | null = null;
 
   // Stable container streams: their ids are announced once, tracks come and go.
   private micOut = new MediaStream();
@@ -341,7 +343,8 @@ class VoiceEngine {
     this.pushState();
   }
 
-  async startScreen() {
+  /** `source`: what the Windows app's own picker chose; without it, the picker opens first. */
+  async startScreen(source?: string) {
     if (!this.inCall || this.screen) return;
     if (!featureOn('screenShare')) return toast({ kind: 'info', title: 'Screen sharing is paused', body: 'We switched it off for a moment while we fix something. It’ll be back soon.' });
     const s = useSettings.getState();
@@ -365,6 +368,17 @@ class VoiceEngine {
         monitorTypeSurfaces: 'include',
       }) as DisplayMediaStreamOptions;
     let stream: MediaStream;
+    if (canShareNatively) {
+      if (!source) return useUI.getState().set({ screenPicker: true });
+      try {
+        const native = await startNativeScreen(source, preset.fps, () => this.stopScreen());
+        this.nativeScreen = native;
+        stream = new MediaStream([native.track]);
+      } catch (err) {
+        toast({ kind: 'error', title: "Couldn't start screen share", body: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+    } else
     try {
       stream = await navigator.mediaDevices.getDisplayMedia(options(pickerAudio)).catch((err: DOMException) => {
         // Some browsers (Safari) refuse a request that includes sound instead of ignoring it.
@@ -413,6 +427,8 @@ class VoiceEngine {
     this.removeSenders(this.screen);
     this.stopTracks(this.screen);
     this.screen = null;
+    this.nativeScreen?.stop();
+    this.nativeScreen = null;
     this.systemAudio?.stop();
     this.systemAudio = null;
     useVoice.setState({ screen: false, localScreen: null });

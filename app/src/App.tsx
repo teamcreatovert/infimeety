@@ -8,6 +8,7 @@ import { CreateChannelModal } from './components/modals/CreateChannelModal';
 import { InviteModal, JoinInviteModal } from './components/modals/InviteModals';
 import { SettingsModal } from './components/modals/SettingsModal';
 import { PartyPlanner } from './components/voice/PartyPlanner';
+import { ScreenPicker } from './components/voice/ScreenPicker';
 import { Background } from './components/shell/Background';
 import { Shell } from './components/shell/Shell';
 import { TitleBar } from './components/shell/TitleBar';
@@ -181,6 +182,7 @@ export default function App() {
         <ErrorBoundary quiet area="channel-settings"><ChannelSettingsModal /></ErrorBoundary>
         <ErrorBoundary quiet area="invite"><InviteModal /></ErrorBoundary>
         <ErrorBoundary quiet area="party-planner"><PartyPlanner /></ErrorBoundary>
+        <ErrorBoundary quiet area="screen-picker"><ScreenPicker /></ErrorBoundary>
         {status === 'ready' && <ErrorBoundary quiet area="join-invite"><JoinInviteModal /></ErrorBoundary>}
         <ErrorBoundary quiet area="lightbox"><Lightbox /></ErrorBoundary>
         <ErrorBoundary quiet area="update-prompt"><UpdatePrompt /></ErrorBoundary>
