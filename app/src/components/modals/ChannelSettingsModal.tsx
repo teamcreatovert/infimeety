@@ -5,6 +5,7 @@ import { outranks, type Member, type Role } from '../../../../shared/protocol';
 import { prepareAvatar } from '../auth/AvatarEditor';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { AuditLog } from './AuditLog';
+import { BotSettings } from './BotSettings';
 import { AutoModSettings } from './AutoModSettings';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, Modal, Popover, type Anchor } from '../ui/overlay';
@@ -199,6 +200,7 @@ export function ChannelSettingsModal() {
         </Group>
 
         {(channel.role === 'owner' || channel.role === 'admin') && <AutoModSettings channelId={channel.id} />}
+        <BotSettings channel={channel} />
         {(channel.role === 'owner' || channel.role === 'admin') && <AuditLog channelId={channel.id} />}
 
         {isOwner && (

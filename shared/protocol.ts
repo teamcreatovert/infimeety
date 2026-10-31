@@ -29,6 +29,8 @@ export interface PublicUser {
   avatarUrl: string | null;
   /** A browser guest: no account, exists only inside one meeting. */
   guest?: boolean;
+  /** An AI bot (Nova, or one a server's admins made): its messages are AI answers. */
+  bot?: boolean;
 }
 
 export interface Me extends PublicUser {

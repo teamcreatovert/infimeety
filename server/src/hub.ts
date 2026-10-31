@@ -3,6 +3,7 @@ import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../.
 import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, type History } from './automod';
+import { BOT_DAILY_LIMIT, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, asRole, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
@@ -64,6 +65,8 @@ export class ChannelHub extends DurableObject<Env> {
   private parties = new Map<string, PartyState>();
   private lastRequest = new Map<string, number>();
   private rates = new Buckets();
+  /** This channel's AI bots (Nova and the admins' own), loaded when first called on. */
+  private botList: BotInfo[] | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -497,6 +500,50 @@ export class ChannelHub extends DurableObject<Env> {
       .run();
     this.lastPost.set(`${message.roomId}:${me.userId}`, message.createdAt);
     await this.broadcastRoom(message.roomId, me.channelId, { t: 'chat.new', message, nonce });
+    if (content.includes('@')) this.ctx.waitUntil(this.answerBot(me, message).catch((err) => console.error('bot reply failed', err)));
+  }
+
+  // ─── AI bots ─────────────────────────────────────────────────────────────────
+
+  /** The Worker changed this channel's bots: load them again when next needed. */
+  async botsChanged() {
+    this.botList = null;
+  }
+
+  /** "@Nova …" or "@SomeBot …": the bot answers in the same room, as itself. */
+  private async answerBot(me: Peer, asked: Message) {
+    this.botList ??= await loadBots(this.env, me.channelId);
+    const bot = mentionedBot(asked.content, this.botList);
+    if (!bot) return;
+    const day = `botReplies:${new Date().toISOString().slice(0, 10)}`;
+    const used = (await this.ctx.storage.get<number>(day)) ?? 0;
+    const botUser = { id: bot.id, name: bot.name, username: null, avatarUrl: null, bot: true } as const;
+    await this.broadcastRoom(asked.roomId, me.channelId, { t: 'member.updated', user: botUser });
+    let content: string;
+    if (used >= BOT_DAILY_LIMIT) {
+      content = `I've answered ${BOT_DAILY_LIMIT} questions here today, which is the free daily limit. I'll be back tomorrow!`;
+    } else {
+      await this.ctx.storage.put(day, used + 1);
+      await this.broadcastRoom(asked.roomId, me.channelId, { t: 'typing', roomId: asked.roomId, userId: bot.id });
+      const [room, recent] = await Promise.all([
+        this.env.DB.prepare('SELECT name FROM rooms WHERE id = ?').bind(asked.roomId).first<{ name: string }>(),
+        this.env.DB.prepare(
+          "SELECT u.name, m.content FROM messages m JOIN users u ON u.id = m.user_id WHERE m.room_id = ? AND m.content != '' ORDER BY m.id DESC LIMIT 12",
+        )
+          .bind(asked.roomId)
+          .all<{ name: string; content: string }>(),
+      ]);
+      const history = recent.results.reverse().map((m) => `${m.name}: ${m.content.slice(0, 600)}`);
+      content = await botAnswer(this.env, bot, room?.name ?? 'chat', history).catch((err) => {
+        console.error('bot answer failed', err);
+        return 'Sorry, I couldn’t answer just now. Try again in a moment.';
+      });
+    }
+    const reply: Message = { id: newId(), roomId: asked.roomId, userId: bot.id, content, attachments: [], replyTo: asked.id, reactions: {}, createdAt: Date.now(), editedAt: null };
+    await this.env.DB.prepare('INSERT INTO messages (id, room_id, user_id, content, attachments, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(reply.id, reply.roomId, reply.userId, reply.content, null, reply.replyTo, reply.createdAt)
+      .run();
+    await this.broadcastRoom(reply.roomId, me.channelId, { t: 'chat.new', message: reply });
   }
 
   /** A message in this channel, if `role` can see its room. */

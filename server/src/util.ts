@@ -6,6 +6,8 @@ import type { Lobby } from './lobby';
 export interface Env {
   DB: D1Database;
   AVATARS: KVNamespace;
+  /** Workers AI: the AI bots (bots.ts), on the free daily allowance. */
+  AI: Ai;
   HUB: DurableObjectNamespace<ChannelHub>;
   LOBBY: DurableObjectNamespace<Lobby>;
   PUBLIC_URL: string;
@@ -66,12 +68,13 @@ export function inviteCode(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => alphabet[b % alphabet.length]).join('');
 }
 
-export const toPublicUser = (r: Pick<UserRow, 'id' | 'name' | 'username' | 'avatar_url'> & { guest_of?: string | null }): PublicUser => ({
+export const toPublicUser = (r: Pick<UserRow, 'id' | 'name' | 'username' | 'avatar_url'> & { guest_of?: string | null; is_bot?: number | null }): PublicUser => ({
   id: r.id,
   name: r.name,
   username: r.username,
   avatarUrl: r.avatar_url,
   ...(r.guest_of ? { guest: true } : {}),
+  ...(r.is_bot ? { bot: true } : {}),
 });
 
 export const toMe = (r: UserRow, providers: Provider[]): Me => ({

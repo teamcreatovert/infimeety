@@ -51,6 +51,7 @@ import {
   asRole,
 } from './util';
 import { audit } from './audit';
+import { loadBots } from './bots';
 import { cleanRules, parseRules } from './automod';
 
 /**
@@ -782,6 +783,48 @@ app.get('/channels/:id/audit', auth, requireRole('admin'), async (c) => {
     ? (await c.env.DB.prepare(`SELECT * FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all<any>()).results.map(toPublicUser)
     : [];
   return c.json({ entries, users });
+});
+
+// ─── AI bots ───────────────────────────────────────────────────────────────────
+
+/** Bots in this channel: Nova (everywhere) and the ones its admins made. */
+app.get('/channels/:id/bots', guestOk, requireRole('member'), async (c) => {
+  const bots = await loadBots(c.env, c.req.param('id'));
+  return c.json(bots.map((b) => ({ id: b.id, name: b.name, username: null, avatarUrl: null, bot: true, instructions: b.instructions, builtIn: b.builtIn })));
+});
+
+/** An admin makes a bot: a one-word name (people call it with @Name) and what it does. */
+app.post('/channels/:id/bots', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<{ name?: unknown; instructions?: unknown }>().catch(() => ({}) as { name?: unknown; instructions?: unknown });
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const instructions = typeof body.instructions === 'string' ? body.instructions.trim().slice(0, 1000) : '';
+  if (!/^[\p{L}\p{N}_-]{2,24}$/u.test(name)) return c.json({ error: 'bad_name' }, 400);
+  if (instructions.length < 5) return c.json({ error: 'bad_instructions' }, 400);
+  const bots = await loadBots(c.env, id);
+  if (bots.some((b) => b.name.toLowerCase() === name.toLowerCase())) return c.json({ error: 'name_taken' }, 409);
+  if (bots.filter((b) => !b.builtIn).length >= 10) return c.json({ error: 'too_many' }, 409);
+  const userId = `bot-${newId()}`;
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO users (id, name, username, onboarded, created_at, is_bot) VALUES (?, ?, NULL, 1, ?, 1)').bind(userId, name, now),
+    c.env.DB.prepare('INSERT INTO bots (user_id, channel_id, instructions, created_by, created_at) VALUES (?, ?, ?, ?, ?)').bind(userId, id, instructions, c.get('user').id, now),
+  ]);
+  c.executionCtx.waitUntil(hub(c.env, id).botsChanged());
+  log(c, 'bot.create', userId, { name });
+  return c.json({ id: userId, name, username: null, avatarUrl: null, bot: true, instructions, builtIn: false });
+});
+
+app.delete('/channels/:id/bots/:botId', auth, requireRole('admin'), async (c) => {
+  const id = c.req.param('id');
+  const botId = c.req.param('botId');
+  const row = await c.env.DB.prepare('SELECT u.name FROM bots b JOIN users u ON u.id = b.user_id WHERE b.user_id = ? AND b.channel_id = ?').bind(botId, id).first<{ name: string }>();
+  if (!row) return c.json({ error: 'not_found' }, 404);
+  // The bot's user stays, so its old answers still show its name; it just can't be called anymore.
+  await c.env.DB.prepare('DELETE FROM bots WHERE user_id = ?').bind(botId).run();
+  c.executionCtx.waitUntil(hub(c.env, id).botsChanged());
+  log(c, 'bot.delete', botId, { name: row.name });
+  return c.json({ ok: true });
 });
 
 // ─── AutoMod ───────────────────────────────────────────────────────────────────

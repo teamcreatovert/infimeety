@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { Channel, Member, PublicUser, Role, Room, VoiceSnapshot } from '../../../shared/protocol';
+
+/** An AI bot, as GET /channels/:id/bots lists it. */
+export type Bot = PublicUser & { bot: true; instructions: string; builtIn: boolean };
 import { api } from '@/lib/api';
 import type { HubStatus } from '@/lib/hub';
 
@@ -18,6 +21,8 @@ interface ChannelsState {
   activeChannelId: string | null;
   activeRoom: Record<string, string>;
   members: Record<string, Member[]>;
+  /** Each channel's AI bots (Nova and the admins' own), for names in chat and settings. */
+  bots: Record<string, Bot[]>;
   /** Every user we've seen, for resolving names/avatars in messages. */
   users: Record<string, PublicUser>;
   online: Record<string, string[]>;
@@ -69,6 +74,7 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
   activeChannelId: saved.channel ?? null,
   activeRoom: saved.rooms ?? {},
   members: {},
+  bots: {},
   users: {},
   online: {},
   voice: {},
@@ -150,11 +156,13 @@ export const useChannels = create<ChannelsState>()((set, get) => ({
   },
 
   async loadMembers(channelId) {
-    const members = await api<Member[]>(`/channels/${channelId}/members`);
+    // Bots are loaded alongside; an older server without them just has none.
+    const [members, bots] = await Promise.all([api<Member[]>(`/channels/${channelId}/members`), api<Bot[]>(`/channels/${channelId}/bots`).catch(() => [] as Bot[])]);
     set((s) => {
       const users = { ...s.users };
       for (const m of members) users[m.id] = { id: m.id, name: m.name, username: m.username, avatarUrl: m.avatarUrl, ...(m.guest ? { guest: true } : {}) };
-      return { members: { ...s.members, [channelId]: members }, users };
+      for (const b of bots) users[b.id] = { id: b.id, name: b.name, username: null, avatarUrl: null, bot: true };
+      return { members: { ...s.members, [channelId]: members }, bots: { ...s.bots, [channelId]: bots }, users };
     });
   },
 

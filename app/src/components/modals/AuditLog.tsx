@@ -33,6 +33,10 @@ function describe(e: AuditEntry, name: (id: string | null) => string, room: (id:
       return 'deleted a category';
     case 'automod.update':
       return 'changed the AutoMod rules';
+    case 'bot.create':
+      return `made the AI bot ${d.name ?? ''}`.trim();
+    case 'bot.delete':
+      return `removed the AI bot ${d.name ?? ''}`.trim();
     case 'automod.block':
       return `AutoMod blocked a message from ${name(e.target)}`;
     case 'message.delete':

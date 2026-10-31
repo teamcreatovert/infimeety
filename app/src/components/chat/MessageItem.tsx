@@ -102,6 +102,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
             >
               {author?.name ?? 'Someone'}
             </button>
+            {author?.bot && <span className="rounded-[4px] bg-accent px-1 text-[9.5px] font-bold leading-[15px] text-white">AI BOT</span>}
             <Tooltip label={formatFull(msg.createdAt)}>
               <span className="text-[11px] tabular-nums text-fg-3">{formatTime(msg.createdAt)}</span>
             </Tooltip>
