@@ -42,10 +42,25 @@ function takeToken() {
   return true;
 }
 
-/** Sounds playing right now, so turning the soundboard off silences them at once. */
-const active = new Set<AudioBufferSourceNode>();
+/** Sounds playing right now, by who played them: a new one replaces that person's last one. */
+const active = new Map<string, Set<AudioBufferSourceNode>>();
+const PREVIEW = '__preview';
 
-async function start(ctx: AudioContext, out: AudioNode, sound: PackSound, volume: number) {
+/** The sound you're playing for everyone, for the big Stop button. */
+export const useMySound = create<{ id: string | null; name: string; emoji?: string }>()(() => ({ id: null, name: '' }));
+
+function stopOf(userId: string) {
+  for (const src of active.get(userId) ?? []) {
+    try {
+      src.stop();
+    } catch {
+      // Already over.
+    }
+  }
+  active.delete(userId);
+}
+
+async function start(ctx: AudioContext, out: AudioNode, sound: PackSound, volume: number, owner: string) {
   const buffer = await packBuffer(ctx, sound);
   const gain = ctx.createGain();
   const src = ctx.createBufferSource();
@@ -59,23 +74,18 @@ async function start(ctx: AudioContext, out: AudioNode, sound: PackSound, volume
     gain.gain.linearRampToValueAtTime(0, t + MAX_SECONDS);
     src.stop(t + MAX_SECONDS);
   }
-  active.add(src);
+  const mine = active.get(owner) ?? new Set();
+  mine.add(src);
+  active.set(owner, mine);
   src.onended = () => {
-    active.delete(src);
+    active.get(owner)?.delete(src);
     gain.disconnect();
   };
   return src;
 }
 
 export function stopAllSounds() {
-  for (const src of active) {
-    try {
-      src.stop();
-    } catch {
-      // Already over.
-    }
-  }
-  active.clear();
+  for (const owner of [...active.keys()]) if (owner !== PREVIEW) stopOf(owner);
 }
 
 async function render(id: string, userId: string, mine: boolean) {
@@ -88,10 +98,18 @@ async function render(id: string, userId: string, mine: boolean) {
   if (!sound) return;
   const s = useSettings.getState();
   burst(sound.name, mine ? 'You' : (useChannels.getState().users[userId]?.name ?? 'Someone'));
-  if (!mine && (!s.soundboard || s.localMutes[userId])) return;
+  if (!mine && (!s.hearSounds || s.localMutes[userId])) return;
   const output = voice.soundOutput();
   if (!output) return;
-  await start(output.ctx, output.out, sound, s.soundboardVolume * (mine ? 1 : Math.min(1.5, s.userVolumes[userId] ?? 1))).catch(() => {});
+  // Like Discord: someone's new sound cuts off their previous one.
+  stopOf(userId);
+  const src = await start(output.ctx, output.out, sound, s.soundboardVolume * (mine ? 1 : Math.min(1.5, s.userVolumes[userId] ?? 1)), userId).catch(() => null);
+  if (mine && src) {
+    useMySound.setState({ id: sound.id, name: sound.name, emoji: sound.emoji });
+    src.addEventListener('ended', () => {
+      if (!active.get(userId)?.size) useMySound.setState({ id: null, name: '', emoji: undefined });
+    });
+  }
 }
 
 /** Why you can't play sounds right now, or null if you can. */
@@ -116,6 +134,19 @@ export function playSound(id: string) {
   const sound: SoundRef = { kind: 'pack', id };
   getHub(vs.channelId)?.send({ t: 'sound.play', sound });
   void render(id, useAuth.getState().me?.id ?? '', true);
+}
+
+/** Stops the sound you're playing, for everyone in the call. */
+export function stopMySound() {
+  const vs = useVoice.getState();
+  stopOf(useAuth.getState().me?.id ?? '');
+  useMySound.setState({ id: null, name: '', emoji: undefined });
+  if (vs.channelId) getHub(vs.channelId)?.send({ t: 'sound.stop' });
+}
+
+/** Someone stopped their sound. */
+export function onSoundStop(userId: string) {
+  if (typeof userId === 'string') stopOf(userId);
 }
 
 /** Someone else in your voice room played a sound. */
@@ -147,7 +178,7 @@ export async function previewSound(id: string) {
   if (ctx.state !== 'running') await ctx.resume().catch(() => {});
   usePreview.setState({ id });
   try {
-    const src = await start(ctx, output?.preview ?? ctx.destination, sound, useSettings.getState().soundboardVolume);
+    const src = await start(ctx, output?.preview ?? ctx.destination, sound, useSettings.getState().soundboardVolume, PREVIEW);
     if (usePreview.getState().id !== id) return src.stop();
     previewing = src;
     src.addEventListener('ended', () => {

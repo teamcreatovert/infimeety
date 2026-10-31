@@ -369,6 +369,13 @@ export class ChannelHub extends DurableObject<Env> {
         return;
       }
 
+      case 'sound.stop': {
+        const v = me.voice;
+        if (!v) return;
+        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound.stop', peerId: me.peerId, userId: me.userId });
+        return;
+      }
+
       case 'rtc': {
         const target = this.byPeer(msg.to);
         if (target) this.send(target, { t: 'rtc', from: me.peerId, fromUser: me.userId, data: msg.data });

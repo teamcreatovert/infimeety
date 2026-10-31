@@ -6,7 +6,7 @@ import { onRemoteConfig } from './remote';
 import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
-import { onSound } from './soundboard';
+import { onSound, onSoundStop } from './soundboard';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -151,6 +151,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
     case 'sound':
       if (useVoice.getState().channelId === cid) onSound(msg);
       return;
+    case 'sound.stop':
+      return onSoundStop(msg.userId);
     case 'media.request':
       return void onMediaRequest(hub, msg);
     case 'media.offline':

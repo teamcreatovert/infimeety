@@ -11,6 +11,8 @@ import { DOWNLOAD_PAGE } from '@/config';
 export interface PackSound {
   id: string;
   name: string;
+  /** Its icon, from an emoji at the start of the file name. */
+  emoji?: string;
   file: string;
   size: number;
   hash: string;

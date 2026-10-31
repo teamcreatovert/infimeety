@@ -327,6 +327,8 @@ export type ClientMsg =
   | { t: 'rtc'; to: string; data: RtcPayload }
   /** Soundboard: everyone in your voice room hears it. */
   | { t: 'sound.play'; sound: SoundRef }
+  /** Stops the sound you're playing, for everyone. */
+  | { t: 'sound.stop' }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
@@ -367,6 +369,7 @@ export type ServerMsg =
   | { t: 'typing'; roomId: string; userId: string }
   | { t: 'rtc'; from: string; fromUser: string; data: RtcPayload }
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
+  | { t: 'sound.stop'; peerId: string; userId: string }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }

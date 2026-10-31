@@ -58,7 +58,7 @@ export interface SettingsState {
   soundVolume: number;
   messageSounds: boolean;
   /** Soundboard: hear the sounds others in the call play, how loud (0–1), and your starred ones. */
-  soundboard: boolean;
+  hearSounds: boolean;
   soundboardVolume: number;
   soundFavorites: string[];
   /** Send crash reports (the error and the app version, nothing personal) to Infimeety. */
@@ -131,7 +131,7 @@ export const useSettings = create<SettingsState>()(
       soundsEnabled: true,
       soundVolume: 0.7,
       messageSounds: true,
-      soundboard: true,
+      hearSounds: true,
       soundboardVolume: 0.7,
       soundFavorites: [],
       crashReports: true,

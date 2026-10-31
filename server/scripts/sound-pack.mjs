@@ -36,6 +36,9 @@ function prettyName(file, fallback) {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : fallback;
 }
 
+/** An emoji at the start of a file name ("🦆 quack.mp3") becomes the sound's icon. */
+const EMOJI = /^(\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|️|‍\p{Extended_Pictographic})*️?)\s*/u;
+
 const slug = (file) => file.slice(0, -extname(file).length).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 rmSync(to, { recursive: true, force: true });
@@ -50,8 +53,9 @@ for (const file of existsSync(from) ? readdirSync(from).sort() : []) {
   }
   const out = `${slug(file)}${extname(file).toLowerCase()}`;
   copyFileSync(join(from, file), join(to, out));
-  const name = prettyName(file, `Sound ${sounds.length + 1}`);
-  sounds.push({ id: slug(file), name, file: `sounds/${out}`, size: bytes.length, hash: createHash('sha1').update(bytes).digest('hex').slice(0, 12) });
+  const emoji = EMOJI.exec(file)?.[1];
+  const name = prettyName(emoji ? file.slice(EMOJI.exec(file)[0].length) : file, `Sound ${sounds.length + 1}`);
+  sounds.push({ id: slug(file) || `sound-${sounds.length + 1}`, name, ...(emoji ? { emoji } : {}), file: `sounds/${out}`, size: bytes.length, hash: createHash('sha1').update(bytes).digest('hex').slice(0, 12) });
 }
 const version = createHash('sha1').update(JSON.stringify(sounds)).digest('hex').slice(0, 12);
 writeFileSync(join(to, 'sounds.json'), JSON.stringify({ version, sounds }, null, 2));
