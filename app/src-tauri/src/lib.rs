@@ -7,6 +7,25 @@ mod names;
 mod phone;
 #[cfg(desktop)]
 mod ptt;
+#[cfg(windows)]
+mod screen_share;
+/// Mac and Linux share through the webview's own picker; these just say so.
+#[cfg(all(desktop, not(windows)))]
+mod screen_share {
+    #[derive(Default)]
+    pub struct ScreenShare;
+    #[tauri::command]
+    pub async fn screen_sources() -> Result<Vec<()>, String> {
+        Err("unsupported".into())
+    }
+    #[tauri::command]
+    pub async fn screen_share_start(id: String, fps: u32) -> Result<(), String> {
+        let _ = (id, fps);
+        Err("unsupported".into())
+    }
+    #[tauri::command]
+    pub fn screen_share_stop() {}
+}
 #[cfg(desktop)]
 mod system_audio;
 #[cfg(desktop)]
@@ -50,6 +69,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             app.manage(registry);
             app.manage(media::Receivers::default());
             app.manage(system_audio::SystemAudio::default());
+            app.manage(screen_share::ScreenShare::default());
             app.manage(desktop::CloseToTray::default());
             app.manage(ptt::PushToTalk::default());
             desktop::setup_tray(app)?;
@@ -94,6 +114,9 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             ptt::ptt_watch,
             system_audio::system_audio_start,
             system_audio::system_audio_stop,
+            screen_share::screen_sources,
+            screen_share::screen_share_start,
+            screen_share::screen_share_stop,
             desktop::set_close_to_tray,
             desktop::overlay_open,
             desktop::overlay_close,
