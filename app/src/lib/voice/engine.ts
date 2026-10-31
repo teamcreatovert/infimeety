@@ -137,7 +137,8 @@ class VoiceEngine {
     this.micOut = new MediaStream();
     this.camOut = new MediaStream();
     this.screenOut = new MediaStream();
-    useVoice.setState({ channelId, roomId, status: 'connecting', speaking: {}, remote: {}, connection: {}, serverMuted: false });
+    // Joining means you want to hear: a Deafen left on from the last call doesn't come along.
+    useVoice.setState({ channelId, roomId, status: 'connecting', speaking: {}, remote: {}, connection: {}, serverMuted: false, deafened: false });
 
     this.ensureAudio();
     await Promise.all([this.openMic(), refreshIce()]);

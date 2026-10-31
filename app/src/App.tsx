@@ -41,6 +41,7 @@ import { useChannels } from './stores/channels';
 import { useFriends } from './stores/friends';
 import { ACCENTS, useSettings } from './stores/settings';
 import { toast } from './stores/ui';
+import { useVoice } from './stores/voice';
 
 export function useAppearance() {
   const theme = useSettings((s) => s.theme);
@@ -90,12 +91,20 @@ export default function App() {
     // Global shortcuts: Ctrl+Shift+M mute, Ctrl+Shift+D deafen.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      // Said out loud, so a shortcut pressed by accident (like Ctrl+Shift for the keyboard
+      // language, then D) is never a mystery.
+      const shortcut = e.metaKey ? 'Cmd+Shift' : 'Ctrl+Shift';
       if (e.key.toLowerCase() === 'm') {
         e.preventDefault();
-        void voice.toggleMute();
+        void voice.toggleMute().then(() => {
+          const { muted, channelId } = useVoice.getState();
+          if (channelId) toast({ kind: 'info', title: muted ? 'Muted' : 'Unmuted', body: `With ${shortcut}+M. Press it again to switch back.` });
+        });
       } else if (e.key.toLowerCase() === 'd') {
         e.preventDefault();
         voice.toggleDeafen();
+        const { deafened, channelId } = useVoice.getState();
+        if (channelId) toast({ kind: 'info', title: deafened ? 'Deafened' : 'Undeafened', body: `With ${shortcut}+D. Press it again to switch back.` });
       }
     };
 

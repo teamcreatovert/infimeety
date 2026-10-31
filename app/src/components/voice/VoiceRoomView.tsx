@@ -297,18 +297,20 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   }, [watching]);
   useEffect(() => () => useUI.getState().set({ navCollapsed: false }), []);
 
-  // Cinema behaviour: controls fade out after a moment of stillness.
+  // Cinema behaviour: controls fade out after a moment of stillness. In the grid too while a
+  // screen is shared, like Discord, so the buttons don't sit over the stream.
+  const anyShare = participants.some((p) => p.screen);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const wake = () => {
     setIdle(false);
     clearTimeout(idleTimer.current);
-    if (watching) idleTimer.current = setTimeout(() => setIdle(true), 2800);
+    if (watching || anyShare) idleTimer.current = setTimeout(() => setIdle(true), 2800);
   };
   useEffect(() => {
     wake();
     return () => clearTimeout(idleTimer.current);
-  }, [watching, focused?.peerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watching, anyShare, focused?.peerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -407,7 +409,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
   return (
     <div className="relative flex h-full min-h-0">
-      <div className="relative flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col" onMouseMove={wake} onPointerDown={wake}>
         <header data-tauri-drag-region className="hairline-b flex h-[52px] shrink-0 items-center gap-2 px-5 compact:gap-1.5 compact:px-3">
           <MobileBack />
           <AudioLines size={18} className="shrink-0 text-success" />
@@ -438,7 +440,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           )}
         </div>
 
-        <Dock channel={channel} room={room} participants={participants} hidden={false} myPeer={myPeer} watching={false} />
+        <Dock channel={channel} room={room} participants={participants} hidden={anyShare && idle && !isCompactNow()} myPeer={myPeer} watching={false} />
       </div>
       <VoiceChatPanel
         open={voiceChat}
