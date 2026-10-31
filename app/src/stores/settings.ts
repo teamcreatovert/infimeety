@@ -73,7 +73,6 @@ export interface SettingsState {
   /** "Clean up their voice", per person: 0 off, 1 standard, 2 strong. */
   userNoiseFilters: Record<string, number>;
 
-  autoUpdate: boolean;
 
   /** Desktop: the close button hides to the tray; a who's-talking overlay while in a call. */
   closeToTray: boolean;
@@ -139,7 +138,6 @@ export const useSettings = create<SettingsState>()(
       localMutes: {},
       streamVolumes: {},
 
-      autoUpdate: true,
 
       closeToTray: true,
       overlay: true,

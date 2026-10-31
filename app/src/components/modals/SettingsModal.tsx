@@ -7,7 +7,6 @@ import { AvatarEditor } from '../auth/AvatarEditor';
 import { DiscordLogo, GoogleLogo } from '../auth/SignIn';
 import { UsernameStatus, useUsernameCheck } from '../auth/Onboarding';
 import { Modal } from '../ui/overlay';
-import { OtherVersions } from './OtherVersions';
 import { Button, Group, Row, Segmented, Select, Slider, Switch, TextField } from '../ui/primitives';
 import { APP_VERSION, PRIVACY_PAGE } from '@/config';
 import { api } from '@/lib/api';
@@ -641,7 +640,6 @@ function DesktopTab() {
 
 function UpdatesTab() {
   const { status, update, error } = useUpdater();
-  const autoUpdate = useSettings((s) => s.autoUpdate);
   const label =
     status === 'checking'
       ? 'Checking…'
@@ -656,7 +654,7 @@ function UpdatesTab() {
               : `You're on version ${APP_VERSION}`;
   return (
     <>
-      <Group footer={status === 'error' ? error : 'Updates download in the background, install with one click and reopen the app — you stay signed in.'}>
+      <Group footer={status === 'error' ? error : 'Infimeety checks for updates every time it opens and installs them right away, so you’re always on the latest version. You stay signed in.'}>
         <Row label={label} detail={`Current version ${APP_VERSION}`}>
           {status === 'available' ? (
             <Button variant="primary" size="sm" onClick={() => void useUpdater.getState().install()}>
@@ -668,11 +666,7 @@ function UpdatesTab() {
             </Button>
           )}
         </Row>
-        <Row label="Check automatically">
-          <Switch checked={autoUpdate} onChange={(v) => useSettings.getState().set({ autoUpdate: v })} />
-        </Row>
       </Group>
-      {isTauri && <OtherVersions />}
       <Group title="Troubleshooting" footer="Safe Mode opens Infimeety once with default settings, keeping yours aside. A reset clears what this device remembers (settings, the last open screen). You stay signed in, and files you share keep sharing.">
         <Row label="Restart in Safe Mode">
           <Button size="sm" onClick={restartInSafeMode}>

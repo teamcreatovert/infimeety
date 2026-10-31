@@ -22,6 +22,7 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SafeModeBanner } from './components/shell/SafeModeBanner';
 import { UpdateRequired } from './components/UpdateRequired';
+import { UpdateGate } from './components/UpdateGate';
 import { markHealthy, safeMode } from './lib/boot';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
@@ -172,6 +173,7 @@ export default function App() {
         <ErrorBoundary quiet area="lightbox"><Lightbox /></ErrorBoundary>
         <ErrorBoundary quiet area="update-prompt"><UpdatePrompt /></ErrorBoundary>
         <ErrorBoundary quiet area="update-required"><UpdateRequired /></ErrorBoundary>
+        <ErrorBoundary quiet area="update-gate"><UpdateGate /></ErrorBoundary>
         {status === 'ready' && <ErrorBoundary quiet area="incoming-call"><IncomingCall /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="join-meeting"><JoinMeetingModal /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="meeting-knocks"><MeetingKnocks /></ErrorBoundary>}

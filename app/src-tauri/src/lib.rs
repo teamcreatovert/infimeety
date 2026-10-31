@@ -11,8 +11,6 @@ mod ptt;
 mod system_audio;
 #[cfg(desktop)]
 mod tarball;
-#[cfg(desktop)]
-mod versions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -94,7 +92,6 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             media::media_receive_write,
             media::media_receive_close,
             ptt::ptt_watch,
-            versions::install_version,
             system_audio::system_audio_start,
             system_audio::system_audio_stop,
             desktop::set_close_to_tray,
