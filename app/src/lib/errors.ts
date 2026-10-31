@@ -1,9 +1,11 @@
 import { API_URL, APP_VERSION } from '@/config';
+import { useSettings } from '@/stores/settings';
 
 /**
  * Crash reports: what broke, where, on which version and system, so problems show up before
  * friends have to report them. No messages, names or files: just the error and its stack.
- * Sent to our own server (Cloudflare's logs keep them); a handful per session at most.
+ * Sent to our own server (Cloudflare's logs keep them); a handful per session at most. Off with
+ * Settings > Account > Send crash reports.
  */
 
 const sent = new Set<string>();
@@ -12,7 +14,7 @@ let budget = 8;
 export function reportError(error: unknown, where: string) {
   const err = error instanceof Error ? error : new Error(typeof error === 'string' ? error : JSON.stringify(error ?? null));
   const key = `${where}:${err.message}`;
-  if (sent.has(key) || budget <= 0) return;
+  if (sent.has(key) || budget <= 0 || !useSettings.getState().crashReports) return;
   sent.add(key);
   budget--;
   const body = JSON.stringify({

@@ -145,12 +145,24 @@ function AccountForm({ me }: { me: Me }) {
           Save changes
         </Button>
       </div>
+      <CrashReports />
       <p className="mt-6 text-[12px] text-fg-3">
         <button onClick={() => void openExternal(PRIVACY_PAGE)} className="hover:text-accent hover:underline">
           Privacy policy
         </button>
       </p>
     </>
+  );
+}
+
+function CrashReports() {
+  const on = useSettings((s) => s.crashReports);
+  return (
+    <Group title="Privacy">
+      <Row label="Send crash reports" detail="When something in Infimeety breaks, it tells us what broke and on which version, so we can fix it. Never your messages, names or files.">
+        <Switch checked={on} onChange={(v) => useSettings.getState().set({ crashReports: v })} />
+      </Row>
+    </Group>
   );
 }
 

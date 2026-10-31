@@ -61,6 +61,8 @@ export interface SettingsState {
   soundboard: boolean;
   soundboardVolume: number;
   soundFavorites: string[];
+  /** Send crash reports (the error and the app version, nothing personal) to Infimeety. */
+  crashReports: boolean;
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -132,6 +134,7 @@ export const useSettings = create<SettingsState>()(
       soundboard: true,
       soundboardVolume: 0.7,
       soundFavorites: [],
+      crashReports: true,
 
       screenQuality: '1080p30',
       screenMode: 'motion',
