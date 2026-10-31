@@ -16,8 +16,8 @@ export interface PackSound {
   hash: string;
 }
 
-/** The website hosts the pack (same origin for the web app, cross-origin for the desktop one). */
-const SITE = new URL(DOWNLOAD_PAGE).origin;
+/** The website hosts the pack (same origin for the web app, cross-origin for the desktop one); the dev server in development. */
+const SITE = import.meta.env.DEV ? location.origin : new URL(DOWNLOAD_PAGE).origin;
 const CACHE = 'infimeety-sounds';
 const LIST = `${SITE}/sounds/sounds.json`;
 /** The last list that synced, kept with the files so the soundboard works offline. */

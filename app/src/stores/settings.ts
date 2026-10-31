@@ -57,6 +57,10 @@ export interface SettingsState {
   soundsEnabled: boolean;
   soundVolume: number;
   messageSounds: boolean;
+  /** Soundboard: hear the sounds others in the call play, how loud (0–1), and your starred ones. */
+  soundboard: boolean;
+  soundboardVolume: number;
+  soundFavorites: string[];
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -125,6 +129,9 @@ export const useSettings = create<SettingsState>()(
       soundsEnabled: true,
       soundVolume: 0.7,
       messageSounds: true,
+      soundboard: true,
+      soundboardVolume: 0.7,
+      soundFavorites: [],
 
       screenQuality: '1080p30',
       screenMode: 'motion',

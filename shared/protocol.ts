@@ -224,7 +224,10 @@ export interface RemoteConfig {
 }
 
 /** Features `RemoteConfig.off` can switch off while something is wrong with them. */
-export type RemoteFeature = 'screenShare' | 'watchParty' | 'fileShare' | 'noiseFilter';
+export type RemoteFeature = 'screenShare' | 'watchParty' | 'fileShare' | 'noiseFilter' | 'soundboard';
+
+/** A soundboard sound: one from the shared sound pack (the repo's sounds/ folder), by its id. */
+export type SoundRef = { kind: 'pack'; id: string };
 
 export interface VoiceSnapshot {
   participants: VoiceParticipant[];
@@ -322,6 +325,8 @@ export type ClientMsg =
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
   | { t: 'rtc'; to: string; data: RtcPayload }
+  /** Soundboard: everyone in your voice room hears it. */
+  | { t: 'sound.play'; sound: SoundRef }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
@@ -361,6 +366,7 @@ export type ServerMsg =
   | { t: 'chat.attachments'; id: string; roomId: string; attachments: Attachment[] }
   | { t: 'typing'; roomId: string; userId: string }
   | { t: 'rtc'; from: string; fromUser: string; data: RtcPayload }
+  | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }

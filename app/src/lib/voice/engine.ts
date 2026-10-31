@@ -285,7 +285,15 @@ class VoiceEngine {
     this.pushState();
   }
 
-
+  /**
+   * Where soundboard sounds play: `out` follows the call (your output device, volume and Deafen),
+   * `preview` skips Deafen and volume so trying a sound always works. Null outside a call.
+   */
+  soundOutput() {
+    if (!this.inCall) return null;
+    this.ensureAudio();
+    return this.ctx && this.master ? { ctx: this.ctx, out: this.master as AudioNode, preview: this.ctx.destination as AudioNode } : null;
+  }
 
   toggleDeafen() {
     const deafened = !useVoice.getState().deafened;

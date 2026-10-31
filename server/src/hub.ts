@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
-import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, type History } from './automod';
 import { BOT_DAILY_LIMIT, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -357,6 +357,16 @@ export class ChannelHub extends DurableObject<Env> {
         if (to?.kind !== 'voice' || !atLeast(this.peer(target).role, to.view) || !atLeast(this.peer(target).role, to.post)) return;
         void audit(this.env, me.channelId, me.userId, 'voice.move', this.peer(target).userId, { room: msg.roomId });
         return this.send(target, { t: 'voice.moved', roomId: msg.roomId });
+      }
+
+      case 'sound.play': {
+        // Soundboard: relayed live to the others in your voice room, never stored. Muted people stay quiet.
+        const v = me.voice;
+        if (!v || v.forceMuted || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) return;
+        const sound = cleanSound(msg.sound);
+        if (!sound) return;
+        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound', peerId: me.peerId, userId: me.userId, sound });
+        return;
       }
 
       case 'rtc': {
@@ -887,9 +897,18 @@ function rateOf(t: unknown): SocketRate {
     case 'party.status':
     case 'clock':
       return 'party';
+    case 'sound.play':
+      return 'sound';
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }
+}
+
+/** A soundboard sound as sent: a sound pack id (a file name slug). */
+function cleanSound(s: unknown): SoundRef | null {
+  const x = s as Record<string, unknown> | null;
+  if (x && typeof x === 'object' && x.kind === 'pack' && typeof x.id === 'string' && /^[a-z0-9-]{1,80}$/.test(x.id)) return { kind: 'pack', id: x.id };
+  return null;
 }
 
 /** A watch party's settings, as the host sent them. */

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clapperboard,
+  Drum,
   Ellipsis,
   HeadphoneOff,
   Headphones,
@@ -31,6 +32,7 @@ import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
+import { SoundBursts, SoundboardPanel } from './Soundboard';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
@@ -38,6 +40,7 @@ import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty } from '@/lib/party';
+import { useFeatureOn } from '@/lib/remote';
 import { getHub } from '@/lib/realtime';
 import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
@@ -658,6 +661,8 @@ function Dock({
   const compact = useCompact();
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
+  const [soundMenu, setSoundMenu] = useState<Anchor | null>(null);
+  const soundboard = useFeatureOn('soundboard');
   const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
   const toggleNoise = () => useSettings.getState().set({ noiseFilter: noiseOn ? 'off' : 'strong' });
   const isAdmin = channel.role !== 'member';
@@ -678,6 +683,7 @@ function Dock({
         style={{ pointerEvents: hidden ? 'none' : 'auto' }}
         className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[22px] p-1.5 glass-pop"
       >
+        <SoundBursts />
         <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
           {micOff ? <MicOff size={20} /> : <Mic size={20} />}
         </DockButton>
@@ -714,6 +720,11 @@ function Dock({
           <MenuItem icon={<AudioWaveform size={15} />} onClick={() => (setMoreMenu(null), toggleNoise())}>
             {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
+          {soundboard && (
+            <MenuItem icon={<Drum size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
+              Soundboard
+            </MenuItem>
+          )}
           {sharer && (
             <MenuItem icon={<Clapperboard size={15} />} onClick={() => (setMoreMenu(null), toggleWatch())}>
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
@@ -733,6 +744,9 @@ function Dock({
             </>
           )}
         </Popover>
+        <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12}>
+          <SoundboardPanel />
+        </Popover>
       </motion.div>
     );
 
@@ -743,6 +757,7 @@ function Dock({
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}
       className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-2 glass-pop"
     >
+      <SoundBursts />
       <DockButton label={serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
         {micOff ? <MicOff size={19} /> : <Mic size={19} />}
       </DockButton>
@@ -779,6 +794,11 @@ function Dock({
           </span>
         </DockButton>
       )}
+      {soundboard && (
+        <DockButton label="Soundboard" state={soundMenu ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
+          <Drum size={19} />
+        </DockButton>
+      )}
       {!watching && (
         <DockButton label={voiceChat ? 'Hide chat' : 'Show chat'} state={voiceChat ? 'on' : 'normal'} onClick={() => useUI.getState().set({ voiceChat: !voiceChat })}>
           <MessageSquareText size={19} />
@@ -808,6 +828,9 @@ function Dock({
         </motion.button>
       </Tooltip>
 
+      <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14}>
+        <SoundboardPanel />
+      </Popover>
       <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14}>
         <ShareOptions
           sharing={screen}
