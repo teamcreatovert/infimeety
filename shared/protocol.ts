@@ -51,6 +51,21 @@ export interface Room {
   slowMode?: number;
 }
 
+/** AutoMod: what a channel blocks before a message is posted. Moderators and up are exempt. */
+export interface AutoModRules {
+  /** Blocked words and phrases (whole words; "word*" also blocks words starting with it). */
+  words: string[];
+  /** Block links, except to these sites (and their subdomains). */
+  links: boolean;
+  allowedSites: string[];
+  /** Most @mentions one message may have (0 = no limit). */
+  mentions: number;
+  /** Block the same message sent 3 times within 30 s. */
+  spam: boolean;
+}
+
+export const DEFAULT_AUTOMOD: AutoModRules = { words: [], links: false, allowedSites: [], mentions: 0, spam: false };
+
 /** A collapsible group of rooms in a channel's sidebar. */
 export interface Category {
   id: string;
@@ -345,4 +360,6 @@ export type ServerMsg =
   | { t: 'error'; message: string }
   /** Your message wasn't posted: slow mode (wait `retryIn` seconds). */
   | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'slow'; retryIn: number }
+  /** AutoMod blocked it: `detail` says which rule ("a blocked word", "links", …). */
+  | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'automod'; detail: string }
   | { t: 'pong' };

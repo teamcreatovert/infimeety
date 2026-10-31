@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_PARTY_SETTINGS, canModerateRole, outranks } from '../../shared/protocol';
-import type { ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { AutoModRules, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import { blockedBy, parseRules, type History } from './automod';
 import { Buckets, type SocketRate } from './limits';
 import { MEETING_IDLE, deleteMeetingData } from './meetings';
 import { type Env, isAdmin, newId, remoteConfig, sanitizeAttachments, toMessage } from './util';
@@ -44,6 +45,9 @@ export class ChannelHub extends DurableObject<Env> {
   private roomKinds = new Map<string, string>();
   /** When each person last posted in each room ("roomId:userId"), for slow mode. */
   private lastPost = new Map<string, number>();
+  /** This channel's AutoMod rules, loaded on first use (undefined: not loaded yet). */
+  private automod: AutoModRules | undefined;
+  private recentPosts: History = new Map();
   private meeting: MeetingState | null = null;
   private promoting = false;
   /** Watch parties by voice room. */
@@ -105,6 +109,11 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   /** An admin turned watch parties off in a room: end the one running there, if any. */
+  /** An admin saved new AutoMod rules: use them from the next message. */
+  async automodChanged() {
+    this.automod = undefined;
+  }
+
   async endPartyIn(roomId: string) {
     if (this.parties.has(roomId)) await this.savePartyState(roomId, null);
   }
@@ -231,7 +240,7 @@ export class ChannelHub extends DurableObject<Env> {
       case 'chat.send':
         return this.chatSend(ws, me, msg);
       case 'chat.edit':
-        return this.chatEdit(me, msg.id, msg.content);
+        return this.chatEdit(ws, me, msg.id, msg.content);
       case 'chat.delete':
         return this.chatDelete(me, msg.id);
       case 'chat.react':
@@ -428,6 +437,10 @@ export class ChannelHub extends DurableObject<Env> {
       const wait = last + slow * 1000 - Date.now();
       if (wait > 0) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'slow', retryIn: Math.ceil(wait / 1000) });
     }
+    if (content && !canModerateRole(me.role)) {
+      const blocked = blockedBy(await this.rules(me.channelId), content, me.userId, this.recentPosts);
+      if (blocked) return this.send(ws, { t: 'chat.rejected', nonce, roomId: msg.roomId, reason: 'automod', detail: blocked });
+    }
 
     const message: Message = {
       id: newId(),
@@ -458,10 +471,14 @@ export class ChannelHub extends DurableObject<Env> {
     return row ? toMessage(row) : null;
   }
 
-  private async chatEdit(me: Peer, id: string, content: string) {
+  private async chatEdit(ws: WebSocket, me: Peer, id: string, content: string) {
     const msg = await this.findMessage(id, me.channelId);
     const clean = String(content ?? '').slice(0, 4000).trim();
     if (!msg || msg.userId !== me.userId || !clean) return;
+    if (!canModerateRole(me.role)) {
+      const blocked = blockedBy(await this.rules(me.channelId), clean, me.userId);
+      if (blocked) return this.send(ws, { t: 'error', message: `AutoMod blocked that edit: ${blocked}.` });
+    }
     const editedAt = Date.now();
     await this.env.DB.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?').bind(clean, editedAt, msg.id).run();
     this.broadcast({ t: 'chat.edited', id: msg.id, roomId: msg.roomId, content: clean, editedAt });
@@ -630,6 +647,15 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  private async rules(channelId: string): Promise<AutoModRules> {
+    if (this.automod) return this.automod;
+    const row = await this.env.DB.prepare('SELECT rules FROM automod WHERE channel_id = ?')
+      .bind(channelId)
+      .first<{ rules: string }>()
+      .catch(() => null); // before the automod migration
+    return (this.automod = parseRules(row?.rules));
+  }
 
   private async roomKind(roomId: string, channelId: string): Promise<string | null> {
     if (typeof roomId !== 'string') return null;

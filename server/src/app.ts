@@ -49,6 +49,7 @@ import {
   toRoom,
   toCategory,
 } from './util';
+import { cleanRules, parseRules } from './automod';
 
 /**
  * The HTTP + WebSocket API. Served by the Worker (src/index.ts, which also hosts the
@@ -708,6 +709,25 @@ app.patch('/channels/:id/rooms/:roomId', auth, requireRole('admin'), async (c) =
     })(),
   );
   return c.json({ ok: true });
+});
+
+// ─── AutoMod ───────────────────────────────────────────────────────────────────
+
+app.get('/channels/:id/automod', auth, requireRole('admin'), async (c) => {
+  const row = await c.env.DB.prepare('SELECT rules FROM automod WHERE channel_id = ?').bind(c.req.param('id')).first<{ rules: string }>();
+  return c.json(parseRules(row?.rules));
+});
+
+app.put('/channels/:id/automod', auth, requireRole('admin'), limit('automod', 30), async (c) => {
+  const id = c.req.param('id');
+  const rules = cleanRules(await c.req.json());
+  await c.env.DB.prepare(
+    'INSERT INTO automod (channel_id, rules, updated_at) VALUES (?, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET rules = excluded.rules, updated_at = excluded.updated_at',
+  )
+    .bind(id, JSON.stringify(rules), Date.now())
+    .run();
+  await hub(c.env, id).automodChanged();
+  return c.json(rules);
 });
 
 // ─── Categories ────────────────────────────────────────────────────────────────

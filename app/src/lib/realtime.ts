@@ -188,6 +188,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return toast({ kind: 'error', title: msg.message });
     case 'chat.rejected': {
       useMessages.getState().dropPending(msg.roomId, msg.nonce);
+      if (msg.reason === 'automod') return toast({ kind: 'error', title: 'AutoMod blocked your message', body: AUTOMOD_WHY[msg.detail] ?? `It broke this channel’s rules (${msg.detail}).` });
       // Line the composer's countdown up with the server's.
       const slow = useChannels.getState().channels.find((c) => c.id === cid)?.rooms.find((r) => r.id === msg.roomId)?.slowMode ?? 0;
       noteSent(msg.roomId, Date.now() + msg.retryIn * 1000 - slow * 1000);
@@ -195,3 +196,10 @@ function handle(hub: HubClient, msg: ServerMsg) {
     }
   }
 }
+
+const AUTOMOD_WHY: Record<string, string> = {
+  'a blocked word': 'It has a word this channel doesn’t allow.',
+  links: 'Links aren’t allowed in this channel.',
+  'too many mentions': 'It mentions too many people at once.',
+  spam: 'You sent the same message too many times. Wait a bit.',
+};
