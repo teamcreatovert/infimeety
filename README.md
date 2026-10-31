@@ -61,6 +61,22 @@ cd app && npm install && npm run desktop
 
 Full guide (Cloudflare deploy, Google/Discord OAuth, auto-update signing): [docs/SETUP.md](docs/SETUP.md)
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [Creatovert](https://github.com/teamcreatovert)
+- Approvers: [Creatovert](https://github.com/teamcreatovert)
+
+Every Windows release is built from this repository by the
+[Release workflow](.github/workflows/release.yml) on GitHub Actions and signed only after an
+approver confirms it.
+
+Privacy: see the [privacy policy](https://infimeety.pages.dev/privacy). Infimeety only sends the
+data its features need: signing in, chat, calls, AI bots you mention, crash reports (which you can
+turn off) and update checks.
+
 ## License
 
 Infimeety is free software under the [GNU Affero General Public License v3.0](LICENSE). If you

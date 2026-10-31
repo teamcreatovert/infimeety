@@ -161,3 +161,6 @@
   }
   requestAnimationFrame(frame);
 })();
+
+// A link to the code signing policy opens it.
+if (location.hash === "#code-signing") document.getElementById("code-signing")?.setAttribute("open", "");
