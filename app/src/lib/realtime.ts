@@ -8,6 +8,7 @@ import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } fro
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { clock, setPenalty, usePenalties } from './penalties';
 import { onSound, onSoundStop } from './soundboard';
+import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
 import { voice } from './voice/engine';
@@ -193,6 +194,9 @@ function handle(hub: HubClient, msg: ServerMsg) {
 
     case 'error':
       return toast({ kind: 'error', title: msg.message });
+    case 'voice.words':
+      if (useVoice.getState().channelId === cid) void listenForWords(cid, Array.isArray(msg.words) ? msg.words.filter((w) => typeof w === 'string') : []);
+      return;
     case 'penalty': {
       const knew = usePenalties.getState()[cid]?.voiceUntil;
       setPenalty(cid, { chatUntil: msg.chatUntil, voiceUntil: msg.voiceUntil });

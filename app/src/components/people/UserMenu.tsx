@@ -281,8 +281,20 @@ function Moderation({ channelId, peerId, userId, close }: { channelId: string; p
   const participant = useChannels((s) => s.voice[channelId]?.participants.find((p) => p.peerId === peerId));
   // The hub's rule: moderators and up act on people with a lower role.
   const canModerate = !!participant && canModerateRole(myRole) && outranks(myRole, targetRole);
-  if (!canModerate) return null;
   const send = (msg: Parameters<NonNullable<ReturnType<typeof getHub>>['send']>[0]) => getHub(channelId)?.send(msg);
+  // Fun rules: moderators can end someone's chat ban or rule mute early (in chat or in a call).
+  const lift = canModerateRole(myRole) && !meeting && (
+    <MenuItem icon={<ShieldCheck size={14} />} onClick={() => (close(), send({ t: 'penalty.lift', userId }), toast({ kind: 'success', title: 'Rule penalties lifted' }))}>
+      Lift rule penalties
+    </MenuItem>
+  );
+  if (!canModerate)
+    return lift ? (
+      <>
+        <MenuSeparator />
+        {lift}
+      </>
+    ) : null;
   const meetingAction = (run: () => Promise<void>, failed: string) => {
     close();
     run().catch(() => toast({ kind: 'error', title: failed }));
@@ -292,6 +304,7 @@ function Moderation({ channelId, peerId, userId, close }: { channelId: string; p
       <MenuSeparator />
       <Toggle icon={<ShieldAlert size={14} className="text-danger" />} label="Server mute" checked={participant.serverMuted} onChange={(v) => send({ t: 'voice.serverMute', peerId, muted: v })} />
       <MoveTo channelId={channelId} fromRoomId={participant.roomId} onPick={(roomId) => (close(), send({ t: 'voice.move', peerId, roomId }))} />
+      {lift}
       {/* Meetings: the host picks co-hosts (people with an account only). */}
       {meeting && myRole === 'owner' && !target?.guest && targetRole && targetRole !== 'owner' && (
         <MenuItem

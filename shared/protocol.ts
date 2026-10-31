@@ -347,6 +347,10 @@ export type ClientMsg =
   | { t: 'sound.play'; sound: SoundRef }
   /** Stops the sound you're playing, for everyone. */
   | { t: 'sound.stop' }
+  /** Your app heard you say a fun-rule word in the call (Windows app, on-device speech). */
+  | { t: 'voice.said'; word: string }
+  /** Moderators: end someone's fun-rule chat ban and voice mute now. */
+  | { t: 'penalty.lift'; userId: string }
   /** `lanes`: how many connections to send over (copies of big files); 1 if absent. */
   | { t: 'media.request'; ownerId: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.revoked'; attachmentIds: string[] }
@@ -411,6 +415,8 @@ export type ServerMsg =
   | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'automod'; detail: string }
   /** Chat-banned by a fun rule for `retryIn` more seconds; or ('trigger') the message set off a rule. */
   | { t: 'chat.rejected'; nonce: string; roomId: string; reason: 'timeout' | 'trigger'; retryIn?: number }
+  /** The words the channel's fun rules listen for in calls. */
+  | { t: 'voice.words'; words: string[] }
   /** Your fun-rule penalties in this channel (ms timestamps; absent = none). */
   | { t: 'penalty'; chatUntil?: number; voiceUntil?: number }
   | { t: 'pong' };

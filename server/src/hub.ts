@@ -58,6 +58,8 @@ export class ChannelHub extends DurableObject<Env> {
   private lastPost = new Map<string, number>();
   /** This channel's AutoMod rules, loaded on first use (undefined: not loaded yet). */
   private automod: AutoModRules | undefined;
+  /** When each person last set off a rule by voice. */
+  private lastSaid = new Map<string, number>();
   /** Fun-rule penalties by user (ms timestamps), kept in storage so they outlast a restart. */
   private penalties: Map<string, { chat?: number; voice?: number }> | null = null;
   private recentPosts: History = new Map();
@@ -143,6 +145,15 @@ export class ChannelHub extends DurableObject<Env> {
   /** An admin saved new AutoMod rules: use them from the next message. */
   async automodChanged() {
     this.automod = undefined;
+    // People in a call start listening for the new words (or stop).
+    for (const s of this.sockets()) if (this.peer(s).voice) await this.sendVoiceWords(s);
+  }
+
+  /** The rule words `ws` should listen for in calls (rules that skip moderators skip theirs). */
+  private async sendVoiceWords(ws: WebSocket) {
+    const moderator = canModerateRole(this.peer(ws).role);
+    const words = [...new Set((await this.rules(this.peer(ws).channelId)).triggers?.filter((t) => !moderator || t.everyone).flatMap((t) => t.words.map((w) => w.replace(/\*$/, ''))) ?? [])];
+    this.send(ws, { t: 'voice.words', words });
   }
 
   async endPartyIn(roomId: string) {
@@ -312,6 +323,7 @@ export class ChannelHub extends DurableObject<Env> {
             joinedAt: Date.now(),
           },
         });
+        await this.sendVoiceWords(ws);
         return this.broadcastVoice();
       }
       case 'voice.leave':
@@ -375,6 +387,20 @@ export class ChannelHub extends DurableObject<Env> {
         return;
       }
 
+      case 'voice.said': {
+        // Heard by the speaker's own app; one rule hit per person every 8 seconds at most.
+        if (!me.voice || typeof msg.word !== 'string') return;
+        const now = Date.now();
+        if (now - (this.lastSaid.get(me.userId) ?? 0) < 8000) return;
+        const trigger = triggeredBy(await this.rules(me.channelId), msg.word.slice(0, 40), canModerateRole(me.role));
+        if (!trigger) return;
+        this.lastSaid.set(me.userId, now);
+        return this.punish(me, trigger, me.voice.roomId, true);
+      }
+      case 'penalty.lift': {
+        if (!canModerateRole(me.role) || typeof msg.userId !== 'string') return;
+        return this.liftPenalty(me, msg.userId);
+      }
       case 'sound.stop': {
         const v = me.voice;
         if (!v) return;
@@ -558,8 +584,28 @@ export class ChannelHub extends DurableObject<Env> {
     for (const s of this.sockets()) if (this.peer(s).userId === userId) this.send(s, { t: 'penalty', chatUntil: mine.chat, voiceUntil: mine.voice });
   }
 
+  /** A moderator ends someone's rule penalties early. */
+  private async liftPenalty(me: Peer, userId: string) {
+    await this.penaltiesOf(userId);
+    if (!this.penalties!.has(userId)) return;
+    this.penalties!.delete(userId);
+    await this.ctx.storage.put('penalties', Object.fromEntries(this.penalties!));
+    let changed = false;
+    for (const s of this.sockets()) {
+      const p = this.peer(s);
+      if (p.userId !== userId) continue;
+      this.send(s, { t: 'penalty' });
+      if (p.voice?.mutedUntil) {
+        this.save(s, { ...p, voice: { ...p.voice, mutedUntil: undefined } });
+        changed = true;
+      }
+    }
+    if (changed) await this.broadcastVoice();
+    void audit(this.env, me.channelId, me.userId, 'penalty.lift', userId, {});
+  }
+
   /** A fun rule went off: the penalty, then a plain notice from Nova in the room where it happened. */
-  private async punish(me: Peer, t: AutoModTrigger, roomId: string) {
+  private async punish(me: Peer, t: AutoModTrigger, roomId: string, spoken = false) {
     const until = Date.now() + t.seconds * 1000;
     const name = (await this.env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(me.userId).first<{ name: string }>())?.name ?? 'Someone';
     const length = t.seconds % 60 === 0 ? `${t.seconds / 60} minute${t.seconds === 60 ? '' : 's'}` : `${t.seconds} seconds`;
@@ -599,7 +645,7 @@ export class ChannelHub extends DurableObject<Env> {
       id: newId(),
       roomId,
       userId: NOVA_ID,
-      content: `${name} said a forbidden word and ${outcome}.`,
+      content: `${name} said a forbidden word${spoken ? ' in the call' : ''} and ${outcome}.`,
       attachments: [],
       replyTo: null,
       reactions: {},

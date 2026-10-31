@@ -43,9 +43,13 @@ strip = true
 tauri-winrt-notification = "0.8"
 wasapi = "0.26.0"
 webview2-com = "0.39"
+# A word list for the speech recognizer (voice_words.rs).
+windows-collections = "0.3"
 # Native screen sharing (screen_share.rs): Windows.Graphics.Capture, like Discord and OBS.
 windows = { version = "0.62", features = [
   "Foundation",
+  "Foundation_Collections",
+  "Media_SpeechRecognition",
   "Graphics",
   "Graphics_Capture",
   "Graphics_DirectX",

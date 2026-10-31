@@ -28,6 +28,21 @@ mod screen_share {
 }
 #[cfg(desktop)]
 mod system_audio;
+#[cfg(windows)]
+mod voice_words;
+/// Spoken rules use Windows' own speech recognizer; elsewhere they are off for now.
+#[cfg(all(desktop, not(windows)))]
+mod voice_words {
+    #[derive(Default)]
+    pub struct VoiceWords;
+    #[tauri::command]
+    pub async fn voice_words_start(words: Vec<String>) -> Result<(), String> {
+        let _ = words;
+        Err("unsupported".into())
+    }
+    #[tauri::command]
+    pub fn voice_words_stop() {}
+}
 #[cfg(desktop)]
 mod tarball;
 
@@ -70,6 +85,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             app.manage(media::Receivers::default());
             app.manage(system_audio::SystemAudio::default());
             app.manage(screen_share::ScreenShare::default());
+            app.manage(voice_words::VoiceWords::default());
             app.manage(desktop::CloseToTray::default());
             app.manage(ptt::PushToTalk::default());
             desktop::setup_tray(app)?;
@@ -117,6 +133,8 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             screen_share::screen_sources,
             screen_share::screen_share_start,
             screen_share::screen_share_stop,
+            voice_words::voice_words_start,
+            voice_words::voice_words_stop,
             desktop::set_close_to_tray,
             desktop::overlay_open,
             desktop::overlay_close,
