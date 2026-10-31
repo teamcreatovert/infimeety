@@ -24,6 +24,7 @@ import {
   Video,
   VideoOff,
   Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -607,6 +608,12 @@ function TileView({
         <span className="truncate">
           {kind === 'screen' ? `${isMe ? 'Your' : `${user?.name ?? 'Someone'}’s`} screen` : `${user?.name ?? 'Someone'}${isMe ? ' (you)' : ''}`}
         </span>
+        {/* Sound comes from the sharer's side: say so when there is none, instead of leaving people guessing. */}
+        {kind === 'screen' && stream && !stream.getAudioTracks().some((t) => t.readyState === 'live') && (
+          <span title={isMe ? 'You’re sharing without sound' : 'Shared without sound'} className="flex items-center gap-1 text-white/80">
+            <VolumeX size={12} /> No sound
+          </span>
+        )}
         {kind === 'user' && p.screen && !isMe && (
           <button
             onClick={(e) => {

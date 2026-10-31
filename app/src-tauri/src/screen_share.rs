@@ -65,6 +65,8 @@ pub struct ScreenShare(Mutex<Option<Running>>);
 
 struct Running {
     pipeline: Arc<Mutex<Pipeline>>,
+    /// Kept for the whole share: its Closed event (a shared window closing) needs it alive.
+    item: GraphicsCaptureItem,
     session: GraphicsCaptureSession,
     pool: Direct3D11CaptureFramePool,
     webview: Webview,
@@ -169,7 +171,43 @@ unsafe fn process_name(pid: u32) -> String {
         return String::new();
     }
     let path = String::from_utf16_lossy(&buf[..len as usize]);
-    std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    // The app's own name ("Google Chrome", "WhatsApp"), not its file name ("chrome", "WhatsApp.Root").
+    let stem = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    // Store apps all run inside ApplicationFrameHost; their window title already says which app.
+    if stem.eq_ignore_ascii_case("ApplicationFrameHost") {
+        return String::new();
+    }
+    describe(&path).unwrap_or(stem)
+}
+
+/// The FileDescription in an exe's version details, if it has one.
+unsafe fn describe(path: &str) -> Option<String> {
+    use windows::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
+    let file = HSTRING::from(path);
+    let size = GetFileVersionInfoSizeW(&file, None);
+    if size == 0 {
+        return None;
+    }
+    let mut data = vec![0u8; size as usize];
+    GetFileVersionInfoW(&file, None, size, data.as_mut_ptr() as _).ok()?;
+    // The first language the file lists.
+    let mut langs = std::ptr::null_mut();
+    let mut n = 0u32;
+    if !VerQueryValueW(data.as_ptr() as _, &HSTRING::from(r"\VarFileInfo\Translation"), &mut langs, &mut n).as_bool() || n < 4 {
+        return None;
+    }
+    let lang = *(langs as *const u16);
+    let page = *(langs as *const u16).add(1);
+    let mut text = std::ptr::null_mut();
+    let key = HSTRING::from(format!(r"\StringFileInfo\{lang:04x}{page:04x}\FileDescription"));
+    if !VerQueryValueW(data.as_ptr() as _, &key, &mut text, &mut n).as_bool() || n <= 1 {
+        return None;
+    }
+    let name = String::from_utf16_lossy(std::slice::from_raw_parts(text as *const u16, n as usize - 1)).trim().to_string();
+    // Store apps all run inside "Application Frame Host": their window title is the better name.
+    // Packaged apps sometimes describe themselves as "WhatsApp.Root".
+    let name = name.trim_end_matches(".Root").to_string();
+    (!name.is_empty() && !name.contains("Application Frame Host")).then_some(name)
 }
 
 /// A window drawn into memory (it may be behind others), then shrunk into a thumbnail.
@@ -327,7 +365,21 @@ pub async fn screen_share_start(webview: Webview, state: State<'_, ScreenShare>,
         Ok(())
     }));
     session.StartCapture().map_err(|e| e.to_string())?;
-    *state.0.lock().unwrap() = Some(Running { pipeline, session, pool, webview });
+    // Backup for the Closed event: a shared window that no longer exists ends the share.
+    if let Some(raw) = id.strip_prefix("window:").and_then(|r| r.parse::<isize>().ok()) {
+        let (watch, gone) = (pipeline.clone(), webview.clone());
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if watch.lock().map_or(true, |p| p.stopped) {
+                break;
+            }
+            if !unsafe { IsWindow(Some(HWND(raw as *mut core::ffi::c_void))) }.as_bool() {
+                post(&gone, r#"{"infimeety":"screen","t":"ended"}"#.into());
+                break;
+            }
+        });
+    }
+    *state.0.lock().unwrap() = Some(Running { pipeline, item, session, pool, webview });
     Ok(Started { width: size.Width, height: size.Height })
 }
 
@@ -343,6 +395,7 @@ fn stop(state: &ScreenShare) {
         p.stopped = true;
     }
     let _ = running.session.Close();
+    drop(running.item);
     let _ = running.pool.Close();
     let _ = running.webview.with_webview(|_| {
         BUFFER.with(|b| {

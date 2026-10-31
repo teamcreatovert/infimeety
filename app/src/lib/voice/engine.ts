@@ -11,6 +11,7 @@ import { useVoice } from '@/stores/voice';
 import { confirmCallSwitch } from './callSwitch';
 import { denoise, resumeDenoise, voiceFilter, type Denoised } from './denoise';
 import { Peer, VOICE_BITRATE, type Signal } from './peer';
+import { reportError } from '../errors';
 import { canShareNatively, startNativeScreen } from './nativeScreen';
 import { startSystemAudio, type SystemAudioCapture } from './systemAudio';
 
@@ -367,18 +368,21 @@ class VoiceEngine {
         selfBrowserSurface: 'exclude',
         monitorTypeSurfaces: 'include',
       }) as DisplayMediaStreamOptions;
-    let stream: MediaStream;
-    if (canShareNatively) {
+    let stream: MediaStream | undefined;
+    // The Windows app captures by itself (own picker, no WebView2 bar). If that can't start on
+    // this PC, the webview's own sharing still works.
+    if (canShareNatively && !nativeFailed) {
       if (!source) return useUI.getState().set({ screenPicker: true });
       try {
         const native = await startNativeScreen(source, preset.fps, () => this.stopScreen());
         this.nativeScreen = native;
         stream = new MediaStream([native.track]);
       } catch (err) {
-        toast({ kind: 'error', title: "Couldn't start screen share", body: err instanceof Error ? err.message : String(err) });
-        return;
+        nativeFailed = true;
+        reportError(err, 'native-screen');
       }
-    } else
+    }
+    if (!stream)
     try {
       stream = await navigator.mediaDevices.getDisplayMedia(options(pickerAudio)).catch((err: DOMException) => {
         // Some browsers (Safari) refuse a request that includes sound instead of ignoring it.
@@ -843,6 +847,9 @@ class VoiceEngine {
     stream?.getTracks().forEach((t) => t.stop());
   }
 }
+
+/** The Windows app's own capture failed once: this run shares through the webview instead. */
+let nativeFailed = false;
 
 export const voice = new VoiceEngine();
 

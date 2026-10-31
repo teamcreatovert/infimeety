@@ -88,7 +88,7 @@ export function ScreenPicker() {
                   </span>
                   <span className="min-w-0 px-0.5">
                     <span className="block truncate text-[12.5px] font-medium">{s.name}</span>
-                    {s.app && <span className="block truncate text-[11px] text-fg-3">{s.app}</span>}
+                    {s.app && s.app.toLowerCase() !== s.name.toLowerCase() && <span className="block truncate text-[11px] text-fg-3">{s.app}</span>}
                   </span>
                 </button>
               ))}
