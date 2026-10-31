@@ -10,6 +10,10 @@
   Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), geolocation=(), payment=(), usb=()
 
 # The web app: its own scripts only; talks to the API, TURN/STUN and peers.
+/sounds/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=3600
+
 /web/*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream:; connect-src 'self' https: wss:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 

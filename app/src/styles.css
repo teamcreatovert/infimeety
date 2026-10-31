@@ -323,6 +323,21 @@ video::-webkit-media-controls-panel {
   background-image: none;
 }
 
+/* The start animation (InfinityLoader): a stroke endlessly tracing the loop. */
+.infinity-trace {
+  animation: infinity-trace 1.6s linear infinite;
+}
+@keyframes infinity-trace {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .infinity-trace {
+    animation-duration: 4s;
+  }
+}
+
 @keyframes shimmer {
   from {
     background-position: -200% 0;

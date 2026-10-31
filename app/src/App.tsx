@@ -12,7 +12,6 @@ import { Background } from './components/shell/Background';
 import { Shell } from './components/shell/Shell';
 import { TitleBar } from './components/shell/TitleBar';
 import { Toasts } from './components/ui/Toasts';
-import { Spinner } from './components/ui/primitives';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ProfileCard } from './components/people/ProfileCard';
 import { UserMenu } from './components/people/UserMenu';
@@ -23,6 +22,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SafeModeBanner } from './components/shell/SafeModeBanner';
 import { UpdateRequired } from './components/UpdateRequired';
 import { UpdateGate } from './components/UpdateGate';
+import { InfinityLoader } from './components/ui/InfinityLoader';
 import { markHealthy, safeMode } from './lib/boot';
 import { MeetingKnocks } from './components/meeting/MeetingKnocks';
 import { startDeepLinks } from './lib/deeplink';
@@ -149,8 +149,8 @@ export default function App() {
               transition={{ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }}
             >
               {status === 'loading' && (
-                <div className="grid h-full place-items-center text-fg-3">
-                  <Spinner size={22} />
+                <div className="grid h-full place-items-center">
+                  <InfinityLoader size={120} />
                 </div>
               )}
               {status === 'signedOut' && <SignIn />}

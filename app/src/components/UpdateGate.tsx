@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { InfinityLoader } from './ui/InfinityLoader';
 import { useUpdater } from '@/lib/updater';
 
 /**
@@ -15,22 +15,14 @@ export function UpdateGate() {
   return (
     <div className="absolute inset-0 z-[100] grid place-items-center bg-[var(--bg)]">
       <div className="flex flex-col items-center">
-        <motion.img
-          src="/icon.png"
-          alt=""
-          draggable={false}
-          className="h-[84px] w-[84px] drop-shadow-[0_18px_30px_rgba(90,80,255,0.45)]"
-          animate={{ y: [0, -6, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        />
+        <InfinityLoader size={120} />
         <div className="mt-6 text-[14px] font-medium text-fg-2">{label}</div>
-        <div className="mt-3 h-1 w-[180px] overflow-hidden rounded-full bg-fill-2">
-          {busy ? (
+        {/* The loop itself shows it's working; a bar only once there's a download to follow. */}
+        {busy && (
+          <div className="mt-3 h-1 w-[180px] overflow-hidden rounded-full bg-fill-2">
             <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${Math.max(4, Math.round(progress * 100))}%` }} />
-          ) : (
-            <motion.div className="h-full w-1/3 rounded-full bg-accent" animate={{ x: ['-100%', '300%'] }} transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }} />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

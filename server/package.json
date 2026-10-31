@@ -8,7 +8,7 @@
     "db:migrate:local": "wrangler d1 migrations apply infimeety --local",
     "db:migrate:remote": "wrangler d1 migrations apply infimeety --remote",
     "typecheck": "tsc --noEmit",
-    "pages:build": "npm --prefix ../app run build:web",
+    "pages:build": "npm --prefix ../app run build:web && node scripts/sound-pack.mjs",
     "pages:deploy": "npm run pages:build && cd pages && wrangler pages deploy --branch main --commit-dirty=true",
     "deploy:all": "npm run db:migrate:remote && wrangler deploy && npm run pages:deploy"
   },
