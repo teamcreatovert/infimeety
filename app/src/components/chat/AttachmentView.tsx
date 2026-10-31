@@ -27,6 +27,8 @@ const INLINE_LIMIT = 100 * 1024 * 1024;
 const isInline = (att: Attachment) =>
   /^(image|video|audio)\//.test(att.mime) && att.size <= INLINE_LIMIT && !/matroska|x-msvideo|avi/.test(att.mime) && !/\.(mkv|avi)$/i.test(att.name);
 
+const NOTICE_SIZE = { width: 320, height: 180, maxWidth: '100%' } as const;
+
 export function AttachmentView({ att, channelId }: { att: Attachment; channelId: string }) {
   return isInline(att) ? <MediaView att={att} channelId={channelId} /> : <FileView att={att} channelId={channelId} />;
 }
@@ -91,8 +93,10 @@ function MediaView({ att, channelId }: { att: Attachment; channelId: string }) {
     return <audio src={entry.url} controls className="w-[300px] max-w-full" />;
   }
 
-  const card = (icon: React.ReactNode, title: string, detail: string, action?: React.ReactNode) => (
-    <div ref={ref} className="relative grid place-items-center overflow-hidden rounded-[14px] bg-fill-1 shadow-[inset_0_0_0_0.5px_var(--hairline-strong)]" style={size}>
+  // While a file loads, the card keeps the picture's shape (nothing jumps when it arrives). A
+  // notice (offline, removed, failed) is always the same size, so its text and button always fit.
+  const card = (icon: React.ReactNode, title: string, detail: string, action?: React.ReactNode, notice = false) => (
+    <div ref={ref} className="relative grid place-items-center overflow-hidden rounded-[14px] bg-fill-1 shadow-[inset_0_0_0_0.5px_var(--hairline-strong)]" style={notice ? NOTICE_SIZE : size}>
       {(status === 'requesting' || status === 'loading') && <div className="shimmer absolute inset-0" />}
       <div className="relative flex flex-col items-center gap-1.5 px-4 text-center">
         {icon}
@@ -116,11 +120,11 @@ function MediaView({ att, channelId }: { att: Attachment; channelId: string }) {
 
   switch (status) {
     case 'gone':
-      return card(<Trash2 size={20} className="text-fg-3" />, 'Removed', `${mine ? 'You' : (owner?.name ?? 'The sender')} deleted this file`);
+      return card(<Trash2 size={20} className="text-fg-3" />, 'Removed', `${mine ? 'You' : (owner?.name ?? 'The sender')} deleted this file`, undefined, true);
     case 'offline':
-      return card(<CloudOff size={20} className="text-fg-3" />, `${owner?.name ?? 'The sender'} is offline`, 'Media streams from their PC while they’re online', retryButton);
+      return card(<CloudOff size={20} className="text-fg-3" />, `${owner?.name ?? 'The sender'} is offline`, 'Media streams from their PC while they’re online', retryButton, true);
     case 'error':
-      return card(<ImageOff size={20} className="text-fg-3" />, "Couldn't load", att.name, retryButton);
+      return card(<ImageOff size={20} className="text-fg-3" />, "Couldn't load", att.name, retryButton, true);
     case 'requesting':
       return card(<Spinner className="text-fg-2" />, `Connecting to ${ownerName}…`, formatBytes(att.size));
     case 'loading':
