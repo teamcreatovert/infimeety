@@ -40,6 +40,7 @@ export function tuneSdp(sdp: string, remoteSdp: string | undefined, isStereoStre
 
   const { head, media } = splitSdp(sdp);
   const tuned = media.map((section) => {
+    if (section.startsWith('m=video')) return tuneScreenVideo(section, remoteStreams, isStereoStream);
     if (!section.startsWith('m=audio')) return section;
     const mid = midOf(section);
     const streams = [...streamsOf(section), ...((mid && remoteStreams.get(mid)) || [])];
@@ -57,6 +58,28 @@ export function tuneSdp(sdp: string, remoteSdp: string | undefined, isStereoStre
     return out;
   });
   return [head, ...tuned].join('\r\n');
+}
+
+/** Screen shares start sharp: kbps the encoder starts at, and never drops below. */
+const SCREEN_START_KBPS = 2500;
+const SCREEN_MIN_KBPS = 600;
+
+/**
+ * WebRTC starts every video at a few hundred kbps and ramps up over many seconds, which is
+ * why shares used to begin blurry. For the screen share's video only, both ends ask Chrome's
+ * encoder to start high (x-google-start-bitrate) and keep a floor. The camera is left alone.
+ */
+function tuneScreenVideo(section: string, remoteStreams: Map<string, string[]>, isScreenStream: (streamId: string) => boolean) {
+  const mid = midOf(section);
+  const streams = [...streamsOf(section), ...((mid && remoteStreams.get(mid)) || [])];
+  if (!streams.some(isScreenStream)) return section;
+  const set = { 'x-google-start-bitrate': String(SCREEN_START_KBPS), 'x-google-min-bitrate': String(SCREEN_MIN_KBPS) };
+  let out = section;
+  for (const [line, pt] of section.matchAll(/a=rtpmap:(\d+) (?:VP8|VP9|H264|AV1)\/90000/gi)) {
+    const fmtp = new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`);
+    out = fmtp.test(out) ? out.replace(fmtp, (_l, params: string) => `a=fmtp:${pt} ${setFmtp(params, set, [])}`) : out.replace(line, `${line}\r\na=fmtp:${pt} ${setFmtp('', set, [])}`);
+  }
+  return out;
 }
 
 /**

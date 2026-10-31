@@ -680,7 +680,8 @@ class VoiceEngine {
         enc.maxFramerate = preset.fps;
         enc.scaleResolutionDownBy = 1;
         enc.priority = enc.networkPriority = 'high';
-        params.degradationPreference = 'maintain-resolution';
+        // Text and code stay sharp; games and videos trade a little of both on a weak connection, like Discord.
+        params.degradationPreference = s.screenMode === 'detail' ? 'maintain-resolution' : 'balanced';
       } else if (this.screen?.getAudioTracks().includes(track)) {
         enc.maxBitrate = 192_000;
       } else if (this.cam?.getVideoTracks().includes(track)) {
