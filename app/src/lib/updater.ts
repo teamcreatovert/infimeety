@@ -1,8 +1,9 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { Update } from '@tauri-apps/plugin-updater';
 import { create } from 'zustand';
 import { isTauri } from './platform';
 
-type Status = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'uptodate' | 'error' | 'unsupported';
+type Status = 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'uptodate' | 'error' | 'unsupported' | 'store';
 
 interface UpdaterState {
   status: Status;
@@ -85,9 +86,11 @@ export const useUpdater = create<UpdaterState>()((set, get) => ({
 
 let started = false;
 
-export function startUpdateChecks() {
+export async function startUpdateChecks() {
   if (started || !isTauri) return;
   started = true;
+  // A Microsoft Store copy is kept up to date by the Store, never by the app itself.
+  if (await invoke<boolean>('is_store_install').catch(() => false)) return useUpdater.setState({ launch: 'done', status: 'store' });
   void useUpdater.getState().launchCheck();
   setInterval(() => void useUpdater.getState().check(), 30 * 60_000);
 }

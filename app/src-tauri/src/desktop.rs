@@ -21,6 +21,13 @@ impl Default for CloseToTray {
     }
 }
 
+/// Installed from the Microsoft Store: an MSIX package runs from WindowsApps, and the Store
+/// updates it, so the app's own updater stays out of the way.
+#[tauri::command]
+pub fn is_store_install() -> bool {
+    std::env::current_exe().map(|p| p.to_string_lossy().to_lowercase().contains("\\windowsapps\\")).unwrap_or(false)
+}
+
 #[tauri::command]
 pub fn set_close_to_tray(state: tauri::State<CloseToTray>, enabled: bool) {
     state.0.store(enabled, Ordering::Relaxed);

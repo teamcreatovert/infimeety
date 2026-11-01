@@ -717,16 +717,26 @@ function UpdatesTab() {
         ? `Version ${update?.version} is available`
         : status === 'uptodate'
           ? 'Infimeety is up to date'
-          : status === 'unsupported'
+          : status === 'store'
+            ? 'Updates come from the Microsoft Store'
+            : status === 'unsupported'
             ? 'Updates run in installed builds (not in dev mode)'
             : status === 'error'
               ? `Couldn't check for updates`
               : `You're on version ${APP_VERSION}`;
   return (
     <>
-      <Group footer={status === 'error' ? error : 'Infimeety checks for updates every time it opens and installs them right away, so you’re always on the latest version. You stay signed in.'}>
+      <Group
+        footer={
+          status === 'error'
+            ? error
+            : status === 'store'
+              ? 'You installed Infimeety from the Microsoft Store, which keeps it up to date for you.'
+              : 'Infimeety checks for updates every time it opens and installs them right away, so you’re always on the latest version. You stay signed in.'
+        }
+      >
         <Row label={label} detail={`Current version ${APP_VERSION}`}>
-          {status === 'available' ? (
+          {status === 'store' ? null : status === 'available' ? (
             <Button variant="primary" size="sm" onClick={() => void useUpdater.getState().install()}>
               Update & restart
             </Button>

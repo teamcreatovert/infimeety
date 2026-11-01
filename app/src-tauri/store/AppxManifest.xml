@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Microsoft Store package (MSIX) of the Windows app, built by app/scripts/store-package.mjs.
+  Identity values come from Partner Center (Infimeety, Product identity); the Store signs the
+  package, so it is uploaded unsigned. {VERSION} is filled in from tauri.conf.json (x.y.z.0).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+  <Identity Name="Creatovert.Infimeety" Publisher="CN=622CC167-AFAB-4074-980F-987FDF390570" Version="{VERSION}" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Infimeety</DisplayName>
+    <PublisherDisplayName>Creatovert</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Applications>
+    <Application Id="Infimeety" Executable="infimeety.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Infimeety"
+        Description="Voice rooms, chat, screen sharing and watch parties with your friends"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Invite and meeting links (infimeety://invite/..., infimeety://meet/...). -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="infimeety">
+            <uap:DisplayName>Infimeety</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+    <DeviceCapability Name="microphone" />
+    <DeviceCapability Name="webcam" />
+  </Capabilities>
+</Package>

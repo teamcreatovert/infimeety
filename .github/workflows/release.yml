@@ -217,6 +217,21 @@ jobs:
           "Installer signature: $status"
           "signed=$(if ($status -eq 'Valid') { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
+      # The Microsoft Store package (MSIX), from the same infimeety.exe: download it from this
+      # run's artifacts and upload it in Partner Center (Infimeety, Packages). The Store signs it,
+      # and Store copies update through the Store, never through our updater.
+      - name: Store package
+        working-directory: app
+        run: node scripts/store-package.mjs
+
+      - name: Keep the Store package
+        uses: actions/upload-artifact@v7
+        with:
+          name: Infimeety-${{ env.VERSION }}-store
+          path: app/src-tauri/target/store/Infimeety_${{ env.VERSION }}_x64.msix
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Keep the installer
         uses: actions/upload-artifact@v7
         with:

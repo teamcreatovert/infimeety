@@ -136,6 +136,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             voice_words::voice_words_start,
             voice_words::voice_words_stop,
             desktop::set_close_to_tray,
+            desktop::is_store_install,
             desktop::overlay_open,
             desktop::overlay_close,
             desktop::notify,
