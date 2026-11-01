@@ -7,7 +7,6 @@ import {
   ChevronUp,
   Clapperboard,
   Speaker,
-  Music,
   Ellipsis,
   EyeOff,
   HeadphoneOff,
@@ -36,7 +35,6 @@ import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { SoundBursts, SoundboardPanel } from './Soundboard';
-import { MusicPanel, useRoomMusic } from './MusicPanel';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
@@ -719,9 +717,6 @@ function Dock({
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
   const [soundMenu, setSoundMenu] = useState<Anchor | null>(null);
-  const [musicMenu, setMusicMenu] = useState<Anchor | null>(null);
-  const musicOn = useFeatureOn('music');
-  const roomMusic = useRoomMusic();
   const soundboard = useFeatureOn('soundboard');
   const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
   const toggleNoise = () => useSettings.getState().set({ noiseFilter: noiseOn ? 'off' : 'strong' });
@@ -780,11 +775,6 @@ function Dock({
           <MenuItem icon={<AudioWaveform size={15} />} onClick={() => (setMoreMenu(null), toggleNoise())}>
             {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
-          {musicOn && (
-            <MenuItem icon={<Music size={15} />} onClick={() => (setMusicMenu(moreMenu), setMoreMenu(null))}>
-              Music
-            </MenuItem>
-          )}
           {soundboard && (
             <MenuItem icon={<Speaker size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
               Soundboard
@@ -811,9 +801,6 @@ function Dock({
         </Popover>
         <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12}>
           <SoundboardPanel />
-        </Popover>
-        <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="end" offset={12}>
-          <MusicPanel />
         </Popover>
       </motion.div>
     );
@@ -862,11 +849,6 @@ function Dock({
           </span>
         </DockButton>
       )}
-      {musicOn && (
-        <DockButton label={roomMusic ? 'Music (playing)' : 'Music'} state={musicMenu || roomMusic?.playing ? 'on' : 'normal'} onClick={(el) => setMusicMenu(el.getBoundingClientRect())}>
-          <Music size={19} />
-        </DockButton>
-      )}
       {soundboard && (
         <DockButton label="Soundboard" state={soundMenu ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
           <Speaker size={19} />
@@ -898,9 +880,6 @@ function Dock({
 
       <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14}>
         <SoundboardPanel />
-      </Popover>
-      <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="center" offset={14}>
-        <MusicPanel />
       </Popover>
       <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14}>
         <ShareOptions

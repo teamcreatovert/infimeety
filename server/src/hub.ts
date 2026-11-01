@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
-import type { AutoModRules, AutoModTrigger, ClientMsg, MusicAction, MusicState, MusicTrack, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -58,9 +58,6 @@ export class ChannelHub extends DurableObject<Env> {
   private lastPost = new Map<string, number>();
   /** This channel's AutoMod rules, loaded on first use (undefined: not loaded yet). */
   private automod: AutoModRules | undefined;
-  /** Music by voice room (a shared queue everyone's player follows). */
-  private music = new Map<string, MusicState>();
-  private musicLoaded = false;
   /** When each person last set off a rule by voice. */
   private lastSaid = new Map<string, number>();
   /** Fun-rule penalties by user (ms timestamps), kept in storage so they outlast a restart. */
@@ -114,7 +111,6 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    await this.loadMusic();
     this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
     const pen = await this.penaltiesOf(peer.userId);
@@ -393,10 +389,6 @@ export class ChannelHub extends DurableObject<Env> {
         return;
       }
 
-      case 'music.add':
-        return this.musicAdd(ws, me, msg.track);
-      case 'music.control':
-        return this.musicControl(me, msg);
       case 'voice.said': {
         // Heard by the speaker's own app; one rule hit per person every 8 seconds at most.
         if (!me.voice || typeof msg.word !== 'string') return;
@@ -592,96 +584,6 @@ export class ChannelHub extends DurableObject<Env> {
     await this.ctx.storage.put('penalties', next);
     const mine = next[userId];
     for (const s of this.sockets()) if (this.peer(s).userId === userId) this.send(s, { t: 'penalty', chatUntil: mine.chat, voiceUntil: mine.voice });
-  }
-
-  // ─── Music ───────────────────────────────────────────────────────────────────
-
-  private async loadMusic() {
-    if (this.musicLoaded) return;
-    this.musicLoaded = true;
-    this.music = new Map(Object.entries((await this.ctx.storage.get<Record<string, MusicState>>('music')) ?? {}));
-  }
-
-  private async saveMusic(roomId: string, state: MusicState | null) {
-    if (state) {
-      // A little history for "previous", not the whole evening.
-      const drop = Math.max(0, state.index - 30);
-      this.music.set(roomId, drop ? { ...state, queue: state.queue.slice(drop), index: state.index - drop } : state);
-    } else this.music.delete(roomId);
-    await this.ctx.storage.put('music', Object.fromEntries(this.music));
-    await this.broadcastVoice();
-  }
-
-  /** Adds a song or station to your room's queue (it starts at once if nothing is playing). */
-  private async musicAdd(ws: WebSocket, me: Peer, input: unknown) {
-    await this.loadMusic();
-    const roomId = me.voice?.roomId;
-    const t = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-    const source = t.source === 'audius' || t.source === 'radio' ? t.source : null;
-    const ref = typeof t.ref === 'string' ? t.ref.slice(0, 500) : '';
-    const valid = source === 'audius' ? /^[A-Za-z0-9]{1,24}$/.test(ref) : /^https?:\/\/[^\s]+$/i.test(ref);
-    if (!roomId || !source || !valid) return;
-    const waiting = this.music.get(roomId);
-    if (waiting && waiting.queue.length - waiting.index >= 50) return this.send(ws, { t: 'error', message: 'The queue is full (50 songs).' });
-    const track: MusicTrack = {
-      id: newId(),
-      source,
-      ref,
-      title: String(t.title ?? 'Song').slice(0, 120),
-      artist: String(t.artist ?? '').slice(0, 80),
-      thumb: typeof t.thumb === 'string' && /^https:\/\//.test(t.thumb) ? t.thumb.slice(0, 400) : null,
-      duration: source === 'radio' ? 0 : Math.max(0, Math.min(36000, Number(t.duration) || 0)),
-      by: me.userId,
-    };
-    const now = Date.now();
-    const state = this.music.get(roomId);
-    if (!state || state.index >= state.queue.length) {
-      const queue = [...(state?.queue ?? []), track];
-      return this.saveMusic(roomId, { queue, index: queue.length - 1, playing: true, position: 0, at: now + 800, seq: (state?.seq ?? 0) + 1 });
-    }
-    return this.saveMusic(roomId, { ...state, queue: [...state.queue, track], seq: state.seq + 1 });
-  }
-
-  /** Anyone in the room plays, pauses, skips or edits the queue; everyone follows. */
-  private async musicControl(me: Peer, msg: MusicAction) {
-    await this.loadMusic();
-    const roomId = me.voice?.roomId;
-    const s = roomId ? this.music.get(roomId) : undefined;
-    if (!roomId || !s) return;
-    const now = Date.now();
-    const position = s.playing ? s.position + Math.max(0, now - s.at) / 1000 : s.position;
-    const seq = s.seq + 1;
-    const current = s.queue[s.index];
-    const goTo = (index: number) => this.saveMusic(roomId, { ...s, index, playing: index < s.queue.length, position: 0, at: now + 800, seq });
-    switch (msg.action) {
-      case 'play':
-        return this.saveMusic(roomId, { ...s, playing: s.index < s.queue.length, position, at: now + 400, seq });
-      case 'pause':
-        return this.saveMusic(roomId, { ...s, playing: false, position, at: now, seq });
-      case 'seek':
-        return this.saveMusic(roomId, { ...s, position: Math.max(0, Number(msg.position) || 0), at: now + 400, seq });
-      case 'ended':
-        if (msg.trackId !== current?.id) return;
-        return goTo(s.index + 1);
-      case 'next':
-        return goTo(Math.min(s.index + 1, s.queue.length));
-      case 'previous':
-        return goTo(position > 4 || s.index === 0 ? Math.min(s.index, s.queue.length - 1) : s.index - 1);
-      case 'skipTo': {
-        const i = s.queue.findIndex((t) => t.id === msg.trackId);
-        return i < 0 ? undefined : goTo(i);
-      }
-      case 'remove': {
-        const i = s.queue.findIndex((t) => t.id === msg.trackId);
-        if (i < 0) return;
-        const queue = s.queue.filter((t) => t.id !== msg.trackId);
-        if (i > s.index) return this.saveMusic(roomId, { ...s, queue, seq });
-        if (i < s.index) return this.saveMusic(roomId, { ...s, queue, index: s.index - 1, seq });
-        return this.saveMusic(roomId, { ...s, queue, playing: s.index < queue.length, position: 0, at: now + 800, seq });
-      }
-      case 'stop':
-        return this.saveMusic(roomId, null);
-    }
   }
 
   /** A moderator ends someone's rule penalties early. */
@@ -1083,7 +985,7 @@ export class ChannelHub extends DurableObject<Env> {
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
       participants.push({ ...v, serverMuted: forceMuted || roomMuted || (v.mutedUntil ?? 0) > Date.now() });
     }
-    return { participants, mutedRooms: [...this.mutedRooms], ...(this.music.size ? { music: Object.fromEntries(this.music) } : {}) };
+    return { participants, mutedRooms: [...this.mutedRooms] };
   }
 
   /** The call list as `role` may see it: nobody in voice rooms that role can't see. */
@@ -1097,13 +999,6 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   private broadcastVoice(exceptSocket?: WebSocket) {
-    // The music bot leaves a room once nobody is left in it.
-    if (this.music.size) {
-      const occupied = new Set(this.sockets(exceptSocket).map((s) => this.peer(s).voice?.roomId).filter(Boolean));
-      let changed = false;
-      for (const roomId of [...this.music.keys()]) if (!occupied.has(roomId)) changed = this.music.delete(roomId) || changed;
-      if (changed) this.ctx.storage.put('music', Object.fromEntries(this.music)).catch(() => {});
-    }
     const snapshot = this.voiceSnapshot(undefined, exceptSocket);
     for (const s of this.sockets(exceptSocket)) this.send(s, { t: 'voice', voice: this.visibleTo(snapshot, this.peer(s).role) });
     this.tendParties(exceptSocket).catch((err) => console.error('party upkeep failed', err));
@@ -1162,8 +1057,6 @@ function rateOf(t: unknown): SocketRate {
     case 'party.cohost':
     case 'party.status':
     case 'clock':
-    case 'music.add':
-    case 'music.control':
       return 'party';
     case 'sound.play':
       return 'sound';

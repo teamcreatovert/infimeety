@@ -42,7 +42,6 @@ import { useChannels } from './stores/channels';
 import { useFriends } from './stores/friends';
 import { ACCENTS, useSettings } from './stores/settings';
 import { toast } from './stores/ui';
-import { startMusicPlayer } from './lib/music';
 import { useVoice } from './stores/voice';
 
 export function useAppearance() {
@@ -80,7 +79,6 @@ export default function App() {
     startUpdateChecks();
     // New soundboard sounds come down at each start (lib/soundPack).
     void syncSoundPack();
-    startMusicPlayer();
     void startDeepLinks();
     startNotifications();
     startWebLinks();

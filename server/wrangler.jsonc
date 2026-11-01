@@ -11,7 +11,7 @@
     // Steer released apps without a new release (RemoteConfig): apps older than MIN_APP_VERSION
     // ask to update; FEATURES_OFF switches features off everywhere, e.g. "screenShare,watchParty".
     "MIN_APP_VERSION": "",
-    "FEATURES_OFF": ""
+    "FEATURES_OFF": "music"
   },
 
   // `wrangler d1 create infimeety` prints the real database_id — paste it here before deploying.

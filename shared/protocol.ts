@@ -244,47 +244,7 @@ export interface RemoteConfig {
 }
 
 /** Features `RemoteConfig.off` can switch off while something is wrong with them. */
-export type RemoteFeature = 'screenShare' | 'watchParty' | 'fileShare' | 'noiseFilter' | 'soundboard' | 'music';
-
-/** Where a song comes from: Audius (free full songs) or an internet radio station. */
-export type MusicSource = 'audius' | 'radio';
-
-/** A song (or station) in a voice room's queue; every app plays it itself, in sync. */
-export interface MusicTrack {
-  id: string;
-  source: MusicSource;
-  /** Audius: the track id. Radio: the stream address. */
-  ref: string;
-  title: string;
-  artist: string;
-  thumb: string | null;
-  /** Seconds; 0 for a live station. */
-  duration: number;
-  /** Who added it. */
-  by: string;
-}
-
-/** A voice room's music: `position` is where the song was at hub time `at`; while `playing`, it moves on. */
-export interface MusicState {
-  queue: MusicTrack[];
-  index: number;
-  playing: boolean;
-  position: number;
-  at: number;
-  seq: number;
-}
-
-export type MusicAction =
-  | { action: 'play' }
-  | { action: 'pause' }
-  | { action: 'next' }
-  | { action: 'previous' }
-  | { action: 'seek'; position: number }
-  | { action: 'skipTo'; trackId: string }
-  | { action: 'remove'; trackId: string }
-  /** The song ended in someone's player; only the first report for that song counts. */
-  | { action: 'ended'; trackId: string }
-  | { action: 'stop' };
+export type RemoteFeature = 'screenShare' | 'watchParty' | 'fileShare' | 'noiseFilter' | 'soundboard';
 
 /** A soundboard sound: one from the shared sound pack (the repo's sounds/ folder), by its id. */
 export type SoundRef = { kind: 'pack'; id: string };
@@ -292,8 +252,6 @@ export type SoundRef = { kind: 'pack'; id: string };
 export interface VoiceSnapshot {
   participants: VoiceParticipant[];
   mutedRooms: string[];
-  /** Music playing in voice rooms, by room (the music bot). */
-  music?: Record<string, MusicState>;
 }
 
 /** A file in a watch party: like an attachment, streamed from its owner when someone copies it. */
@@ -393,9 +351,6 @@ export type ClientMsg =
   | { t: 'sound.play'; sound: SoundRef }
   /** Stops the sound you're playing, for everyone. */
   | { t: 'sound.stop' }
-  /** Music in your voice room: add a song or station, or control what's playing. */
-  | { t: 'music.add'; track: Omit<MusicTrack, 'id' | 'by'> }
-  | ({ t: 'music.control' } & MusicAction)
   /** Your app heard you say a fun-rule word in the call (Windows app, on-device speech). */
   | { t: 'voice.said'; word: string }
   /** Moderators: end someone's fun-rule chat ban and voice mute now. */
