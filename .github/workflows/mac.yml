@@ -74,8 +74,19 @@ jobs:
             [[ -n "$NOTARY_ID" ]] && export APPLE_ID="$NOTARY_ID" APPLE_PASSWORD="$NOTARY_PASSWORD" APPLE_TEAM_ID="$NOTARY_TEAM"
           else
             echo "::warning::No Apple Developer ID set up, so the Mac app is ad-hoc signed and NOT notarized. See docs/SETUP.md §8."
+            # Ad-hoc ("-"): without any signature on the bundle, Apple Silicon Macs say the
+            # downloaded app "is damaged and can't be opened". Signed ad-hoc, they ask once
+            # ("Open Anyway" in Privacy & Security) and then open it normally.
+            export APPLE_SIGNING_IDENTITY="-"
           fi
           npx tauri build --target universal-apple-darwin --bundles app,dmg --ci
+
+      # A Mac that can't verify the bundle calls it damaged: fail the build instead of shipping that.
+      - name: Check the signature
+        working-directory: app
+        run: |
+          codesign --verify --deep --strict --verbose=2 "$BUNDLE/macos/Infimeety.app"
+          codesign -dv "$BUNDLE/macos/Infimeety.app" 2>&1 | grep -E "Signature|Identifier|Format"
 
       - name: Keep the app
         uses: actions/upload-artifact@v7
