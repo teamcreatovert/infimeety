@@ -39,7 +39,7 @@ import { SoundBursts, SoundboardPanel } from './Soundboard';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
-import { MusicPicker, NowPlaying, canShareMusic } from './Music';
+import { MusicPicker, MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
@@ -56,7 +56,7 @@ import { SCREEN_PRESETS, useSettings, type ScreenQuality } from '@/stores/settin
 import { openUserMenu, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
-type Tile = { key: string; kind: 'user' | 'screen'; p: VoiceParticipant };
+type Tile = { key: string; kind: 'user' | 'screen' | 'music'; p: VoiceParticipant };
 
 const EMPTY: VoiceParticipant[] = [];
 
@@ -275,6 +275,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
 
   const tiles: Tile[] = [
     ...participants.filter((p) => p.screen).map((p) => ({ key: `${p.peerId}:screen`, kind: 'screen' as const, p })),
+    // Shared music joins as its own tile, like a player in the room.
+    ...participants.filter((p) => p.music).map((p) => ({ key: `${p.peerId}:music`, kind: 'music' as const, p })),
     ...participants.map((p) => ({ key: p.peerId, kind: 'user' as const, p })),
   ];
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
@@ -468,7 +470,6 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           ) : (
             <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
-          <NowPlaying participants={participants} myPeer={myPeer} />
           {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
         </div>
 
@@ -528,9 +529,13 @@ function Grid({ tiles, screenOf, ...rest }: StreamProps & { tiles: Tile[]; scree
         <LayoutGroup>
           <AnimatePresence>
             {w > 0 &&
-              tiles.map((t) => (
+              tiles.map((t) =>
+                t.kind === 'music' ? (
+                  <MusicTile key={t.key} p={t.p} mine={t.p.peerId === rest.myPeer} width={tileW} height={Math.round(tileW / aspect)} />
+                ) : (
                 <TileView key={t.key} tile={t} width={tileW} height={Math.round(tileW / aspect)} stream={t.kind === 'screen' ? screenOf(t.p) : rest.camOf(t.p)} {...rest} />
-              ))}
+                ),
+              )}
           </AnimatePresence>
         </LayoutGroup>
       </div>

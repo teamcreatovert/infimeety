@@ -77,6 +77,11 @@ const GAMES: &[(&str, &str, &str)] = &[
     ("sonsoftheforest.exe", "sonsoftheforest", "Sons of the Forest"),
 ];
 
+/// A known game's name from its program file (lowercase, with .exe).
+pub fn game_name(file: &str) -> Option<&'static str> {
+    GAMES.iter().find(|(exe, ..)| *exe == file).map(|(_, _, name)| *name)
+}
+
 #[derive(serde::Serialize)]
 pub struct Game {
     id: &'static str,

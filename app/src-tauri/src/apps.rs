@@ -13,13 +13,91 @@ pub struct App {
 /// Programs that play music, listed first.
 const MUSIC: &[&str] = &["spotify", "chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "applemusic", "itunes", "vlc", "foobar2000", "aimp", "musicbee", "youtube music"];
 
-/// Apps with a window open, music players first.
+/// Apps playing sound right now, music players first. An app plays through a helper process
+/// at times (a browser's audio service): that sound counts for the app whose window it belongs to.
 #[tauri::command]
 pub async fn audio_apps() -> Vec<App> {
-    let mut apps = tauri::async_runtime::spawn_blocking(windows_list).await.unwrap_or_default();
-    let rank = |a: &App| MUSIC.iter().position(|m| a.name.to_lowercase() == *m).unwrap_or(MUSIC.len());
-    apps.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-    apps
+    tauri::async_runtime::spawn_blocking(|| {
+        let playing = playing_pids();
+        let parents = parent_pids();
+        let windows = windows_list();
+        let owner = |mut pid: u32| {
+            for _ in 0..6 {
+                if windows.iter().any(|a| a.pid == pid) {
+                    return Some(pid);
+                }
+                pid = *parents.get(&pid)?;
+            }
+            None
+        };
+        let sounding: Vec<u32> = playing.into_iter().filter_map(owner).collect();
+        let mut apps: Vec<App> = windows.iter().filter(|a| sounding.contains(&a.pid)).cloned().collect();
+        let rank = |a: &App| MUSIC.iter().position(|m| a.name.to_lowercase() == *m).unwrap_or(MUSIC.len());
+        apps.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+        apps
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Processes with sound playing now, on any output device (Windows' audio sessions).
+#[cfg(windows)]
+fn playing_pids() -> Vec<u32> {
+    use windows::core::Interface;
+    use windows::Win32::Media::Audio::{eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+    let mut out = Vec::new();
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
+        let Ok(devices) = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else { return out };
+        for i in 0..devices.GetCount().unwrap_or(0) {
+            let Ok(device) = devices.Item(i) else { continue };
+            let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
+            let Ok(sessions) = manager.GetSessionEnumerator() else { continue };
+            for j in 0..sessions.GetCount().unwrap_or(0) {
+                let Ok(session) = sessions.GetSession(j) else { continue };
+                if session.GetState().ok() != Some(AudioSessionStateActive) {
+                    continue;
+                }
+                if let Ok(pid) = session.cast::<IAudioSessionControl2>().and_then(|s| s.GetProcessId()) {
+                    if pid != 0 && !out.contains(&pid) {
+                        out.push(pid);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Every process's parent, to find the app a helper process plays for.
+#[cfg(windows)]
+fn parent_pids() -> std::collections::HashMap<u32, u32> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+    let mut out = std::collections::HashMap::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut more = Process32FirstW(snap, &mut entry).is_ok();
+        while more {
+            out.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+            more = Process32NextW(snap, &mut entry).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn playing_pids() -> Vec<u32> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+fn parent_pids() -> std::collections::HashMap<u32, u32> {
+    Default::default()
 }
 
 /// What one app's window says now (the song, for most players).
@@ -81,7 +159,12 @@ fn windows_list() -> Vec<App> {
             }
             // The names people know, not the program files'.
             let known = [("spotify", "Spotify"), ("chrome", "Chrome"), ("msedge", "Edge"), ("firefox", "Firefox"), ("brave", "Brave"), ("opera", "Opera"), ("vivaldi", "Vivaldi"), ("applemusic", "Apple Music"), ("vlc", "VLC")];
-            let name = known.iter().find(|(file, _)| *file == lower).map_or(name, |(_, shown)| shown.to_string());
+            let name = known
+                .iter()
+                .find(|(file, _)| *file == lower)
+                .map(|(_, shown)| shown.to_string())
+                .or_else(|| crate::games::game_name(&format!("{lower}.exe")).map(str::to_string))
+                .unwrap_or(name);
             Some(App { pid, name, title })
         })
         .collect()

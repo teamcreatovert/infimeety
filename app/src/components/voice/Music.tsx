@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AnimatePresence, motion } from 'motion/react';
-import { Music2, RefreshCw, Square } from 'lucide-react';
+import { motion } from 'motion/react';
+import { AudioLines, Music2, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
@@ -28,24 +28,27 @@ export function MusicPicker({ busy, onDone }: { busy?: string; onDone: () => voi
   const busyName = useChannels((s) => (busy ? (s.users[busy]?.name ?? 'Someone') : null));
   const waiting = !!busyName && !sharing;
   const [apps, setApps] = useState<AudioApp[] | null>(null);
-  const load = () => {
-    setApps(null);
-    void invoke<AudioApp[]>('audio_apps')
-      .then(setApps)
-      .catch(() => setApps([]));
-  };
-  useEffect(load, []);
+  // Only apps playing sound right now are listed, so the list follows along: start a song and
+  // its app appears.
+  useEffect(() => {
+    const load = () =>
+      void invoke<AudioApp[]>('audio_apps')
+        .then(setApps)
+        .catch(() => setApps([]));
+    load();
+    const timer = setInterval(load, 2500);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <div className="flex w-[340px] max-w-[calc(100vw-24px)] flex-col">
       <div className="flex items-center gap-2 px-3.5 pb-1 pt-3">
         <Music2 size={15} className="text-accent" />
         <span className="flex-1 text-[13.5px] font-semibold">Share music</span>
-        <button aria-label="Refresh" onClick={load} className="grid h-7 w-7 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg">
-          <RefreshCw size={13} />
-        </button>
       </div>
-      <p className="px-3.5 pb-2 text-[12px] leading-snug text-fg-3">Only that app’s sound goes to the call, never your screen. Play music in it like you normally do.</p>
+      <p className="px-3.5 pb-2 text-[12px] leading-snug text-fg-3">
+        Play a song in Spotify, or YouTube Music in your browser, then pick it here. Everyone in the call hears only that app, never your screen or other sounds.
+      </p>
 
       {sharing && (
         <div className="mx-3 mb-2 flex items-center gap-2.5 rounded-[12px] bg-accent/12 px-2.5 py-2">
@@ -71,7 +74,11 @@ export function MusicPicker({ busy, onDone }: { busy?: string; onDone: () => voi
             <Spinner size={18} />
           </div>
         ) : apps.length === 0 ? (
-          <p className="px-2 py-5 text-center text-[12.5px] text-fg-3">Open Spotify or YouTube Music in your browser, then refresh.</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <AudioLines size={22} className="text-fg-3" />
+            <p className="text-[13px] font-medium">Nothing is playing yet</p>
+            <p className="text-[12px] leading-snug text-fg-3">Start a song and its app shows up here.</p>
+          </div>
         ) : (
           apps.map((app) => (
             <button
@@ -79,7 +86,9 @@ export function MusicPicker({ busy, onDone }: { busy?: string; onDone: () => voi
               onClick={() => void voice.startMusic(app).then(onDone)}
               className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-fill-2"
             >
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] glass-key text-[12px] font-bold uppercase text-fg-2">{app.name.slice(0, 1)}</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-accent/12 text-accent">
+                <AudioLines size={16} />
+              </span>
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-medium">{app.name}</span>
                 <span className="block truncate text-[11.5px] text-fg-3">{app.title}</span>
@@ -92,47 +101,59 @@ export function MusicPicker({ busy, onDone }: { busy?: string; onDone: () => voi
   );
 }
 
-/** What's playing in the room: one card per person sharing music, with how loud it plays for you. */
-export function NowPlaying({ participants, myPeer }: { participants: VoiceParticipant[]; myPeer: string | null }) {
-  const users = useChannels((s) => s.users);
+/**
+ * Shared music joins the call as its own tile, like a player in the room: the song, who shares
+ * it and from which app, and how loud it plays for you (or Stop, for the person sharing).
+ */
+export function MusicTile({ p, mine, width, height }: { p: VoiceParticipant; mine: boolean; width: number; height: number }) {
+  const user = useChannels((s) => s.users[p.userId]);
   const volume = useSettings((s) => s.musicVolume);
-  const sharers = participants.filter((p) => p.music);
+  const art = Math.round(Math.min(112, height * 0.4, width * 0.3));
+  const small = height < 190;
   return (
-    <div className="pointer-events-none absolute left-4 top-4 z-20 flex flex-col gap-2 compact:left-2.5 compact:top-2.5">
-      <AnimatePresence>
-        {sharers.map((p) => {
-          const mine = p.peerId === myPeer;
-          return (
-            <motion.div
-              key={p.peerId}
-              initial={{ opacity: 0, y: -8, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.97 }}
-              transition={spring}
-              className="pointer-events-auto relative flex w-[280px] max-w-[calc(100vw-40px)] items-center gap-3 rounded-[18px] p-2.5 glass-float"
-            >
-              <div className="relative shrink-0">
-                <div className="grid h-11 w-11 place-items-center rounded-[12px] bg-gradient-to-br from-accent to-[color-mix(in_srgb,var(--accent)_55%,#ff3d7f)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
-                  <Music2 size={20} />
-                </div>
-                <Avatar user={users[p.userId]} size={18} className="absolute -bottom-1 -right-1 ring-2 ring-[var(--bg)]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-semibold">{p.music!.title}</div>
-                <div className="truncate text-[11.5px] text-fg-3">
-                  {mine ? 'You’re sharing' : users[p.userId]?.name ?? 'Someone'} · {p.music!.app}
-                </div>
-                {!mine && <Slider value={volume} onChange={(v) => useSettings.getState().set({ musicVolume: v })} className="mt-1.5 w-full" />}
-              </div>
-              {mine && (
-                <button aria-label="Stop sharing music" onClick={() => voice.stopMusic()} className="grid h-8 w-8 shrink-0 place-items-center rounded-full glass-key">
-                  <Square size={11} className="fill-current" />
-                </button>
-              )}
-            </motion.div>
-          );
-        })}
-      </AnimatePresence>
-    </div>
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={spring}
+      className="relative overflow-hidden rounded-[22px] glass-tile"
+      style={{ width, height }}
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-accent/25 via-transparent to-[#ff3d7f]/20" />
+      <div className="relative flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
+        <div
+          className="relative grid shrink-0 place-items-center rounded-[22%] bg-gradient-to-br from-accent to-[color-mix(in_srgb,var(--accent)_45%,#ff3d7f)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_18px_40px_-14px_var(--accent)]"
+          style={{ width: art, height: art }}
+        >
+          <span className="flex h-[42%] items-end gap-[8%]" aria-hidden>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className="eq-bar w-[7%] min-w-[4px] rounded-full bg-white" style={{ animationDelay: `${i * -0.27}s` }} />
+            ))}
+          </span>
+        </div>
+        <div className="min-w-0 max-w-full">
+          <div className="truncate text-[15px] font-semibold">{p.music!.title}</div>
+          {!small && (
+            <div className="mt-0.5 flex items-center justify-center gap-1.5 text-[12px] text-fg-3">
+              <Avatar user={user} size={16} className="shrink-0" />
+              <span className="truncate">
+                {mine ? 'You’re sharing' : `Shared by ${user?.name ?? 'someone'}`} · {p.music!.app}
+              </span>
+            </div>
+          )}
+        </div>
+        {mine ? (
+          <button onClick={() => voice.stopMusic()} className="flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12.5px] font-semibold glass-key">
+            <Square size={10} className="fill-current" /> Stop music
+          </button>
+        ) : (
+          <div className="flex w-[min(220px,80%)] items-center gap-2 text-fg-3">
+            <Music2 size={13} className="shrink-0" />
+            <Slider value={volume} onChange={(v) => useSettings.getState().set({ musicVolume: v })} className="w-full" />
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 }
