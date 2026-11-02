@@ -20,23 +20,31 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(join(layout, 'Assets'), { recursive: true });
 
 copyFileSync(exe, join(layout, 'infimeety.exe'));
-for (const icon of ['StoreLogo.png', 'Square44x44Logo.png', 'Square150x150Logo.png'])
-  copyFileSync(join(tauri, 'icons', icon), join(layout, 'Assets', icon));
+// Every size Windows asks for: the taskbar and Start take the "unplated" target sizes (no
+// colored square behind the icon); store/Assets is made from icons/icon.png.
+for (const icon of readdirSync(join(tauri, 'store', 'Assets'))) copyFileSync(join(tauri, 'store', 'Assets', icon), join(layout, 'Assets', icon));
 // The Store wants four numbers, the last one 0.
 const storeVersion = `${version.split('-')[0]}.0`;
 writeFileSync(join(layout, 'AppxManifest.xml'), readFileSync(join(tauri, 'store', 'AppxManifest.xml'), 'utf8').replace('Version="{VERSION}"', `Version="${storeVersion}"`));
 
-/** MakeAppx from the newest Windows SDK on this machine. */
-function makeAppx() {
+/** A tool from the newest Windows SDK on this machine. */
+function sdkTool(name) {
   const bin = 'C:\\Program Files (x86)\\Windows Kits\\10\\bin';
   const sdks = existsSync(bin) ? readdirSync(bin).filter((d) => /^10\./.test(d)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) : [];
   for (const sdk of sdks.reverse()) {
-    const tool = join(bin, sdk, 'x64', 'makeappx.exe');
+    const tool = join(bin, sdk, 'x64', name);
     if (existsSync(tool)) return tool;
   }
-  throw new Error('MakeAppx not found: install the Windows SDK.');
+  throw new Error(`${name} not found: install the Windows SDK.`);
 }
 
+// The index (resources.pri) that lets Windows find the sized icons above.
+const priConfig = join(out, 'priconfig.xml');
+execFileSync(sdkTool('makepri.exe'), ['createconfig', '/cf', priConfig, '/dq', 'en-US', '/pv', '10.0.0', '/o'], { stdio: 'inherit' });
+// One index in one package: without this it splits off per-scale files meant for bundles.
+writeFileSync(priConfig, readFileSync(priConfig, 'utf8').replace(/<packaging>[\s\S]*?<\/packaging>/, ''));
+execFileSync(sdkTool('makepri.exe'), ['new', '/pr', layout, '/cf', priConfig, '/of', join(layout, 'resources.pri'), '/o'], { stdio: 'inherit' });
+
 const msix = join(out, `Infimeety_${version}_x64.msix`);
-execFileSync(makeAppx(), ['pack', '/d', layout, '/p', msix, '/o'], { stdio: 'inherit' });
+execFileSync(sdkTool('makeappx.exe'), ['pack', '/d', layout, '/p', msix, '/o'], { stdio: 'inherit' });
 console.log(`Store package: ${msix} (version ${storeVersion})`);
