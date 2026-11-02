@@ -1,4 +1,5 @@
 import type { LobbyMsg } from '../../../shared/protocol';
+import { myActivity, onMyActivity, setActivities, setActivity } from './activity';
 import { getToken } from './api';
 import { sounds } from './sounds';
 import { WS_URL } from '@/config';
@@ -37,6 +38,9 @@ function open() {
   socket.onopen = () => {
     retry = 0;
     ping = setInterval(() => socket.readyState === WebSocket.OPEN && socket.send('{"t":"ping"}'), 25_000);
+    // Friends see what you're playing.
+    const mine = myActivity();
+    if (mine) socket.send(JSON.stringify({ t: 'activity', activity: mine }));
     // Anything missed while disconnected (requests, accepted invites) comes with a fresh load.
     void useFriends.getState().load().catch(() => {});
   };
@@ -59,9 +63,13 @@ function handle(msg: LobbyMsg) {
   const friends = useFriends.getState();
   switch (msg.t) {
     case 'lobby.welcome':
+      setActivities(msg.activities);
       return friends.setOnline(msg.online);
     case 'friend.presence':
+      if (!msg.online) setActivity(msg.userId, null);
       return friends.setPresence(msg.userId, msg.online);
+    case 'friend.activity':
+      return setActivity(msg.userId, msg.activity);
     case 'friend.upsert': {
       const before = friends.friends.find((f) => f.user.id === msg.friend.user.id);
       friends.upsert(msg.friend);
@@ -80,6 +88,8 @@ function handle(msg: LobbyMsg) {
       return void useChannels.getState().refresh(msg.channelId).catch(() => {});
   }
 }
+
+onMyActivity((activity) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ t: 'activity', activity })));
 
 window.addEventListener('online', () => {
   if (!closed && ws?.readyState !== WebSocket.OPEN) {

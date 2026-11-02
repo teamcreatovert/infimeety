@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { LobbyMsg } from '../../shared/protocol';
+import { cleanActivity } from '../../shared/activity';
+import type { Activity, LobbyMsg } from '../../shared/protocol';
 import type { Env } from './util';
 
 /**
@@ -21,7 +22,9 @@ export class Lobby extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [userId]);
 
     const friends = await this.friendIds(userId);
-    this.send(server, { t: 'lobby.welcome', online: friends.filter((f) => this.isOnline(f)) });
+    const online = friends.filter((f) => this.isOnline(f));
+    const activities = Object.fromEntries(online.map((f) => [f, this.activityOf(f)]).filter(([, a]) => a));
+    this.send(server, { t: 'lobby.welcome', online, activities });
     if (!wasOnline) this.tellAll(friends, { t: 'friend.presence', userId, online: true });
 
     return new Response(null, { status: 101, webSocket: client, headers: { 'Sec-WebSocket-Protocol': 'infimeety' } });
@@ -39,8 +42,23 @@ export class Lobby extends DurableObject<Env> {
 
   // ─── WebSocket events ────────────────────────────────────────────────────────
 
-  async webSocketMessage() {
-    // Clients only send pings, which the auto-response answers without waking us.
+  async webSocketMessage(ws: WebSocket, data: string | ArrayBuffer) {
+    // Pings are answered by the auto-response without waking us; the rest is what you're playing.
+    if (typeof data !== 'string' || data.length > 1000) return;
+    let msg: { t?: string; activity?: unknown };
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (msg.t !== 'activity') return;
+    const [userId] = this.ctx.getTags(ws);
+    if (!userId) return;
+    const before = this.activityOf(userId);
+    const activity = cleanActivity(msg.activity);
+    ws.serializeAttachment({ activity });
+    const after = this.activityOf(userId);
+    if (before?.id !== after?.id) this.tellAll(await this.friendIds(userId), { t: 'friend.activity', userId, activity: after });
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
@@ -62,6 +80,16 @@ export class Lobby extends DurableObject<Env> {
     const [userId] = this.ctx.getTags(ws);
     if (!userId || this.isOnline(userId, ws)) return;
     this.tellAll(await this.friendIds(userId), { t: 'friend.presence', userId, online: false });
+  }
+
+  /** What someone plays, from any of their apps (the newest game wins). */
+  private activityOf(userId: string): Activity | null {
+    let best: Activity | null = null;
+    for (const s of this.ctx.getWebSockets(userId)) {
+      const a = (s.deserializeAttachment() as { activity?: Activity | null } | null)?.activity;
+      if (a && (!best || a.since > best.since)) best = a;
+    }
+    return best;
   }
 
   private isOnline(userId: string, except?: WebSocket) {

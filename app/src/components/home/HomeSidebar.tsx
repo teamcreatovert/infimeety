@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
 import { AudioLines, BellOff, Download, Link2, Pin, Users, Video } from 'lucide-react';
+import { ActivityLine, useActivity } from '../people/Activity';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { UserBar, VoicePanel } from '../shell/Sidebar';
@@ -153,6 +154,7 @@ function MeetingRow({ meeting, active }: { meeting: Channel; active: boolean }) 
 function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
   const peer = dm.peer;
   const online = useFriends((s) => (peer ? !!s.online[peer.id] : false));
+  const playing = useActivity(online ? peer?.id : null);
   const textRoom = dm.rooms.find((r) => r.kind === 'text');
   const callRoom = dm.rooms.find((r) => r.kind === 'voice');
   const unread = useMessages((s) => (textRoom ? (s.unread[textRoom.id] ?? 0) : 0));
@@ -173,6 +175,8 @@ function DmRow({ dm, active }: { dm: Channel; active: boolean }) {
           <span className="flex items-center gap-1 text-[11px] leading-tight text-success">
             <AudioLines size={11} /> In a call
           </span>
+        ) : playing ? (
+          <ActivityLine userId={peer?.id} className="text-[11px] leading-tight" />
         ) : (
           <span className="block truncate text-[11px] leading-tight text-fg-3">@{peer?.username}</span>
         )}

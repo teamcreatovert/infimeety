@@ -7,6 +7,7 @@ import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { clock, setPenalty, usePenalties } from './penalties';
+import { myActivity, onMyActivity, setActivities, setActivity } from './activity';
 import { onCallDeclined } from './calls';
 import { onSound, onSoundBlocked, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
@@ -26,6 +27,11 @@ const hubs = new Map<string, HubClient>();
 
 export const getHub = (channelId: string) => hubs.get(channelId);
 export const allHubs = () => [...hubs.values()];
+
+// The people in each channel see what you're playing.
+onMyActivity((activity) => {
+  for (const hub of hubs.values()) hub.send({ t: 'activity', activity });
+});
 
 /** Keep exactly one live connection per channel the user belongs to. */
 export function syncHubs(channelIds: string[]) {
@@ -96,14 +102,18 @@ function handle(hub: HubClient, msg: ServerMsg) {
   const cid = hub.channelId;
 
   switch (msg.t) {
-    case 'welcome':
+    case 'welcome': {
       onRemoteConfig(msg.config);
+      setActivities(msg.activities);
+      const mine = myActivity();
+      if (mine) hub.send({ t: 'activity', activity: mine });
       channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) }, voice: { ...channels.voice, [cid]: cleanVoiceSnapshot(msg.voice) } });
       voice.onWelcome(hub);
       onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
+    }
     case 'presence':
       return channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) } });
     case 'voice': {
@@ -160,6 +170,11 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return onSoundStop(msg.userId);
     case 'sound.blocked':
       return onSoundBlocked();
+    case 'activity':
+      return setActivity(msg.userId, msg.activity);
+    case 'music.denied':
+      voice.stopMusic(true);
+      return toast({ kind: 'info', title: 'Music isn’t shared', body: msg.message });
     case 'call.declined':
       return onCallDeclined(msg.roomId);
     case 'media.request':

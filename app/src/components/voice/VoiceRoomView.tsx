@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   Mic,
   MicOff,
+  Music2,
   MonitorPlay,
   Phone,
   PhoneOff,
@@ -38,6 +39,7 @@ import { SoundBursts, SoundboardPanel } from './Soundboard';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
+import { MusicPicker, NowPlaying, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
@@ -466,6 +468,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           ) : (
             <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
+          <NowPlaying participants={participants} myPeer={myPeer} />
           {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
         </div>
 
@@ -719,6 +722,8 @@ function Dock({
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
   const [soundMenu, setSoundMenu] = useState<Anchor | null>(null);
+  const [musicMenu, setMusicMenu] = useState<Anchor | null>(null);
+  const music = useVoice((s) => s.music);
   const soundboard = useFeatureOn('soundboard');
   const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
   const toggleNoise = () => useSettings.getState().set({ noiseFilter: noiseOn ? 'off' : 'strong' });
@@ -856,6 +861,11 @@ function Dock({
           <Speaker size={19} />
         </DockButton>
       )}
+      {canShareMusic && (channel.kind === 'dm' || isAdmin) && (
+        <DockButton label={music ? `Sharing music: ${music.title}` : 'Share music'} state={music || musicMenu ? 'on' : 'normal'} onClick={(el) => setMusicMenu(el.getBoundingClientRect())}>
+          <Music2 size={19} />
+        </DockButton>
+      )}
       {isAdmin && (
         <DockButton
           label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins and moderators can still talk)'}
@@ -882,6 +892,9 @@ function Dock({
 
       <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14} material="float">
         <SoundboardPanel />
+      </Popover>
+      <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="center" offset={14} material="float">
+        <MusicPicker busy={participants.find((p) => p.music && p.peerId !== myPeer)?.userId} onDone={() => setMusicMenu(null)} />
       </Popover>
       <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14} material="float">
         <ShareOptions

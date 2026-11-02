@@ -165,10 +165,20 @@ export interface Friend {
   since: number;
 }
 
+/** What someone is doing right now, shown under their name ("Playing VALORANT"). */
+export interface Activity {
+  kind: 'playing';
+  /** The game, from the app's list of known games. */
+  id: string;
+  name: string;
+  since: number;
+}
+
 /** Messages on the per-user lobby socket (friends, presence, new DMs). */
 export type LobbyMsg =
-  | { t: 'lobby.welcome'; online: string[] }
+  | { t: 'lobby.welcome'; online: string[]; activities?: Record<string, Activity> }
   | { t: 'friend.presence'; userId: string; online: boolean }
+  | { t: 'friend.activity'; userId: string; activity: Activity | null }
   | { t: 'friend.upsert'; friend: Friend }
   | { t: 'friend.removed'; userId: string }
   | { t: 'channel.added'; channelId: string }
@@ -213,6 +223,13 @@ export interface StreamIds {
   mic?: string;
   cam?: string;
   screen?: string;
+  music?: string;
+}
+
+/** "Share music": one app's sound (Spotify, a browser), and the song its window shows. */
+export interface MusicShare {
+  app: string;
+  title: string;
 }
 
 export interface VoiceLocalState {
@@ -223,6 +240,8 @@ export interface VoiceLocalState {
   streams: StreamIds;
   /** The screen shares (peer ids) this person watches: sharers only send their screen to these. Absent from older apps. */
   watching?: string[];
+  /** The music this person shares with the room, if any. */
+  music?: MusicShare | null;
 }
 
 export interface VoiceParticipant extends VoiceLocalState {
@@ -381,10 +400,13 @@ export type ClientMsg =
   | { t: 'party.status'; roomId: string; status: PartyMemberStatus }
   /** Clock sync: the hub answers with its own time. */
   | { t: 'clock'; c: number }
+  /** What you're playing (or null), for the people in this channel. */
+  | { t: 'activity'; activity: Activity | null }
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; config?: RemoteConfig }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; config?: RemoteConfig; activities?: Record<string, Activity> }
+  | { t: 'activity'; userId: string; activity: Activity | null }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
   /** Out of voice: an admin's disconnect, or you joined voice from another device ('elsewhere'). */
@@ -402,6 +424,8 @@ export type ServerMsg =
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'sound.stop'; peerId: string; userId: string }
   | { t: 'call.declined'; roomId: string; userId: string }
+  /** Your music share was turned down (not an admin or moderator, or someone else is sharing). */
+  | { t: 'music.denied'; message: string }
   /** Your sound didn't play for anyone (you're muted): stop it on your side too. */
   | { t: 'sound.blocked' }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }

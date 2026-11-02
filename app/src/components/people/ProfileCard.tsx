@@ -1,4 +1,5 @@
 import { Check, MessageCircle, Pencil, Phone, UserCheck, UserPlus } from 'lucide-react';
+import { ActivityCard } from './Activity';
 import { useState } from 'react';
 import { callFriend, messageFriend } from '../home/FriendsPage';
 import { Avatar } from '../ui/Avatar';
@@ -56,6 +57,7 @@ function Card({ userId, focusNote, close }: { userId: string; focusNote: boolean
           user?.username && <div className="selectable text-[13px] text-fg-2">@{user.username}</div>
         )}
         <div className="mt-1 text-[12px] text-fg-3">{self ? 'This is you' : online ? 'Online' : 'Offline'}</div>
+        {(self || online) && <ActivityCard userId={user?.id} />}
 
         {!self && (
           <div className="mt-3.5 rounded-[12px] bg-fill-1 px-3 pb-2 pt-2.5">

@@ -31,6 +31,7 @@ import { startNotifications } from './lib/notify';
 import { startWebLinks } from './lib/weblinks';
 import { startDesktop } from './lib/desktop';
 import { startPushToTalk } from './lib/ptt';
+import { startActivityWatch, stopActivityWatch } from './lib/activity';
 import { connectLobby, disconnectLobby } from './lib/lobby';
 import { closeAllHubs, syncHubs } from './lib/realtime';
 import { startRevocationWatcher } from './lib/transfer';
@@ -130,11 +131,13 @@ export default function App() {
       voice.leave({ silent: true });
       closeAllHubs();
       disconnectLobby();
+      stopActivityWatch();
       useFriends.getState().reset();
       useChannels.setState({ channels: [], loaded: false, members: {}, online: {}, voice: {} });
       return;
     }
     connectLobby();
+    startActivityWatch();
     useChannels
       .getState()
       .load()

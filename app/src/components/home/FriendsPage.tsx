@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { AtSign, Check, Copy, Ellipsis, MessageSquare, Phone, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { ActivityLine, useActivity } from '../people/Activity';
 import { useState, type ReactNode } from 'react';
 import type { Friend } from '../../../../shared/protocol';
 import { MobileBack } from '../shell/MobileBack';
@@ -130,6 +131,7 @@ function FriendRow({ friend, online }: { friend: Friend; online: boolean }) {
       setBusy(false);
     }
   };
+  const playing = useActivity(user.id);
   const subtitle = status === 'incoming' ? 'Incoming friend request' : status === 'outgoing' ? 'Outgoing friend request' : online ? 'Online' : 'Offline';
 
   return (
@@ -148,7 +150,11 @@ function FriendRow({ friend, online }: { friend: Friend; online: boolean }) {
           <span className="truncate text-[14px] font-semibold">{user.name}</span>
           <span className="truncate text-[12px] text-fg-3">@{user.username}</span>
         </div>
-        <div className={clsx('text-[12px]', status === 'incoming' ? 'text-accent' : 'text-fg-3')}>{subtitle}</div>
+        {status === 'accepted' && online && playing ? (
+          <ActivityLine userId={user.id} className="text-[12px]" />
+        ) : (
+          <div className={clsx('text-[12px]', status === 'incoming' ? 'text-accent' : 'text-fg-3')}>{subtitle}</div>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5">

@@ -63,6 +63,10 @@ export interface SettingsState {
   soundFavorites: string[];
   /** Send crash reports (the error and the app version, nothing personal) to Infimeety. */
   crashReports: boolean;
+  /** Show friends and the people in your servers which game you're playing. */
+  shareActivity: boolean;
+  /** How loud music others share in a call plays (0–1). */
+  musicVolume: number;
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -135,6 +139,8 @@ export const useSettings = create<SettingsState>()(
       soundboardVolume: 0.7,
       soundFavorites: [],
       crashReports: true,
+      shareActivity: true,
+      musicVolume: 0.8,
 
       screenQuality: '1080p30',
       screenMode: 'motion',

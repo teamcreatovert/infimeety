@@ -157,8 +157,14 @@ function AccountForm({ me }: { me: Me }) {
 
 function CrashReports() {
   const on = useSettings((s) => s.crashReports);
+  const sharing = useSettings((s) => s.shareActivity);
   return (
     <Group title="Privacy">
+      {isTauri && (
+        <Row label="Share what you're playing" detail="Friends and the people in your servers see “Playing VALORANT” under your name while a well-known game runs. Only the game's name is shared.">
+          <Switch checked={sharing} onChange={(v) => useSettings.getState().set({ shareActivity: v })} />
+        </Row>
+      )}
       <Row label="Send crash reports" detail="When something in Infimeety breaks, it tells us what broke and on which version, so we can fix it. Never your messages, names or files.">
         <Switch checked={on} onChange={(v) => useSettings.getState().set({ crashReports: v })} />
       </Row>

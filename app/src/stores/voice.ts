@@ -1,3 +1,4 @@
+import type { MusicShare } from '../../../shared/protocol';
 import { create } from 'zustand';
 
 export interface RemoteStreams {
@@ -22,6 +23,8 @@ interface VoiceState {
   connection: Record<string, RTCPeerConnectionState>;
   localCam: MediaStream | null;
   localScreen: MediaStream | null;
+  /** The music you're sharing with the room (Share music). */
+  music: MusicShare | null;
   micAvailable: boolean;
   /** The browser hasn't let the call's sound start yet (mobile: until the first tap). */
   audioBlocked: boolean;
@@ -42,6 +45,7 @@ export const useVoice = create<VoiceState>()(() => ({
   connection: {},
   localCam: null,
   localScreen: null,
+  music: null,
   micAvailable: true,
   audioBlocked: false,
   pttActive: false,

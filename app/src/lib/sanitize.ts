@@ -1,3 +1,4 @@
+import { cleanMusic } from '../../../shared/activity';
 import type { Attachment, Message, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../../shared/protocol';
 
 /**
@@ -55,7 +56,7 @@ export function cleanMessage(v: unknown): Message | null {
 function cleanStreams(v: unknown): StreamIds {
   const s = obj(v);
   const out: StreamIds = {};
-  for (const k of ['mic', 'cam', 'screen'] as const) if (typeof s[k] === 'string') out[k] = s[k];
+  for (const k of ['mic', 'cam', 'screen', 'music'] as const) if (typeof s[k] === 'string') out[k] = s[k];
   return out;
 }
 
@@ -71,6 +72,7 @@ export function cleanParticipant(v: unknown): VoiceParticipant | null {
     camera: bool(p.camera),
     screen: bool(p.screen),
     streams: cleanStreams(p.streams),
+    music: cleanMusic(p.music),
     ...(Array.isArray(p.watching) ? { watching: p.watching.filter((w): w is string => typeof w === 'string') } : {}),
     serverMuted: bool(p.serverMuted),
     joinedAt: num(p.joinedAt),

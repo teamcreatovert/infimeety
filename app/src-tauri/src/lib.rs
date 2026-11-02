@@ -1,6 +1,10 @@
 #[cfg(desktop)]
 mod desktop;
 #[cfg(desktop)]
+mod apps;
+#[cfg(desktop)]
+mod games;
+#[cfg(desktop)]
 mod media;
 mod names;
 #[cfg(mobile)]
@@ -140,6 +144,9 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             desktop::overlay_open,
             desktop::overlay_close,
             desktop::notify,
+            games::running_game,
+            apps::audio_apps,
+            apps::app_title,
         ])
 }
 

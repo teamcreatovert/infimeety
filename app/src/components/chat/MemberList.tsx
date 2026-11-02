@@ -1,4 +1,5 @@
 import { Crown, Shield, ShieldCheck, UserPlus } from 'lucide-react';
+import { ActivityLine, useActivity } from '../people/Activity';
 import type { Channel, Member } from '../../../../shared/protocol';
 import { acceptFriend, addFriend } from '../people/person';
 import { Avatar } from '../ui/Avatar';
@@ -50,6 +51,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 }
 
 function MemberRow({ m, channelId, online, inVoice }: { m: Member; channelId: string; online: boolean; inVoice: boolean }) {
+  const playing = useActivity(online ? m.id : null);
   return (
     <div
       role="button"
@@ -78,7 +80,11 @@ function MemberRow({ m, channelId, online, inVoice }: { m: Member; channelId: st
             </Tooltip>
           )}
         </div>
-        <div className="truncate text-[11.5px] text-fg-3">{inVoice ? '🔊 In a voice room' : `@${m.username}`}</div>
+        {!inVoice && playing ? (
+          <ActivityLine userId={m.id} className="text-[11.5px]" />
+        ) : (
+          <div className="truncate text-[11.5px] text-fg-3">{inVoice ? '🔊 In a voice room' : `@${m.username}`}</div>
+        )}
       </div>
       <FriendAction m={m} />
     </div>

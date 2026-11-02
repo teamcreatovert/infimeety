@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import type { RtcPayload, VoiceLocalState, VoiceParticipant, VoiceSnapshot } from '../../../../shared/protocol';
 import { api } from '@/lib/api';
 import type { HubClient } from '@/lib/hub';
@@ -37,7 +38,7 @@ export async function refreshIce() {
 interface AudioChain {
   peerId: string;
   userId: string;
-  kind: 'mic' | 'screen';
+  kind: 'mic' | 'screen' | 'music';
   stream: MediaStream;
   trackId: string;
   el: HTMLAudioElement;
@@ -110,6 +111,9 @@ class VoiceEngine {
   private micOut = new MediaStream();
   private camOut = new MediaStream();
   private screenOut = new MediaStream();
+  /** Share music: one app's sound, sent to everyone in the room (not only watchers). */
+  private musicOut = new MediaStream();
+  private music: { capture: SystemAudioCapture; pid: number; app: string; title: string; poll: ReturnType<typeof setInterval> } | null = null;
 
   private meter: ReturnType<typeof setInterval> | undefined;
   private lastLoud: Record<string, number> = {};
@@ -140,6 +144,7 @@ class VoiceEngine {
     this.micOut = new MediaStream();
     this.camOut = new MediaStream();
     this.screenOut = new MediaStream();
+    this.musicOut = new MediaStream();
     // Joining means you want to hear: a Deafen left on from the last call doesn't come along.
     useVoice.setState({ channelId, roomId, status: 'connecting', speaking: {}, remote: {}, connection: {}, serverMuted: false, deafened: false });
 
@@ -189,6 +194,7 @@ class VoiceEngine {
     this.denoiser = null;
     this.systemAudio?.stop();
     this.systemAudio = null;
+    this.stopMusic(true);
     this.micMeter?.source.disconnect();
     this.micMeter = null;
     clearInterval(this.meter);
@@ -430,6 +436,51 @@ class VoiceEngine {
     sounds.shareStart();
   }
 
+  /** Shares one app's sound (Spotify, a browser playing music) with everyone in the room. */
+  async startMusic(app: { pid: number; name: string; title: string }) {
+    if (!this.inCall) return;
+    this.ensureAudio();
+    if (!this.ctx) return;
+    this.stopMusic(true);
+    let capture: SystemAudioCapture;
+    try {
+      capture = await startSystemAudio(this.ctx, app.pid);
+    } catch (err) {
+      return toast({ kind: 'error', title: 'Couldn’t share that app’s sound', body: err instanceof Error ? err.message : String(err) });
+    }
+    // The song is in the app's window title; it changes as the music does.
+    const poll = setInterval(async () => {
+      const music = this.music;
+      if (!music) return;
+      const title = await invoke<string | null>('app_title', { pid: music.pid }).catch(() => null);
+      if (this.music !== music) return;
+      if (title === null) return this.stopMusic();
+      const clean = musicTitle(title, music.app);
+      if (clean === music.title) return;
+      music.title = clean;
+      useVoice.setState({ music: { app: music.app, title: clean } });
+      this.pushState();
+    }, 4000);
+    this.music = { capture, pid: app.pid, app: app.name, title: musicTitle(app.title, app.name), poll };
+    for (const peer of this.peers.values()) peer.pc.addTrack(capture.track, this.musicOut);
+    useVoice.setState({ music: { app: this.music.app, title: this.music.title } });
+    this.pushState();
+    sounds.shareStart();
+  }
+
+  stopMusic(quiet = false) {
+    const music = this.music;
+    if (!music) return;
+    this.music = null;
+    clearInterval(music.poll);
+    this.removeSenders(new MediaStream([music.capture.track]));
+    music.capture.stop();
+    useVoice.setState({ music: null });
+    if (quiet) return;
+    this.pushState();
+    sounds.shareStop();
+  }
+
   stopScreen() {
     if (!this.screen) return;
     this.removeSenders(this.screen);
@@ -473,8 +524,9 @@ class VoiceEngine {
       deafened: vs.deafened,
       camera: !!this.cam,
       screen: !!this.screen,
-      streams: { mic: this.micOut.id, cam: this.camOut.id, screen: this.screenOut.id },
+      streams: { mic: this.micOut.id, cam: this.camOut.id, screen: this.screenOut.id, music: this.musicOut.id },
       watching: watchedPeers(),
+      music: this.music ? { app: this.music.app, title: this.music.title } : null,
     };
   }
 
@@ -629,6 +681,7 @@ class VoiceEngine {
     if (micTrack) peer.pc.addTrack(micTrack, this.micOut);
     for (const t of this.cam?.getTracks() ?? []) peer.pc.addTrack(t, this.camOut);
     this.addScreenTracks(peer);
+    if (this.music) peer.pc.addTrack(this.music.capture.track, this.musicOut);
     this.peers.set(peerId, peer);
   }
 
@@ -641,8 +694,9 @@ class VoiceEngine {
 
   /** Screen-share audio is the only stereo stream; ids are announced when each person joins. */
   private isScreenStream(streamId: string) {
-    if (streamId === this.screenOut.id) return true;
-    for (const p of this.participants.values()) if (p.streams.screen === streamId) return true;
+    // Music is stereo at the same high bitrate.
+    if (streamId === this.screenOut.id || streamId === this.musicOut.id) return true;
+    for (const p of this.participants.values()) if (p.streams.screen === streamId || p.streams.music === streamId) return true;
     return false;
   }
 
@@ -651,6 +705,7 @@ class VoiceEngine {
     this.peers.delete(peerId);
     this.dropChain(`${peerId}:mic`);
     this.dropChain(`${peerId}:screen`);
+    this.dropChain(`${peerId}:music`);
     this.remoteStreams.delete(peerId);
     delete this.lastLoud[peerId];
     useVoice.setState((s) => {
@@ -729,12 +784,13 @@ class VoiceEngine {
     const screen = p.screen ? pick(p.streams.screen) : undefined;
     this.ensureChain(peerId, p.userId, 'mic', mic);
     this.ensureChain(peerId, p.userId, 'screen', screen);
+    this.ensureChain(peerId, p.userId, 'music', p.music ? pick(p.streams.music) : undefined);
     // A share that ended needs a new click on Watch next time, like Discord.
     if (!p.screen) stopWatching(peerId);
     useVoice.setState((s) => ({ remote: { ...s.remote, [peerId]: { mic, cam, screen } } }));
   }
 
-  private ensureChain(peerId: string, userId: string, kind: 'mic' | 'screen', stream: MediaStream | undefined) {
+  private ensureChain(peerId: string, userId: string, kind: 'mic' | 'screen' | 'music', stream: MediaStream | undefined) {
     const key = `${peerId}:${kind}`;
     const track = stream?.getAudioTracks().find((t) => t.readyState === 'live');
     const existing = this.chains.get(key);
@@ -838,7 +894,9 @@ class VoiceEngine {
           ? s.localMutes[c.userId] || p?.serverMuted
             ? 0
             : (s.userVolumes[c.userId] ?? 1)
-          : useUI.getState().watching.includes(c.peerId) ? (s.streamVolumes[c.userId] ?? 1) : 0;
+          : c.kind === 'music'
+            ? s.musicVolume
+            : useUI.getState().watching.includes(c.peerId) ? (s.streamVolumes[c.userId] ?? 1) : 0;
       c.gain.gain.setTargetAtTime(v, now, 0.015);
     }
   }
@@ -889,6 +947,17 @@ let nativeFailed = false;
 function watchedPeers() {
   const { watching, focusedPeer } = useUI.getState();
   return focusedPeer && !watching.includes(focusedPeer) ? [...watching, focusedPeer] : watching;
+}
+
+/** The song from a player's window title: "Song - YouTube Music - Google Chrome" becomes "Song". */
+function musicTitle(title: string, app: string) {
+  let t = title.replace(/\s+[-\u2013\u2014]\s+(Google Chrome|Microsoft\u200b? Edge|Mozilla Firefox|Brave|Opera|Vivaldi)$/i, '');
+  // Edge and Chrome add the profile's name when you have more than one.
+  t = t.replace(/\s+[-\u2013\u2014]\s+(Profile \d+|Personal|Work)$/i, '');
+  t = t.replace(/\s+[-\u2013\u2014]\s+(YouTube Music|YouTube)$/i, '');
+  // Spotify's window says just "Spotify" (or "Spotify Premium") while paused.
+  if (/^spotify( premium| free)?$/i.test(t)) return 'Paused';
+  return t.trim() || app;
 }
 
 export const voice = new VoiceEngine();

@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
+import { cleanActivity, cleanMusic } from '../../shared/activity';
 import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
-import type { AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { Activity, MusicShare, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -28,6 +29,8 @@ interface Peer {
   client?: string;
   /** When it connected, for spotting a connection that went silent. */
   at?: number;
+  /** What this app says its person is playing. */
+  activity?: Activity | null;
   version?: string;
   /** Voice state while in a voice room; `forceMuted` is the admin's per-person mute. */
   voice: (Omit<VoiceParticipant, 'serverMuted'> & { forceMuted: boolean }) | null;
@@ -116,7 +119,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env) });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env), activities: this.activities() });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
     const pen = await this.penaltiesOf(peer.userId);
     if (pen.chat || pen.voice) this.send(server, { t: 'penalty', chatUntil: pen.chat, voiceUntil: pen.voice });
@@ -325,6 +328,7 @@ export class ChannelHub extends DurableObject<Env> {
             camera: !!s.camera,
             screen: !!s.screen,
             streams: streamIds(s.streams),
+            music: await this.musicFor(ws, me, msg.roomId, cleanMusic(s.music)),
             ...(Array.isArray(s.watching) ? { watching: (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined) } : {}),
             forceMuted: false,
             ...(mutedUntil ? { mutedUntil } : {}),
@@ -347,6 +351,7 @@ export class ChannelHub extends DurableObject<Env> {
         if (typeof s.camera === 'boolean') v.camera = s.camera;
         if (typeof s.screen === 'boolean') v.screen = s.screen;
         if (s.streams && typeof s.streams === 'object') v.streams = streamIds(s.streams);
+        if ('music' in s) v.music = await this.musicFor(ws, me, v.roomId, cleanMusic(s.music));
         if (Array.isArray(s.watching)) v.watching = (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined);
         this.save(ws, { ...me, voice: v });
         return this.broadcastVoice();
@@ -415,6 +420,14 @@ export class ChannelHub extends DurableObject<Env> {
         const v = this.voiceOf(me);
         if (!v) return;
         return this.roomCast(v.roomId, { t: 'sound.stop', peerId: me.peerId, userId: me.userId }, ws);
+      }
+
+      case 'activity': {
+        const before = this.activityOf(me.userId);
+        this.save(ws, { ...me, activity: cleanActivity(msg.activity) });
+        const after = this.activityOf(me.userId);
+        if (before?.id !== after?.id) this.broadcast({ t: 'activity', userId: me.userId, activity: after }, ws);
+        return;
       }
 
       case 'call.decline': {
@@ -1023,6 +1036,44 @@ export class ChannelHub extends DurableObject<Env> {
     return this.sockets().find((s) => this.peer(s).peerId === peerId);
   }
 
+  private channelKind: string | undefined;
+
+  /**
+   * Share music: admins and moderators only (anyone in a DM), and one person per room at a
+   * time. A share that isn't allowed is dropped and its sender told to stop.
+   */
+  private async musicFor(ws: WebSocket, me: Peer, roomId: string, music: MusicShare | null) {
+    if (!music) return null;
+    this.channelKind ??= (await this.env.DB.prepare('SELECT kind FROM channels WHERE id = ?').bind(me.channelId).first<{ kind: string }>())?.kind ?? '';
+    if (this.channelKind !== 'dm' && !canModerateRole(me.role)) {
+      this.send(ws, { t: 'music.denied', message: 'Only admins and moderators can share music here.' });
+      return null;
+    }
+    const other = this.sockets(ws)
+      .map((s) => this.peer(s))
+      .find((p) => p.userId !== me.userId && p.voice?.roomId === roomId && p.voice.music);
+    if (other) {
+      const name = (await this.env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(other.userId).first<{ name: string }>())?.name ?? 'Someone';
+      this.send(ws, { t: 'music.denied', message: `${name} is sharing music. You can share once they stop.` });
+      return null;
+    }
+    return music;
+  }
+
+  /** What someone plays, from any of their apps here (the newest game wins). */
+  private activityOf(userId: string, except?: WebSocket): Activity | null {
+    let best: Activity | null = null;
+    for (const s of this.sockets(except)) {
+      const p = this.peer(s);
+      if (p.userId === userId && p.activity && (!best || p.activity.since > best.since)) best = p.activity;
+    }
+    return best;
+  }
+
+  private activities() {
+    return Object.fromEntries(this.online().map((u) => [u, this.activityOf(u)]).filter(([, a]) => a));
+  }
+
   private online(exceptUser?: string) {
     return [...new Set(this.sockets().map((s) => this.peer(s).userId))].filter((u) => u !== exceptUser);
   }
@@ -1068,6 +1119,9 @@ export class ChannelHub extends DurableObject<Env> {
     this.rates.forget(me.peerId);
     const stillOnline = this.sockets(ws).some((s) => this.peer(s).userId === me.userId);
     if (!stillOnline) this.broadcast({ t: 'presence', online: this.online().filter((u) => u !== me.userId) }, ws);
+    // Gone from here: so is what they were playing (another of their apps may still say).
+    else if (me.activity) this.broadcast({ t: 'activity', userId: me.userId, activity: this.activityOf(me.userId, ws) }, ws);
+    if (!stillOnline && me.activity) this.broadcast({ t: 'activity', userId: me.userId, activity: null }, ws);
     if (me.voice) this.broadcastVoice(ws);
   }
 
@@ -1144,7 +1198,7 @@ function cleanSettings(input: unknown): PartySettings {
 function streamIds(input: unknown): StreamIds {
   const out: StreamIds = {};
   if (!input || typeof input !== 'object') return out;
-  for (const k of ['mic', 'cam', 'screen'] as const) {
+  for (const k of ['mic', 'cam', 'screen', 'music'] as const) {
     const v = (input as Record<string, unknown>)[k];
     if (typeof v === 'string' && v.length <= 64) out[k] = v;
   }

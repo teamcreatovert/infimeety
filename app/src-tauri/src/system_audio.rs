@@ -22,13 +22,14 @@ use tauri::{
     State, Webview,
 };
 
-/// Stop flag of the running capture, if any.
+/// Stop flags of the running captures, by kind: a screen share's (`false`: everything but us)
+/// and a music share's (`true`: one app).
 #[derive(Default)]
-pub struct SystemAudio(Mutex<Option<Arc<AtomicBool>>>);
+pub struct SystemAudio(Mutex<std::collections::HashMap<bool, Arc<AtomicBool>>>);
 
 impl SystemAudio {
-    fn stop(&self) {
-        if let Some(flag) = self.0.lock().unwrap().take() {
+    fn stop(&self, app: bool) {
+        if let Some(flag) = self.0.lock().unwrap().remove(&app) {
             flag.store(true, Ordering::Relaxed);
         }
     }
@@ -39,26 +40,32 @@ pub async fn system_audio_start(
     webview: Webview,
     state: State<'_, SystemAudio>,
     on_data: Channel<InvokeResponseBody>,
+    app_pid: Option<u32>,
 ) -> Result<(), String> {
-    state.stop();
-    let exclude_pid = webview_browser_pid(&webview).ok_or("Couldn't find Infimeety's audio process")?;
+    // With an app: only its sound (and its helpers', like a browser's audio process).
+    let include = app_pid.is_some();
+    state.stop(include);
+    let pid = match app_pid {
+        Some(pid) => pid,
+        None => webview_browser_pid(&webview).ok_or("Couldn't find Infimeety's audio process")?,
+    };
     let stop = Arc::new(AtomicBool::new(false));
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
     let flag = stop.clone();
     std::thread::Builder::new()
         .name("system-audio".into())
-        .spawn(move || capture(exclude_pid, on_data, flag, ready_tx))
+        .spawn(move || capture(pid, include, on_data, flag, ready_tx))
         .map_err(|e| e.to_string())?;
     ready_rx
         .recv_timeout(Duration::from_secs(5))
         .map_err(|_| "Timed out starting system sound capture".to_string())??;
-    *state.0.lock().unwrap() = Some(stop);
+    state.0.lock().unwrap().insert(include, stop);
     Ok(())
 }
 
 #[tauri::command]
-pub fn system_audio_stop(state: State<'_, SystemAudio>) {
-    state.stop();
+pub fn system_audio_stop(state: State<'_, SystemAudio>, app: Option<bool>) {
+    state.stop(app.unwrap_or(false));
 }
 
 /// Process id of the WebView2 browser process that hosts (and plays audio for) this webview.
@@ -82,7 +89,7 @@ fn webview_browser_pid(_webview: &Webview) -> Option<u32> {
 }
 
 #[cfg(windows)]
-fn capture(exclude_pid: u32, out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
+fn capture(pid: u32, include: bool, out: Channel<InvokeResponseBody>, stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
     use std::collections::VecDeque;
     use wasapi::{initialize_mta, AudioClient, Direction, SampleType, StreamMode, WaveFormat};
 
@@ -90,8 +97,9 @@ fn capture(exclude_pid: u32, out: Channel<InvokeResponseBody>, stop: Arc<AtomicB
         initialize_mta().ok()?;
         let format = WaveFormat::new(32, 32, &SampleType::Float, 48_000, 2, None);
         let block = format.get_blockalign() as usize;
-        // `false` = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE: everything but our webview's audio.
-        let mut client = AudioClient::new_application_loopback_client(exclude_pid, false)?;
+        // `false` = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE: everything but our webview's
+        // audio; `true` = only that app's process tree.
+        let mut client = AudioClient::new_application_loopback_client(pid, include)?;
         client.initialize_client(&format, &Direction::Capture, &StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 0 })?;
         let event = client.set_get_eventhandle()?;
         let capture = client.get_audiocaptureclient()?;
@@ -141,6 +149,6 @@ fn capture(exclude_pid: u32, out: Channel<InvokeResponseBody>, stop: Arc<AtomicB
 }
 
 #[cfg(not(windows))]
-fn capture(_exclude_pid: u32, _out: Channel<InvokeResponseBody>, _stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
+fn capture(_pid: u32, _include: bool, _out: Channel<InvokeResponseBody>, _stop: Arc<AtomicBool>, ready: Sender<Result<(), String>>) {
     let _ = ready.send(Err("System sound capture is only available on Windows".into()));
 }

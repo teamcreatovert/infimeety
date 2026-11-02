@@ -1,5 +1,6 @@
 import { motion } from 'motion/react';
 import { Phone, Video } from 'lucide-react';
+import { ActivityLine, useActivity } from '../people/Activity';
 import type { Channel } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
 import { MobileBack } from '../shell/MobileBack';
@@ -18,6 +19,7 @@ export function DmView({ channel }: { channel: Channel }) {
   const inCall = useVoice((s) => !!callRoom && s.roomId === callRoom.id);
   const peer = channel.peer;
   const online = useFriends((s) => (peer ? !!s.online[peer.id] : false));
+  const playing = useActivity(online ? peer?.id : null);
   const peerInCall = useChannels((s) => !!s.voice[channel.id]?.participants.some((p) => p.roomId === callRoom?.id && p.userId === peer?.id));
 
   if (!textRoom || !callRoom) return null;
@@ -35,7 +37,11 @@ export function DmView({ channel }: { channel: Channel }) {
         <Avatar user={peer} size={28} presence={online ? 'online' : 'offline'} className="shrink-0" />
         <div data-tauri-drag-region className="min-w-0">
           <div className="truncate font-display text-[15px] font-semibold leading-tight tracking-[-0.015em]">{peer?.name ?? 'Direct message'}</div>
-          <div className="truncate text-[11.5px] leading-tight text-fg-3">{online ? 'Online' : `@${peer?.username}`}</div>
+          {online && playing ? (
+            <ActivityLine userId={peer?.id} className="text-[11.5px] leading-tight" />
+          ) : (
+            <div className="truncate text-[11.5px] leading-tight text-fg-3">{online ? 'Online' : `@${peer?.username}`}</div>
+          )}
         </div>
         <div data-tauri-drag-region className="flex-1 self-stretch" />
         {peerInCall ? (
