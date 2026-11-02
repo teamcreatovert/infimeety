@@ -30,6 +30,7 @@ export class HubClient {
   private retry = 0;
   private closed = false;
   private ping: ReturnType<typeof setInterval> | undefined;
+  private lastHeard = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -56,9 +57,17 @@ export class HubClient {
       this.retry = 0;
       for (const raw of this.queue) ws.send(raw);
       this.queue = [];
-      this.ping = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send('{"t":"ping"}'), 25_000);
+      this.lastHeard = Date.now();
+      this.ping = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // A network drop can leave the socket looking open: no reply to the last heartbeat
+        // means it is dead, so reconnect now instead of minutes later.
+        if (Date.now() - this.lastHeard > 35_000) return ws.close(4000, 'No heartbeat');
+        ws.send('{"t":"ping"}');
+      }, 25_000);
     };
     ws.onmessage = (event) => {
+      this.lastHeard = Date.now();
       let msg: ServerMsg;
       try {
         msg = JSON.parse(event.data);

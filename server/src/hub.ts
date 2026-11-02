@@ -26,6 +26,8 @@ interface Peer {
   guest?: boolean;
   /** The app window this socket belongs to (apps from 0.5 on), and the app's version. */
   client?: string;
+  /** When it connected, for spotting a connection that went silent. */
+  at?: number;
   version?: string;
   /** Voice state while in a voice room; `forceMuted` is the admin's per-person mute. */
   voice: (Omit<VoiceParticipant, 'serverMuted'> & { forceMuted: boolean }) | null;
@@ -101,12 +103,15 @@ export class ChannelHub extends DurableObject<Env> {
       for (const old of this.sockets()) {
         const p = this.peer(old);
         if (p.userId !== info.userId || p.client !== clientId) continue;
+        // Out of the call first: a socket that is closing can linger in the list for a moment.
+        if (p.voice) this.save(old, { ...p, voice: null });
         old.close(4005, 'Replaced by a newer connection');
         this.dropped(old);
       }
 
     const [client, server] = Object.values(new WebSocketPair());
-    const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null, client: clientId, version };
+    this.sweep();
+    const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null, client: clientId, version, at: Date.now() };
     const wasOnline = this.sockets().some((s) => this.peer(s).userId === peer.userId);
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
@@ -964,6 +969,26 @@ export class ChannelHub extends DurableObject<Env> {
     ws.serializeAttachment(peer);
   }
 
+  /**
+   * A dropped network can leave a connection "open" here for minutes, which kept people in calls
+   * twice. Apps send a heartbeat every 25 s (answered by the auto-response, whose time we can
+   * read), so one silent for 150 s (browsers slow background tabs to a timer a minute) is gone.
+   */
+  private sweep() {
+    const now = Date.now();
+    for (const s of this.sockets()) {
+      const p = this.peer(s);
+      const last = Math.max(this.ctx.getWebSocketAutoResponseTimestamp(s)?.getTime() ?? 0, p.at ?? now);
+      if (now - last < 150_000) continue;
+      this.save(s, { ...p, voice: null });
+      try {
+        s.close(4006, 'No heartbeat');
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+
   private sockets(except?: WebSocket) {
     return this.ctx.getWebSockets().filter((s) => s !== except && s.readyState === 1);
   }
@@ -978,12 +1003,18 @@ export class ChannelHub extends DurableObject<Env> {
 
   private voiceSnapshot(exceptUser?: string, exceptSocket?: WebSocket): VoiceSnapshot {
     const participants: VoiceParticipant[] = [];
+    const seen = new Map<string, number>();
     for (const s of this.sockets(exceptSocket)) {
       const p = this.peer(s);
       if (!p.voice || p.userId === exceptUser) continue;
       const { forceMuted, ...v } = p.voice;
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
-      participants.push({ ...v, serverMuted: forceMuted || roomMuted || (v.mutedUntil ?? 0) > Date.now() });
+      const entry = { ...v, serverMuted: forceMuted || roomMuted || (v.mutedUntil ?? 0) > Date.now() };
+      const i = seen.get(v.userId);
+      if (i === undefined) {
+        seen.set(v.userId, participants.length);
+        participants.push(entry);
+      } else if (entry.joinedAt > participants[i].joinedAt) participants[i] = entry;
     }
     return { participants, mutedRooms: [...this.mutedRooms] };
   }
@@ -999,6 +1030,7 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   private broadcastVoice(exceptSocket?: WebSocket) {
+    this.sweep();
     const snapshot = this.voiceSnapshot(undefined, exceptSocket);
     for (const s of this.sockets(exceptSocket)) this.send(s, { t: 'voice', voice: this.visibleTo(snapshot, this.peer(s).role) });
     this.tendParties(exceptSocket).catch((err) => console.error('party upkeep failed', err));
