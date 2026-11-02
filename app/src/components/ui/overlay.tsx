@@ -94,6 +94,7 @@ export function Popover({
   children,
   className,
   offset = 8,
+  material = 'pop',
 }: {
   open: boolean;
   anchor: Anchor | null;
@@ -102,6 +103,8 @@ export function Popover({
   align?: 'start' | 'center' | 'end';
   children: ReactNode;
   className?: string;
+  /** "float": the clearer glass of the call's controls, for panels that open from them. */
+  material?: 'pop' | 'float';
   offset?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -158,7 +161,7 @@ export function Popover({
       {open && anchor && (
         <motion.div
           ref={ref}
-          className={clsx('fixed z-[90] rounded-[14px] glass-pop', className)}
+          className={clsx('fixed z-[90]', material === 'float' ? 'rounded-[20px] glass-float' : 'rounded-[14px] glass-pop', className)}
           style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, transformOrigin: pos?.origin }}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: pos ? 1 : 0, scale: 1 }}

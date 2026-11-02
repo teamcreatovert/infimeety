@@ -27,6 +27,12 @@
   --glass-main: rgba(18, 18, 24, 0.34);
   --glass-pop: rgba(36, 36, 46, 0.72);
   --glass-tile: rgba(255, 255, 255, 0.055);
+  --glass-float: rgba(30, 30, 40, 0.46);
+  --glass-edge: rgba(255, 255, 255, 0.16);
+  --glass-sheen: rgba(255, 255, 255, 0.1);
+  --glass-key: rgba(255, 255, 255, 0.085);
+  --glass-key-hover: rgba(255, 255, 255, 0.15);
+  --shadow-float: 0 22px 50px -14px rgba(0, 0, 0, 0.6), 0 6px 18px -6px rgba(0, 0, 0, 0.4);
   --hairline: rgba(255, 255, 255, 0.075);
   --hairline-strong: rgba(255, 255, 255, 0.13);
   --highlight: rgba(255, 255, 255, 0.09);
@@ -57,6 +63,12 @@
   --glass-main: rgba(255, 255, 255, 0.42);
   --glass-pop: rgba(252, 252, 255, 0.82);
   --glass-tile: rgba(255, 255, 255, 0.5);
+  --glass-float: rgba(255, 255, 255, 0.52);
+  --glass-edge: rgba(255, 255, 255, 0.75);
+  --glass-sheen: rgba(255, 255, 255, 0.55);
+  --glass-key: rgba(255, 255, 255, 0.55);
+  --glass-key-hover: rgba(255, 255, 255, 0.85);
+  --shadow-float: 0 22px 50px -14px rgba(30, 30, 60, 0.28), 0 6px 18px -6px rgba(30, 30, 60, 0.16);
   --hairline: rgba(0, 0, 0, 0.07);
   --hairline-strong: rgba(0, 0, 0, 0.12);
   --highlight: rgba(255, 255, 255, 0.7);
@@ -79,12 +91,16 @@
   --glass-side: rgb(24, 24, 31);
   --glass-main: rgb(20, 20, 26);
   --glass-pop: rgb(38, 38, 47);
+  --glass-float: rgb(34, 34, 43);
+  --glass-key: rgba(255, 255, 255, 0.08);
 }
 :root[data-theme='light'][data-transparency='reduced'] {
   --glass-rail: rgb(236, 237, 242);
   --glass-side: rgb(244, 245, 248);
   --glass-main: rgb(250, 250, 252);
   --glass-pop: rgb(255, 255, 255);
+  --glass-float: rgb(255, 255, 255);
+  --glass-key: rgba(0, 0, 0, 0.05);
 }
 
 @theme inline {
@@ -221,6 +237,40 @@ select:focus-visible {
   background: var(--glass-pop);
   backdrop-filter: blur(40px) saturate(190%);
   box-shadow: var(--shadow-pop), inset 0 0.5px 0 var(--highlight);
+}
+/* Floating controls over a call: clearer than a menu, with a lit top edge and a soft lift, like
+   frosted glass. The sheen sits behind the content (isolation keeps it inside the shape). */
+.glass-float {
+  isolation: isolate;
+  background: var(--glass-float);
+  backdrop-filter: blur(30px) saturate(210%);
+  box-shadow: var(--shadow-float), inset 0 0 0 0.5px var(--glass-edge), inset 0 1px 0 var(--glass-sheen);
+}
+.glass-float::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--glass-sheen), transparent 55%);
+}
+/* A key on that glass: a lighter pane of the same material. */
+.glass-key {
+  background: var(--glass-key);
+  box-shadow: inset 0 0.5px 0 var(--glass-sheen), inset 0 0 0 0.5px color-mix(in srgb, var(--glass-edge) 50%, transparent);
+}
+.glass-key:hover {
+  background: var(--glass-key-hover);
+}
+/* Over a picture (a shared screen, a movie): dark glass, whatever the theme. */
+.glass-ink {
+  background: rgba(16, 16, 22, 0.4);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 20px -8px rgba(0, 0, 0, 0.5);
+}
+:root[data-transparency='reduced'] .glass-ink {
+  background: rgb(24, 24, 30);
 }
 .glass-tile {
   background: var(--glass-tile);

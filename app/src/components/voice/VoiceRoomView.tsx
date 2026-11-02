@@ -606,7 +606,7 @@ function TileView({
 
       {kind === 'screen' && !preview && <span className="absolute left-3 top-3 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">LIVE</span>}
 
-      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] items-center gap-1.5 rounded-full bg-black/45 px-2.5 py-1 text-[12px] font-medium text-white backdrop-blur-md">
+      <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium text-white glass-ink">
         {kind === 'screen' && <MonitorPlay size={12} />}
         <span className="truncate">
           {kind === 'screen' ? `${isMe ? 'Your' : `${user?.name ?? 'Someone'}’s`} screen` : `${user?.name ?? 'Someone'}${isMe ? ' (you)' : ''}`}
@@ -640,14 +640,14 @@ function TileView({
                 e.stopPropagation();
                 useUI.getState().set({ watching: useUI.getState().watching.filter((w) => w !== p.peerId) });
               }}
-              className="grid h-8 w-8 place-items-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70"
+              className="grid h-8 w-8 place-items-center rounded-full text-white glass-ink hover:bg-black/60"
             >
               <EyeOff size={15} />
             </button>
           </Tooltip>
         )}
         {!isMe && (
-          <button aria-label="Options" onClick={(e) => openMenu(e, channelId, p)} className="grid h-8 w-8 place-items-center rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70">
+          <button aria-label="Options" onClick={(e) => openMenu(e, channelId, p)} className="grid h-8 w-8 place-items-center rounded-full text-white glass-ink hover:bg-black/60">
             <Ellipsis size={15} />
           </button>
         )}
@@ -738,7 +738,7 @@ function Dock({
         animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
         transition={spring}
         style={{ pointerEvents: hidden ? 'none' : 'auto' }}
-        className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[22px] p-1.5 glass-pop"
+        className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-1.5 glass-float"
       >
         <SoundBursts />
         <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
@@ -801,7 +801,7 @@ function Dock({
             </>
           )}
         </Popover>
-        <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12}>
+        <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12} material="float">
           <SoundboardPanel />
         </Popover>
       </motion.div>
@@ -812,7 +812,7 @@ function Dock({
       animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
       transition={spring}
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}
-      className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-2 glass-pop"
+      className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[26px] p-2 glass-float"
     >
       <SoundBursts />
       <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
@@ -832,7 +832,7 @@ function Dock({
         <Tooltip label="Screen share options">
           <button
             onClick={(e) => setShareMenu(e.currentTarget.getBoundingClientRect())}
-            className="ml-px grid h-11 w-6 place-items-center rounded-l-[6px] rounded-r-[14px] bg-fill-2 text-fg-2 transition-colors hover:bg-fill-3 hover:text-fg"
+            className="glass-key ml-px grid h-11 w-6 place-items-center rounded-l-[6px] rounded-r-[14px] text-fg-2 transition-colors hover:text-fg"
           >
             <ChevronUp size={14} />
           </button>
@@ -874,16 +874,16 @@ function Dock({
           whileTap={{ scale: 0.9 }}
           transition={snappy}
           onClick={() => voice.leave()}
-          className="grid h-11 w-[54px] place-items-center rounded-[14px] bg-danger text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.3)] hover:brightness-110"
+          className="grid h-11 w-[54px] place-items-center rounded-[14px] bg-danger text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_14px_-4px_var(--danger)] hover:brightness-110"
         >
           <PhoneOff size={19} />
         </motion.button>
       </Tooltip>
 
-      <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14}>
+      <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14} material="float">
         <SoundboardPanel />
       </Popover>
-      <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14}>
+      <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14} material="float">
         <ShareOptions
           sharing={screen}
           onStart={() => {
@@ -921,8 +921,8 @@ function DockButton({
         onClick={(e) => onClick(e.currentTarget)}
         className={clsx(
           'grid h-11 w-11 shrink-0 place-items-center rounded-[14px] transition-colors duration-150 compact:h-12 compact:w-12 compact:rounded-[16px]',
-          state === 'normal' && 'bg-fill-2 text-fg hover:bg-fill-3',
-          state === 'on' && 'bg-accent text-white',
+          state === 'normal' && 'glass-key text-fg',
+          state === 'on' && 'bg-accent text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_4px_14px_-4px_var(--accent)]',
           state === 'off' && 'text-danger',
           className,
         )}

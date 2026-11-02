@@ -165,7 +165,7 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       {headerExtras}
       <div data-tauri-drag-region className="flex-1 self-stretch" />
       {!compact && (
-        <div className="flex items-center gap-0.5 rounded-full bg-white/10 p-0.5 backdrop-blur-md">
+        <div className="flex items-center gap-0.5 rounded-full p-0.5 glass-ink">
           <LayoutButton label="Theater: picture and side panel" active={layout === 'theater'} onClick={() => onLayout('theater')}>
             <RectangleHorizontal size={15} />
           </LayoutButton>
@@ -210,7 +210,7 @@ export function HeadButton({ label, onClick, active, children }: { label: string
       <button
         aria-label={label}
         onClick={onClick}
-        className={clsx('grid h-9 w-9 shrink-0 place-items-center rounded-full backdrop-blur-md transition-colors', active ? 'bg-white/25' : 'bg-white/10 hover:bg-white/20')}
+        className={clsx('grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors glass-ink', active ? 'bg-white/25!' : 'hover:bg-white/15!')}
       >
         {children}
       </button>
@@ -372,7 +372,7 @@ function Strip({ people, users, camOf, speakingOf, myPeer, channel }: Props) {
                 <Avatar user={user} size={52} speaking={speaking} />
               </div>
             )}
-            <span className="absolute bottom-1.5 left-1.5 flex max-w-[calc(100%-12px)] items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur">
+            <span className="absolute bottom-1.5 left-1.5 flex max-w-[calc(100%-12px)] items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white glass-ink">
               <span className="truncate">{user?.name ?? 'Someone'}</span>
               <ParticipantIcons p={p} size={11} />
             </span>
@@ -398,7 +398,7 @@ function Talking({ people, users, speakingOf }: Props) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 12, transition: { duration: 0.2 } }}
             transition={spring}
-            className="flex items-center gap-2 rounded-full bg-black/55 py-1 pl-1 pr-3 text-[12.5px] font-medium text-white backdrop-blur-md"
+            className="flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-[12.5px] font-medium text-white glass-ink"
           >
             <Avatar user={users[p.userId]} size={26} speaking />
             {users[p.userId]?.name ?? 'Someone'}
@@ -421,7 +421,7 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
         animate={{ opacity: idle && !open && !unread ? 0 : 1 }}
         whileTap={{ scale: 0.92 }}
         className={clsx(
-          'absolute right-5 z-30 grid h-12 w-12 place-items-center rounded-full bg-black/60 text-white shadow-lg backdrop-blur-md transition-[bottom] duration-200 hover:bg-black/75 compact:right-3',
+          'absolute right-5 z-30 grid h-12 w-12 place-items-center rounded-full text-white transition-[bottom] duration-200 glass-ink hover:bg-black/60! compact:right-3',
           lifted ? 'bottom-[96px] compact:bottom-[84px]' : 'bottom-[26px] compact:bottom-3',
         )}
       >

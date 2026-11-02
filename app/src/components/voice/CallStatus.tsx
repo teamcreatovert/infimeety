@@ -87,7 +87,7 @@ export function CallStatus({ channel, room, connected, me, alone }: { channel: C
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -8, scale: 0.97 }}
           transition={spring}
-          className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-1.5 pr-2 glass-pop"
+          className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-1.5 pr-2 glass-float"
         >
           <motion.div
             animate={status === 'ringing' ? { scale: [1, 1.07, 1] } : { scale: 1 }}

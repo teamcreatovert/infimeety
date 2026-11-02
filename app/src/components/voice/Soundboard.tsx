@@ -137,7 +137,7 @@ function SoundChip({ sound, favorite, disabled, playing }: { sound: PackSound; f
         title={`Play “${sound.name}” for everyone`}
         className={clsx(
           // The name gets the room the star takes only while hovered.
-          'flex h-10 w-full items-center gap-2 rounded-[10px] bg-fill-1 pl-[34px] pr-2 text-left transition-[background-color,padding] hover:bg-fill-2 group-hover/chip:pr-6 disabled:opacity-40 disabled:hover:bg-fill-1',
+          'glass-key flex h-10 w-full items-center gap-2 rounded-[11px] pl-[34px] pr-2 text-left transition-[background-color,padding] group-hover/chip:pr-6 disabled:opacity-40',
           (previewing || playing) && 'ring-2 ring-inset ring-accent',
         )}
       >
@@ -187,7 +187,7 @@ export function SoundBursts() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, transition: { duration: 0.25 } }}
             transition={spring}
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12.5px] glass-pop"
+            className="relative flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12.5px] glass-float"
           >
             <Speaker size={13} className="text-accent" />
             <span className="font-semibold">{b.who}</span>
