@@ -221,6 +221,8 @@ export interface VoiceLocalState {
   camera: boolean;
   screen: boolean;
   streams: StreamIds;
+  /** The screen shares (peer ids) this person watches: sharers only send their screen to these. Absent from older apps. */
+  watching?: string[];
 }
 
 export interface VoiceParticipant extends VoiceLocalState {

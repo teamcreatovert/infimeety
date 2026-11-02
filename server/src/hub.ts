@@ -325,6 +325,7 @@ export class ChannelHub extends DurableObject<Env> {
             camera: !!s.camera,
             screen: !!s.screen,
             streams: streamIds(s.streams),
+            ...(Array.isArray(s.watching) ? { watching: (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined) } : {}),
             forceMuted: false,
             ...(mutedUntil ? { mutedUntil } : {}),
             joinedAt: Date.now(),
@@ -346,6 +347,7 @@ export class ChannelHub extends DurableObject<Env> {
         if (typeof s.camera === 'boolean') v.camera = s.camera;
         if (typeof s.screen === 'boolean') v.screen = s.screen;
         if (s.streams && typeof s.streams === 'object') v.streams = streamIds(s.streams);
+        if (Array.isArray(s.watching)) v.watching = (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined);
         this.save(ws, { ...me, voice: v });
         return this.broadcastVoice();
       }

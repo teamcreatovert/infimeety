@@ -109,10 +109,18 @@ export default function App() {
       }
     };
 
+    // Not the focused window (a game in front): pause the app's animations (styles.css).
+    const away = () => document.documentElement.toggleAttribute('data-away', document.hidden || !document.hasFocus());
+    window.addEventListener('blur', away);
+    window.addEventListener('focus', away);
+    document.addEventListener('visibilitychange', away);
     window.addEventListener('contextmenu', onContext);
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('contextmenu', onContext);
+      window.removeEventListener('blur', away);
+      window.removeEventListener('focus', away);
+      document.removeEventListener('visibilitychange', away);
       window.removeEventListener('keydown', onKey);
     };
   }, []);

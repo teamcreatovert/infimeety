@@ -71,6 +71,7 @@ export function cleanParticipant(v: unknown): VoiceParticipant | null {
     camera: bool(p.camera),
     screen: bool(p.screen),
     streams: cleanStreams(p.streams),
+    ...(Array.isArray(p.watching) ? { watching: p.watching.filter((w): w is string => typeof w === 'string') } : {}),
     serverMuted: bool(p.serverMuted),
     joinedAt: num(p.joinedAt),
   };

@@ -158,7 +158,10 @@ class VoiceEngine {
     this.unsubUI = useUI.subscribe((ui, prev) => {
       // Watching a stream full stage means watching it, also after going back to the grid.
       if (ui.focusedPeer && ui.focusedPeer !== prev.focusedPeer && !ui.watching.includes(ui.focusedPeer)) return useUI.getState().set({ watching: [...ui.watching, ui.focusedPeer] });
-      if (ui.focusedPeer !== prev.focusedPeer || ui.watching !== prev.watching) this.applyGains();
+      if (ui.focusedPeer !== prev.focusedPeer || ui.watching !== prev.watching) {
+        this.applyGains();
+        this.pushState();
+      }
     });
 
     this.unsubSettings = useSettings.subscribe((s, prev) => {
@@ -261,6 +264,7 @@ class VoiceEngine {
       sounds.peerLeave();
     }
     this.applyGains();
+    if (this.screen) for (const peer of this.peers.values()) this.tuneSenders(peer);
   }
 
   onSignal(channelId: string, from: string, data: Extract<RtcPayload, { kind: 'voice' }>) {
@@ -470,6 +474,7 @@ class VoiceEngine {
       camera: !!this.cam,
       screen: !!this.screen,
       streams: { mic: this.micOut.id, cam: this.camOut.id, screen: this.screenOut.id },
+      watching: watchedPeers(),
     };
   }
 
@@ -668,7 +673,6 @@ class VoiceEngine {
   private tuneSenders(peer: Peer) {
     const s = useSettings.getState();
     const preset = SCREEN_PRESETS[s.screenQuality];
-    const viewers = Math.max(1, this.peers.size);
     for (const sender of peer.pc.getSenders()) {
       const track = sender.track;
       if (!track) continue;
@@ -676,7 +680,12 @@ class VoiceEngine {
       if (!params.encodings?.length) continue;
       const enc = params.encodings[0] as RTCRtpEncodingParameters & { priority?: string; networkPriority?: string };
       if (this.screen?.getVideoTracks().includes(track)) {
-        enc.maxBitrate = Math.min(preset.bitrate, Math.floor(40_000_000 / viewers));
+        // Only to people watching it, like Discord: a share nobody watches costs nobody bandwidth.
+        // Apps older than this don't say what they watch: they keep getting it.
+        const viewer = this.participants.get(peer.id);
+        enc.active = !viewer?.watching || viewer.watching.includes(this.hub?.peerId ?? '');
+        const watchers = [...this.participants.values()].filter((p) => !p.watching || p.watching.includes(this.hub?.peerId ?? '')).length;
+        enc.maxBitrate = Math.min(preset.bitrate, Math.floor(40_000_000 / Math.max(1, watchers)));
         enc.maxFramerate = preset.fps;
         enc.scaleResolutionDownBy = 1;
         enc.priority = enc.networkPriority = 'high';
@@ -875,6 +884,12 @@ class VoiceEngine {
 
 /** The Windows app's own capture failed once: this run shares through the webview instead. */
 let nativeFailed = false;
+
+/** The screen shares you're watching (grid or full stage), by peer id. */
+function watchedPeers() {
+  const { watching, focusedPeer } = useUI.getState();
+  return focusedPeer && !watching.includes(focusedPeer) ? [...watching, focusedPeer] : watching;
+}
 
 export const voice = new VoiceEngine();
 

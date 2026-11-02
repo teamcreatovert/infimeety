@@ -379,3 +379,11 @@ video::-webkit-media-controls-panel {
     transform: translate3d(-4vw, 5vh, 0);
   }
 }
+
+/* While Infimeety isn't the focused window (you're in a game), nothing on it animates: the GPU
+   stays with the game. Calls, sound and video are unaffected. */
+:root[data-away] *,
+:root[data-away] *::before,
+:root[data-away] *::after {
+  animation-play-state: paused !important;
+}
