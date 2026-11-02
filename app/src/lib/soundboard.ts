@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SoundRef } from '../../../shared/protocol';
+import { usePenalties, useSecondsLeft } from './penalties';
 import { getHub } from './realtime';
 import { featureOn } from './remote';
 import { packBuffer, syncSoundPack, useSoundPack, type PackSound } from './soundPack';
@@ -119,7 +120,9 @@ export function useSoundboardBlocked() {
   const serverMuted = useVoice((s) => s.serverMuted);
   const roomMuted = useChannels((s) => (channelId && roomId ? (s.voice[channelId]?.mutedRooms.includes(roomId) ?? false) : false));
   const isMod = useChannels((s) => (s.channels.find((c) => c.id === channelId)?.role ?? 'member') !== 'member');
+  const ruleMuted = useSecondsLeft(usePenalties((s) => (channelId ? s[channelId]?.voiceUntil : undefined))) > 0;
   if (serverMuted) return 'An admin muted you, so your sounds don’t play.';
+  if (ruleMuted) return 'A fun rule muted you, so your sounds don’t play.';
   if (roomMuted && !isMod) return 'Everyone’s muted in this room, so sounds don’t play.';
   return null;
 }
@@ -130,6 +133,7 @@ export function playSound(id: string) {
   if (!vs.channelId || !vs.roomId || !findSound(id)) return;
   if (!featureOn('soundboard')) return toast({ kind: 'info', title: 'The soundboard is paused', body: 'It’s back soon.' });
   if (vs.serverMuted) return toast({ kind: 'info', title: 'An admin muted you', body: 'Your sounds don’t play while you’re muted.' });
+  if ((usePenalties.getState()[vs.channelId]?.voiceUntil ?? 0) > Date.now()) return toast({ kind: 'info', title: 'A fun rule muted you', body: 'Your sounds play again once it’s over.' });
   if (!takeToken()) return toast({ kind: 'info', title: 'Easy there', body: 'A few sounds at a time, then one every couple of seconds.' });
   const sound: SoundRef = { kind: 'pack', id };
   getHub(vs.channelId)?.send({ t: 'sound.play', sound });
@@ -142,6 +146,13 @@ export function stopMySound() {
   stopOf(useAuth.getState().me?.id ?? '');
   useMySound.setState({ id: null, name: '', emoji: undefined });
   if (vs.channelId) getHub(vs.channelId)?.send({ t: 'sound.stop' });
+}
+
+/** The server didn't play your sound for anyone: don't let you think it did. */
+export function onSoundBlocked() {
+  stopOf(useAuth.getState().me?.id ?? '');
+  useMySound.setState({ id: null, name: '', emoji: undefined });
+  toast({ kind: 'info', title: 'Your sound didn’t play', body: 'You’re muted right now, so nobody hears your sounds.' });
 }
 
 /** Someone stopped their sound. */

@@ -402,6 +402,8 @@ export type ServerMsg =
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'sound.stop'; peerId: string; userId: string }
   | { t: 'call.declined'; roomId: string; userId: string }
+  /** Your sound didn't play for anyone (you're muted): stop it on your side too. */
+  | { t: 'sound.blocked' }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }

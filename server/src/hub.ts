@@ -388,12 +388,13 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'sound.play': {
         // Soundboard: relayed live to the others in your voice room, never stored. Muted people stay quiet.
-        const v = me.voice;
-        if (!v || v.forceMuted || (v.mutedUntil ?? 0) > Date.now() || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) return;
+        const v = this.voiceOf(me);
+        if (!v || v.forceMuted || (v.mutedUntil ?? 0) > Date.now() || (this.mutedRooms.has(v.roomId) && !canModerateRole(me.role))) {
+          return this.send(ws, { t: 'sound.blocked' });
+        }
         const sound = cleanSound(msg.sound);
         if (!sound) return;
-        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound', peerId: me.peerId, userId: me.userId, sound });
-        return;
+        return this.roomCast(v.roomId, { t: 'sound', peerId: me.peerId, userId: me.userId, sound }, ws);
       }
 
       case 'voice.said': {
@@ -411,10 +412,9 @@ export class ChannelHub extends DurableObject<Env> {
         return this.liftPenalty(me, msg.userId);
       }
       case 'sound.stop': {
-        const v = me.voice;
+        const v = this.voiceOf(me);
         if (!v) return;
-        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === v.roomId) this.send(s, { t: 'sound.stop', peerId: me.peerId, userId: me.userId });
-        return;
+        return this.roomCast(v.roomId, { t: 'sound.stop', peerId: me.peerId, userId: me.userId }, ws);
       }
 
       case 'call.decline': {
@@ -996,6 +996,23 @@ export class ChannelHub extends DurableObject<Env> {
         /* already gone */
       }
     }
+  }
+
+  /**
+   * Your seat in a call. After a network drop the app's newest connection may not have it yet
+   * while an older one still does: either counts, so a sound isn't silently dropped.
+   */
+  private voiceOf(me: Peer) {
+    return me.voice ?? this.sockets().map((s) => this.peer(s)).find((p) => p.userId === me.userId && p.voice)?.voice ?? null;
+  }
+
+  /**
+   * To everyone in a voice room: every connection of each person in it, not only the one that
+   * holds the seat (the same mix-up after a drop). Apps ignore it unless they're in that room.
+   */
+  private roomCast(roomId: string, msg: ServerMsg, except?: WebSocket) {
+    const users = new Set(this.sockets().filter((s) => this.peer(s).voice?.roomId === roomId).map((s) => this.peer(s).userId));
+    for (const s of this.sockets(except)) if (users.has(this.peer(s).userId)) this.send(s, msg);
   }
 
   private sockets(except?: WebSocket) {

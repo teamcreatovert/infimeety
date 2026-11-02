@@ -8,7 +8,7 @@ import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } fro
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { clock, setPenalty, usePenalties } from './penalties';
 import { onCallDeclined } from './calls';
-import { onSound, onSoundStop } from './soundboard';
+import { onSound, onSoundBlocked, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
 import { announceRevocations, onMediaOffline, onMediaRequest, onTransferSignal } from './transfer';
@@ -158,6 +158,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return;
     case 'sound.stop':
       return onSoundStop(msg.userId);
+    case 'sound.blocked':
+      return onSoundBlocked();
     case 'call.declined':
       return onCallDeclined(msg.roomId);
     case 'media.request':
