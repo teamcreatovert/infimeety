@@ -417,6 +417,13 @@ export class ChannelHub extends DurableObject<Env> {
         return;
       }
 
+      case 'call.decline': {
+        // Only the people waiting in that call hear about it.
+        if (typeof msg.roomId !== 'string') return;
+        for (const s of this.sockets(ws)) if (this.peer(s).voice?.roomId === msg.roomId) this.send(s, { t: 'call.declined', roomId: msg.roomId, userId: me.userId });
+        return;
+      }
+
       case 'rtc': {
         const target = this.byPeer(msg.to);
         if (target) this.send(target, { t: 'rtc', from: me.peerId, fromUser: me.userId, data: msg.data });

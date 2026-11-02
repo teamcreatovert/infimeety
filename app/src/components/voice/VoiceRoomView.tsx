@@ -37,6 +37,7 @@ import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { SoundBursts, SoundboardPanel } from './Soundboard';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
+import { CallStatus } from './CallStatus';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
@@ -465,6 +466,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           ) : (
             <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
+          {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
         </div>
 
         <Dock channel={channel} room={room} participants={participants} hidden={anyShare && idle && !isCompactNow()} myPeer={myPeer} watching={false} />

@@ -353,6 +353,8 @@ export type ClientMsg =
   | { t: 'sound.play'; sound: SoundRef }
   /** Stops the sound you're playing, for everyone. */
   | { t: 'sound.stop' }
+  /** You declined a call ringing in this room: the caller is told. */
+  | { t: 'call.decline'; roomId: string }
   /** Your app heard you say a fun-rule word in the call (Windows app, on-device speech). */
   | { t: 'voice.said'; word: string }
   /** Moderators: end someone's fun-rule chat ban and voice mute now. */
@@ -399,6 +401,7 @@ export type ServerMsg =
   | { t: 'rtc'; from: string; fromUser: string; data: RtcPayload }
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'sound.stop'; peerId: string; userId: string }
+  | { t: 'call.declined'; roomId: string; userId: string }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }

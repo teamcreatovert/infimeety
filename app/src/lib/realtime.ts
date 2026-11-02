@@ -7,6 +7,7 @@ import { HubClient, type HubStatus } from './hub';
 import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { clock, setPenalty, usePenalties } from './penalties';
+import { onCallDeclined } from './calls';
 import { onSound, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
@@ -157,6 +158,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return;
     case 'sound.stop':
       return onSoundStop(msg.userId);
+    case 'call.declined':
+      return onCallDeclined(msg.roomId);
     case 'media.request':
       return void onMediaRequest(hub, msg);
     case 'media.offline':

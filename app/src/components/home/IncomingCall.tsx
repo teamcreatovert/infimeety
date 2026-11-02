@@ -5,6 +5,7 @@ import { Avatar } from '../ui/Avatar';
 import { spring } from '@/lib/motion';
 import { notify } from '@/lib/notify';
 import { appWindow } from '@/lib/platform';
+import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -65,10 +66,16 @@ export function IncomingCall() {
     };
   }, [call?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const decline = () => call && setDismissed((d) => ({ ...d, [call.key]: true }));
+  const dismiss = () => call && setDismissed((d) => ({ ...d, [call.key]: true }));
+  // The caller sees "Declined" instead of ringing on.
+  const decline = () => {
+    if (!call) return;
+    dismiss();
+    getHub(call.dm.id)?.send({ t: 'call.decline', roomId: call.room.id });
+  };
   const accept = async () => {
     if (!call) return;
-    decline();
+    dismiss();
     useChannels.getState().select(call.dm.id);
     await voice.join(call.dm.id, call.room.id);
   };
