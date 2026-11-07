@@ -64,19 +64,24 @@ let timer: ReturnType<typeof setInterval> | undefined;
 export function startActivityWatch() {
   if (!isTauri || timer) return;
   const check = async () => {
-    if (!useSettings.getState().shareActivity) return announce(null);
+    const { shareActivity, gameMode } = useSettings.getState();
     const game = await invoke<{ id: string; name: string } | null>('running_game').catch(() => null);
+    // Game mode: while a game runs, the app drops its glass and animations so the game gets
+    // the graphics card (styles.css, data-gaming).
+    document.documentElement.toggleAttribute('data-gaming', !!game && gameMode);
+    if (!shareActivity) return announce(null);
     announce(game ? { kind: 'playing', id: game.id, name: game.name, since: mine?.id === game.id ? mine.since : Date.now() } : null);
   };
   void check();
   timer = setInterval(() => void check(), 15_000);
   // Turning sharing off clears it right away.
-  useSettings.subscribe((s, prev) => s.shareActivity !== prev.shareActivity && void check());
+  useSettings.subscribe((s, prev) => (s.shareActivity !== prev.shareActivity || s.gameMode !== prev.gameMode) && void check());
 }
 
 export function stopActivityWatch() {
   clearInterval(timer);
   timer = undefined;
   mine = null;
+  document.documentElement.removeAttribute('data-gaming');
   useActivities.setState({}, true);
 }

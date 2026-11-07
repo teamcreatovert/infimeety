@@ -67,6 +67,8 @@ export interface SettingsState {
   shareActivity: boolean;
   /** How loud music others share in a call plays (0–1). */
   musicVolume: number;
+  /** Desktop: while a game runs, no glass or animations, so the game gets the graphics card. */
+  gameMode: boolean;
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -141,6 +143,7 @@ export const useSettings = create<SettingsState>()(
       crashReports: true,
       shareActivity: true,
       musicVolume: 0.8,
+      gameMode: true,
 
       screenQuality: '1080p30',
       screenMode: 'motion',
@@ -156,7 +159,7 @@ export const useSettings = create<SettingsState>()(
 
 
       closeToTray: true,
-      overlay: true,
+      overlay: false,
       overlayShow: 'everyone',
       overlayCorner: 'top-left',
 
@@ -177,7 +180,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'infimeety.settings',
-      version: 1,
+      version: 2,
       migrate: (stored, version) => {
         const s = (stored ?? {}) as Record<string, unknown>;
         if (version < 1) {
@@ -186,6 +189,10 @@ export const useSettings = create<SettingsState>()(
           delete s.noiseSuppression;
           // The overlay now shows everyone in the call, with the quiet ones dimmed.
           s.overlayShow = 'everyone';
+        }
+        if (version < 2) {
+          // The overlay became opt-in: a window over a full-screen game can cost FPS.
+          s.overlay = false;
         }
         return s as unknown as SettingsState;
       },

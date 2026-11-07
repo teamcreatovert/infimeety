@@ -85,7 +85,8 @@
   color-scheme: light;
 }
 
-:root[data-transparency='reduced'] {
+:root[data-transparency='reduced'],
+:root[data-gaming] {
   --blur: 0px;
   --glass-rail: rgb(16, 16, 22);
   --glass-side: rgb(24, 24, 31);
@@ -94,7 +95,8 @@
   --glass-float: rgb(34, 34, 43);
   --glass-key: rgba(255, 255, 255, 0.08);
 }
-:root[data-theme='light'][data-transparency='reduced'] {
+:root[data-theme='light'][data-transparency='reduced'],
+:root[data-theme='light'][data-gaming] {
   --glass-rail: rgb(236, 237, 242);
   --glass-side: rgb(244, 245, 248);
   --glass-main: rgb(250, 250, 252);
@@ -450,4 +452,12 @@ video::-webkit-media-controls-panel {
 :root[data-away] *::before,
 :root[data-away] *::after {
   animation-play-state: paused !important;
+}
+/* Game mode: a game is running. Blur is the costliest thing the app draws; none of it, and
+   nothing moving, so the game keeps the graphics card. */
+:root[data-gaming] *,
+:root[data-gaming] *::before,
+:root[data-gaming] *::after {
+  animation-play-state: paused !important;
+  backdrop-filter: none !important;
 }

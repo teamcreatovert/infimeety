@@ -666,9 +666,19 @@ function DesktopTab() {
   const s = useSettings();
   return (
     <>
-      {/* The overlay is Windows-only until it's been tried on a Mac. */}
+      {/* Games are found by their Windows program names, and the overlay is Windows-only until it's been tried on a Mac. */}
       {!isMac && (
-        <Group title="Voice overlay" footer="While you're in a call and using another app or game, a light overlay shows who's talking. Clicks pass straight through it.">
+        <Group title="Games">
+          <Row label="Game mode" detail="While a game is running, Infimeety turns off its glass effects and animations, so your game gets the graphics card.">
+            <Switch checked={s.gameMode} onChange={(v) => s.set({ gameMode: v })} />
+          </Row>
+        </Group>
+      )}
+      {!isMac && (
+        <Group
+          title="Voice overlay"
+          footer="While you're in a call and using another app or game, a light overlay shows who's talking. Clicks pass straight through it. If a game's FPS drops, turn it off: a window drawn over a full-screen game can slow it down on some PCs."
+        >
           <Row label="Show voice overlay">
             <Switch checked={s.overlay} onChange={(v) => s.set({ overlay: v })} />
           </Row>
