@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
 import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
-import type { Activity, MusicShare, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -553,6 +553,13 @@ export class ChannelHub extends DurableObject<Env> {
           userId: me.userId,
           status: { state: ['choosing', 'copying', 'ready', 'buffering', 'failed'].includes(msg.status.state) ? msg.status.state : 'choosing', progress: Number(msg.status.progress) || 0 },
         });
+      case 'party.vote': {
+        // Relayed to the room: each app counts the votes; the host's app applies what everyone agreed.
+        if (me.voice?.roomId !== msg.roomId || !this.parties.get(msg.roomId) || typeof msg.id !== 'string' || msg.id.length > 32) return;
+        const proposal = cleanProposal(msg.proposal);
+        if (!proposal && typeof msg.yes !== 'boolean') return;
+        return this.roomCast(msg.roomId, { t: 'party.vote', roomId: msg.roomId, id: msg.id, from: me.userId, ...(proposal ? { proposal } : { yes: msg.yes }) });
+      }
       case 'clock':
         return this.send(ws, { t: 'clock', c: Number(msg.c) || 0, s: Date.now() });
     }
@@ -950,6 +957,8 @@ export class ChannelHub extends DurableObject<Env> {
       position: Math.max(0, Number(p.position) || 0),
       // A play is scheduled a little ahead; never trust a time far from ours.
       at: Math.min(now + 5000, Math.max(now - 60_000, Number(p.at) || now)),
+      ...(p.audio !== undefined ? { audio: Math.max(0, Math.min(15, Math.floor(Number(p.audio)) || 0)) } : {}),
+      ...(p.brightness !== undefined ? { brightness: Math.max(0.5, Math.min(1.5, Number(p.brightness) || 1)) } : {}),
       by: me.userId,
       seq: current.seq + 1,
     };
@@ -1250,6 +1259,7 @@ function rateOf(t: unknown): SocketRate {
     case 'party.request':
     case 'party.cohost':
     case 'party.status':
+    case 'party.vote':
     case 'clock':
       return 'party';
     case 'sound.play':
@@ -1263,6 +1273,17 @@ function rateOf(t: unknown): SocketRate {
 function cleanSound(s: unknown): SoundRef | null {
   const x = s as Record<string, unknown> | null;
   if (x && typeof x === 'object' && x.kind === 'pack' && typeof x.id === 'string' && /^[a-z0-9-]{1,80}$/.test(x.id)) return { kind: 'pack', id: x.id };
+  return null;
+}
+
+/** A vote's proposal as sent, or null. */
+function cleanProposal(v: unknown): PartyProposal | null {
+  const p = v as Record<string, unknown> | null;
+  if (!p || typeof p !== 'object') return null;
+  const label = typeof p.label === 'string' ? p.label.slice(0, 60) : '';
+  if (p.kind === 'audio') return { kind: 'audio', index: Math.max(0, Math.min(15, Math.floor(Number(p.index)) || 0)), label };
+  if (p.kind === 'brightness') return { kind: 'brightness', value: Math.max(0.5, Math.min(1.5, Number(p.value) || 1)) };
+  if (p.kind === 'subtitle') return { kind: 'subtitle', file: p.file ? cleanFile(p.file) : null, label };
   return null;
 }
 

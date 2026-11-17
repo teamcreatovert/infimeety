@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
-import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettings, PartyState } from '../../../shared/protocol';
+import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartyProposal, PartySettings, PartyState } from '../../../shared/protocol';
+import { randomId } from './api';
 import { rememberCopy, savedCopies } from './copies';
 import { canConvert, convertMovie, isHevc, isMac, isTauri, localMedia, probeMkv, type SharedFile } from './platform';
 import { getHub } from './realtime';
@@ -356,16 +357,122 @@ function currentPosition(party: PartyState) {
   return player && !Number.isNaN(player.currentTime) && player.readyState > 0 ? player.currentTime : expectedPosition(party);
 }
 
-function set(roomId: string, patch: Partial<Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at'>> | null, resolves?: string) {
+function set(roomId: string, patch: Partial<Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness'>> | null, resolves?: string) {
   const hub = hubFor();
   const party = useParty.getState().parties[roomId];
   if (!hub) return;
   if (patch === null) return hub.send({ t: 'party.set', roomId, party: null });
   if (!party) return;
-  const next = { file: party.file, subtitle: party.subtitle, playing: party.playing, position: party.position, at: party.at, ...patch };
+  const next = { file: party.file, subtitle: party.subtitle, playing: party.playing, position: party.position, at: party.at, audio: party.audio, brightness: party.brightness, ...patch };
   hub.send({ t: 'party.set', roomId, party: next, resolves });
   // Show it here at once; the hub's copy follows.
   useParty.setState((s) => ({ parties: { ...s.parties, [roomId]: { ...party, ...next } } }));
+}
+
+// ─── Votes: changes for everyone ─────────────────────────────────────────────
+
+export interface PartyVote {
+  roomId: string;
+  from: string;
+  proposal: PartyProposal;
+  yes: string[];
+  until: number;
+}
+
+/** Votes going on, by id. A change for everyone happens only if everyone in the room says yes. */
+export const useVotes = create<Record<string, PartyVote>>()(() => ({}));
+const VOTE_MS = 30_000;
+
+export const describeProposal = (p: PartyProposal) =>
+  p.kind === 'audio' ? `${p.label} sound` : p.kind === 'brightness' ? `brightness ${Math.round(p.value * 100)}%` : p.file ? `${p.label} subtitles` : 'no subtitles';
+
+function endVote(id: string) {
+  useVotes.setState((s) => {
+    const next = { ...s };
+    delete next[id];
+    return next;
+  }, true);
+}
+
+/** Asks the room to change something for everyone (everyone must agree). Alone, it just happens. */
+export function proposeForEveryone(roomId: string, proposal: PartyProposal) {
+  const me = useAuth.getState().me?.id;
+  const hub = hubFor();
+  if (!me || !hub) return;
+  // The host and co-hosts change it for everyone at once; anyone else asks the room.
+  if (canControl(roomId, me)) {
+    applyProposal(roomId, proposal);
+    toast({ kind: 'success', title: `Changed for everyone: ${describeProposal(proposal)}` });
+    return;
+  }
+  const id = randomId(9);
+  useVotes.setState({ [id]: { roomId, from: me, proposal, yes: [me], until: Date.now() + VOTE_MS } });
+  hub.send({ t: 'party.vote', roomId, id, proposal });
+  countVote(id);
+}
+
+/** Your answer to someone's vote. */
+export function answerVote(id: string, yes: boolean) {
+  const vote = useVotes.getState()[id];
+  const me = useAuth.getState().me?.id;
+  if (!vote || !me) return;
+  hubFor()?.send({ t: 'party.vote', roomId: vote.roomId, id, yes });
+  onVote({ roomId: vote.roomId, id, from: me, yes });
+}
+
+export function onVote(msg: { roomId: string; id: string; from: string; proposal?: PartyProposal; yes?: boolean }) {
+  const vote = useVotes.getState()[msg.id];
+  if (msg.proposal) {
+    if (!vote) useVotes.setState({ [msg.id]: { roomId: msg.roomId, from: msg.from, proposal: msg.proposal, yes: [msg.from], until: Date.now() + VOTE_MS } });
+  } else if (vote) {
+    if (msg.yes === false) {
+      endVote(msg.id);
+      toast({ kind: 'info', title: `Not everyone agreed to ${describeProposal(vote.proposal)}`, body: `${nameOf(msg.from)} said no.` });
+      return;
+    }
+    if (!vote.yes.includes(msg.from)) useVotes.setState({ [msg.id]: { ...vote, yes: [...vote.yes, msg.from] } });
+  }
+  countVote(msg.id);
+}
+
+/** Everyone in the room said yes: the host's app (or the asker's, if they can control it) applies it. */
+function countVote(id: string) {
+  const vote = useVotes.getState()[id];
+  if (!vote) return;
+  const people = roomPeople(vote.roomId);
+  if (!people.every((u) => vote.yes.includes(u))) return;
+  endVote(id);
+  const party = useParty.getState().parties[vote.roomId];
+  const me = useAuth.getState().me?.id;
+  toast({ kind: 'success', title: `Everyone agreed: ${describeProposal(vote.proposal)}` });
+  const applier = party && people.includes(party.hostId) ? party.hostId : vote.from;
+  if (!party || applier !== me || !canControl(vote.roomId, me)) return;
+  applyProposal(vote.roomId, vote.proposal);
+}
+
+function applyProposal(roomId: string, p: PartyProposal) {
+  if (p.kind === 'audio') set(roomId, { audio: p.index });
+  else if (p.kind === 'brightness') set(roomId, { brightness: p.value });
+  else set(roomId, { subtitle: p.file });
+}
+
+// Unanswered after 30 s: it doesn't happen.
+setInterval(() => {
+  for (const [id, vote] of Object.entries(useVotes.getState())) {
+    if (Date.now() < vote.until) continue;
+    endVote(id);
+    toast({ kind: 'info', title: `Not everyone answered about ${describeProposal(vote.proposal)}`, body: 'Nothing changed.' });
+  }
+}, 1000);
+
+/** Proposes one of your copy's built-in subtitles for everyone: it's shared from your device like any subtitle file. */
+export async function proposeSubtitle(roomId: string, label: string, url: string | null) {
+  const me = useAuth.getState().me?.id;
+  if (!me) return;
+  if (!url) return proposeForEveryone(roomId, { kind: 'subtitle', file: null, label });
+  const vtt = await (await fetch(url)).text();
+  const file = await localMedia.saveBytes(`${label}.vtt`, new TextEncoder().encode(vtt)).catch(() => null);
+  if (file) proposeForEveryone(roomId, { kind: 'subtitle', file: fileOf(file, me), label });
 }
 
 /** Picks a movie (and maybe its subtitles) from this device, for planning a party. */

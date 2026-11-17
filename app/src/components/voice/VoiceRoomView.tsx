@@ -36,7 +36,7 @@ import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { SoundBursts, SoundboardPanel } from './Soundboard';
-import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, useWatchingAlong } from './Party';
+import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, PartyVotes, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { MusicPicker, MusicTile, canShareMusic } from './Music';
@@ -421,6 +421,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
             <>
               {soundPrompt}
               {watchingParty && <PartyRequests roomId={room.id} />}
+              {watchingParty && <PartyVotes roomId={room.id} />}
             </>
           }
           dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}

@@ -321,7 +321,16 @@ export interface PartyState {
   /** Who made the last change. */
   by: string;
   seq: number;
+  /** Agreed by vote for everyone (each person can still pick their own): sound track, brightness. */
+  audio?: number;
+  brightness?: number;
 }
+
+/** A change for everyone that the whole room votes on (it passes only if everyone says yes). */
+export type PartyProposal =
+  | { kind: 'subtitle'; file: PartyFile | null; label: string }
+  | { kind: 'audio'; index: number; label: string }
+  | { kind: 'brightness'; value: number };
 
 /** What a viewer can ask the host for. */
 export type PartyAction = { kind: 'play'; position?: number } | { kind: 'pause' } | { kind: 'seek'; position: number };
@@ -386,7 +395,7 @@ export type ClientMsg =
   | {
       t: 'party.set';
       roomId: string;
-      party: (Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at'> & { settings?: PartySettings }) | null;
+      party: (Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness'> & { settings?: PartySettings }) | null;
       resolves?: string;
     }
   /** The lobby goes live: everyone starts together after a short countdown. */
@@ -399,6 +408,8 @@ export type ClientMsg =
   /** The host makes someone a co-host (or not). */
   | { t: 'party.cohost'; roomId: string; userId: string; on: boolean }
   | { t: 'party.status'; roomId: string; status: PartyMemberStatus }
+  /** A vote: `proposal` starts one, `yes` answers it. */
+  | { t: 'party.vote'; roomId: string; id: string; proposal?: PartyProposal; yes?: boolean }
   /** Clock sync: the hub answers with its own time. */
   | { t: 'clock'; c: number }
   /** What you're playing (or null), for the people in this channel. */
@@ -444,6 +455,7 @@ export type ServerMsg =
   | { t: 'party'; roomId: string; party: PartyState | null; resolved?: string }
   | { t: 'party.request'; roomId: string; id: string; from: string; action: PartyAction }
   | { t: 'party.status'; roomId: string; peerId: string; userId: string; status: PartyMemberStatus }
+  | { t: 'party.vote'; roomId: string; id: string; from: string; proposal?: PartyProposal; yes?: boolean }
   | { t: 'clock'; c: number; s: number }
   | { t: 'error'; message: string }
   /** Your message wasn't posted: slow mode (wait `retryIn` seconds). */

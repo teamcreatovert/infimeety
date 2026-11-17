@@ -4,7 +4,7 @@ import { notifyMessage } from './notify';
 import { noteSent } from './slowMode';
 import { onRemoteConfig } from './remote';
 import { HubClient, type HubStatus } from './hub';
-import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus } from './party';
+import { onClock, onParties, onParty, onRequest, onStatus as onPartyStatus, onVote as onPartyVote } from './party';
 import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSnapshot } from './sanitize';
 import { clock, setPenalty, usePenalties } from './penalties';
 import { myActivity, onMyActivity, setActivities, setActivity } from './activity';
@@ -209,6 +209,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return onParty(msg.roomId, msg.party, msg.resolved);
     case 'party.status':
       return onPartyStatus(msg.roomId, msg.peerId, msg.userId, msg.status);
+    case 'party.vote':
+      return onPartyVote(msg);
     case 'party.request':
       return onRequest({ id: msg.id, roomId: msg.roomId, from: msg.from, action: msg.action });
     case 'clock':

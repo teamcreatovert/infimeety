@@ -56,6 +56,11 @@ import {
   setReady,
   startNow,
   pickOwnCopy,
+  answerVote,
+  describeProposal,
+  proposeForEveryone,
+  proposeSubtitle,
+  useVotes,
   setBuffering,
   inspectCopy,
   repackForMac,
@@ -104,10 +109,12 @@ function nudgeSubtitles(by: number) {
   toast({ kind: 'info', title: subDelay === 0 ? 'Subtitles on time' : `Subtitles ${subDelay > 0 ? 'later' : 'earlier'} by ${Math.abs(subDelay).toFixed(2)} s` });
 }
 
-function setBrightness(brightness: number) {
-  usePlayer.setState({ brightness });
+/** Your own brightness; `null`: back to the room's. */
+function setBrightness(brightness: number | null) {
+  usePlayer.setState({ brightness: brightness ?? 1, brightnessMine: brightness !== null });
   try {
-    localStorage.setItem('infimeety.partyBrightness', String(brightness));
+    if (brightness === null) localStorage.removeItem('infimeety.partyBrightness');
+    else localStorage.setItem('infimeety.partyBrightness', String(brightness));
   } catch {
     /* private mode */
   }
@@ -143,6 +150,11 @@ const usePlayer = create<{
   mySub: string | null;
   /** How bright the picture looks here (0.5 to 1.5). This device only, like the volume. */
   brightness: number;
+  /** Picked here (not the room's agreed one): the sound track and brightness. */
+  audioMine: boolean;
+  brightnessMine: boolean;
+  /** The menu changes things just for you, or for everyone (the host directly, anyone else by vote). */
+  scope: 'me' | 'all';
 }>()(() => ({
   time: 0,
   duration: 0,
@@ -157,6 +169,9 @@ const usePlayer = create<{
   audios: [],
   audio: 0,
   mySub: null,
+  audioMine: false,
+  brightnessMine: localStorage.getItem('infimeety.partyBrightness') !== null,
+  scope: 'me',
   brightness: Math.min(1.5, Math.max(0.5, Number(localStorage.getItem('infimeety.partyBrightness') ?? 1) || 1)),
   subSize: (localStorage.getItem('infimeety.subSize') as 'small' | 'medium' | 'large' | null) ?? 'medium',
 }));
@@ -232,6 +247,15 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   const partySubtitle = useParty((s) => (subtitleId ? s.subtitles[subtitleId] : undefined));
   const mySub = usePlayer((s) => s.mySub);
   const subtitleUrl = mySub === 'off' ? undefined : (mySub ?? partySubtitle);
+  const partyBrightness = useParty((s) => s.parties[roomId]?.brightness);
+  const partyAudio = useParty((s) => s.parties[roomId]?.audio);
+  const brightnessMine = usePlayer((s) => s.brightnessMine);
+  const myBrightness = usePlayer((s) => s.brightness);
+  const shownBrightness = brightnessMine ? myBrightness : (partyBrightness ?? 1);
+  const trackCount = usePlayer((s) => s.audios.length);
+  useEffect(() => {
+    if (partyAudio !== undefined && !usePlayer.getState().audioMine && partyAudio < trackCount) pickAudio(partyAudio);
+  }, [partyAudio, trackCount]);
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const blocked = usePlayer((s) => s.blocked);
@@ -240,7 +264,6 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   const captions = usePlayer((s) => s.captions);
   const cue = usePlayer((s) => s.cue);
   const subSize = usePlayer((s) => s.subSize);
-  const brightness = usePlayer((s) => s.brightness);
 
   // Past 100% (up to 200%, like VLC) the sound goes through Web Audio to be boosted; once routed
   // there it stays (an element can't be unrouted), with the gain doing all the volume.
@@ -428,7 +451,7 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   return (
     <div className="absolute inset-0 bg-black">
       {/* crossOrigin: the 200% boost reads the sound through Web Audio, which gets silence from a file it may not read. */}
-      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={brightness === 1 ? undefined : { filter: `brightness(${brightness})` }} onDoubleClick={(e) => e.preventDefault()}>
+      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={shownBrightness === 1 ? undefined : { filter: `brightness(${shownBrightness})` }} onDoubleClick={(e) => e.preventDefault()}>
         {subtitleUrl && <track key={subtitleUrl} ref={trackRef} kind="subtitles" src={subtitleUrl} default />}
       </video>
       {captions && cue && (
@@ -917,6 +940,7 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const audio = usePlayer((s) => s.audio);
   const mySub = usePlayer((s) => s.mySub);
   const myTracks = useLocalTracks((s) => s[party.file.id] ?? NO_TRACKS);
+  const scope = usePlayer((s) => s.scope);
   const ready = useParty((s) => s.copies[party.file.id]?.state === 'ready');
   // This device's own MKV copy: its subtitle tracks, for the "just for you" menu.
   useEffect(() => {
@@ -1019,19 +1043,36 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
         </Control>
       </div>
 
-      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[250px] p-1.5">
+      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[260px] p-1.5">
+        <div className="mb-1 flex gap-1 rounded-[9px] bg-fill-1 p-0.5">
+          {(['me', 'all'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => usePlayer.setState({ scope: s })}
+              className={clsx('flex-1 rounded-[7px] py-1 text-[12px] font-medium', scope === s ? 'bg-accent text-white' : 'text-fg-2 hover:bg-fill-2')}
+            >
+              {s === 'me' ? 'Just me' : control ? 'Everyone' : 'Everyone (vote)'}
+            </button>
+          ))}
+        </div>
+        {scope === 'all' && !control && <p className="px-2 pb-1.5 text-[11.5px] leading-snug text-fg-3">Changes for everyone need everyone in the room to say yes.</p>}
         {audios.length > 1 && (
           <>
-            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Sound (just for you)</div>
+            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">{scope === 'me' ? 'Sound (just for you)' : 'Sound for everyone'}</div>
             {audios.map((label, i) => (
-              <MenuItem key={i} icon={audio === i ? <Check size={15} /> : <Volume2 size={15} />} onClick={() => (setMenu(null), pickAudio(i))}>
+              <MenuItem key={i} icon={audio === i ? <Check size={15} /> : <Volume2 size={15} />} onClick={() => {
+                  setMenu(null);
+                  if (scope === 'all') return proposeForEveryone(roomId, { kind: 'audio', index: i, label });
+                  usePlayer.setState({ audioMine: true });
+                  pickAudio(i);
+                }}>
                 {label}
               </MenuItem>
             ))}
             <MenuSeparator />
           </>
         )}
-        {myTracks.length > 0 && (
+        {scope === 'me' && myTracks.length > 0 && (
           <>
             <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles (just for you)</div>
             <MenuItem icon={mySub === null ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: null, captions: true }))}>
@@ -1048,9 +1089,20 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
             <MenuSeparator />
           </>
         )}
-        {control && embedded.length > 0 && (
+        {scope === 'all' && (embedded.length > 0 || myTracks.length > 0 || !!party.subtitle) && (
           <>
             <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles for everyone</div>
+            {embedded.length === 0 &&
+              myTracks.map((t) => (
+                <MenuItem key={t.url} icon={<Subtitles size={15} />} onClick={() => (setMenu(null), void proposeSubtitle(roomId, t.label, t.url))}>
+                  {t.label}
+                </MenuItem>
+              ))}
+            {party.subtitle && (
+              <MenuItem icon={<CaptionsOff size={15} />} onClick={() => (setMenu(null), void proposeSubtitle(roomId, 'Off', null))}>
+                Off for everyone
+              </MenuItem>
+            )}
             {embedded.map((s) => (
               <MenuItem key={s.file.id} icon={party.subtitle?.id === s.file.id ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), chooseEmbeddedSubtitle(roomId, s.file))}>
                 {s.label}
@@ -1059,15 +1111,34 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
             <MenuSeparator />
           </>
         )}
+        {scope === 'all' ? (
+          <div className="px-2 py-1.5">
+            <div className="mb-1.5 text-[12.5px]">Brightness for everyone</div>
+            <div className="flex gap-1">
+              {(
+                [
+                  ['Darker', 0.8],
+                  ['Normal', 1],
+                  ['Brighter', 1.2],
+                ] as const
+              ).map(([label, value]) => (
+                <button key={label} onClick={() => (setMenu(null), proposeForEveryone(roomId, { kind: 'brightness', value }))} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div className="px-2 py-1.5">
           <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
             <span>Brightness (just for you)</span>
-            <button onClick={() => setBrightness(1)} className="tabular-nums text-fg-3 hover:text-fg">
+            <button onClick={() => setBrightness(null)} className="tabular-nums text-fg-3 hover:text-fg">
               {Math.round(brightness * 100)}%
             </button>
           </div>
           <Slider value={brightness - 0.5} onChange={(v) => setBrightness(Math.round((v + 0.5) * 100) / 100)} className="w-full" />
         </div>
+        )}
         <MenuSeparator />
         {party.subtitle && (
           <div className="px-2 py-1.5">
@@ -1207,6 +1278,49 @@ function Control({ label, onClick, big, className, children }: { label: string; 
 }
 
 // ─── Requests (to the host and co-hosts) ─────────────────────────────────────
+
+/** Someone wants a change for everyone: Yes or No. It happens only if everyone says yes. */
+export function PartyVotes({ roomId }: { roomId: string }) {
+  const votes = useVotes();
+  const me = useMe();
+  const users = useChannels((s) => s.users);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const open = Object.entries(votes).filter(([, v]) => v.roomId === roomId);
+  if (!open.length) return null;
+  return (
+    <div className="pointer-events-auto absolute left-1/2 top-[64px] z-40 flex w-[min(360px,90%)] -translate-x-1/2 flex-col gap-2">
+      {open.map(([id, v]) => {
+        const mine = v.from === me;
+        const answered = !!me && v.yes.includes(me);
+        const left = Math.max(0, Math.ceil((v.until - Date.now()) / 1000));
+        return (
+          <div key={id} className="relative rounded-[16px] p-3 text-fg glass-float">
+            <div className="text-[13px] leading-snug">
+              <b>{mine ? 'You' : (users[v.from]?.name ?? 'Someone')}</b> {mine ? 'asked for' : 'wants'} <b>{describeProposal(v.proposal)}</b> for everyone
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-fg-3">
+              {v.yes.length} said yes · {left}s left
+            </div>
+            {!answered && (
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => answerVote(id, true)} className="flex-1 rounded-[9px] bg-success py-1.5 text-[12.5px] font-semibold text-white">
+                  Yes
+                </button>
+                <button onClick={() => answerVote(id, false)} className="flex-1 rounded-[9px] glass-key py-1.5 text-[12.5px] font-semibold">
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function PartyRequests({ roomId }: { roomId: string }) {
   const requests = useParty((s) => s.requests);
