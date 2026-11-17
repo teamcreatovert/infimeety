@@ -69,6 +69,8 @@ export interface SettingsState {
   musicVolume: number;
   /** Desktop: while a game runs, no glass or animations, so the game gets the graphics card. */
   gameMode: boolean;
+  /** Lite mode: no glass, blur or animations, so slow PCs stay quick. 'auto' turns it on for weak hardware. */
+  lite: 'auto' | 'on' | 'off';
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -144,6 +146,7 @@ export const useSettings = create<SettingsState>()(
       shareActivity: true,
       musicVolume: 0.8,
       gameMode: true,
+      lite: 'auto',
 
       screenQuality: '1080p30',
       screenMode: 'motion',

@@ -15,6 +15,7 @@ import { addAccount, savedAccounts, switchAccount } from '@/lib/accounts';
 import { api } from '@/lib/api';
 import { resetApp, restartInSafeMode } from '@/lib/boot';
 import { confirmDialog } from '@/lib/confirm';
+import { isWeakDevice } from '@/lib/lite';
 import { isMac, isTauri, openExternal } from '@/lib/platform';
 import { canChooseFolder, chooseSaveFolder } from '@/lib/saveFolder';
 import { spring } from '@/lib/motion';
@@ -604,6 +605,18 @@ function AppearanceTab() {
         </div>
         <Row label="Living wallpaper" detail="Colors drift slowly. Pauses during calls.">
           <Switch checked={s.livingWallpaper} onChange={(v) => s.set({ livingWallpaper: v })} />
+        </Row>
+        <Row label="Lite mode" detail={`No glass, blur or animations, so slower PCs stay quick. Auto turns it on for this PC: ${isWeakDevice() ? 'on' : 'off'}.`}>
+          <Segmented
+            id="lite-mode"
+            value={s.lite}
+            onChange={(v) => s.set({ lite: v })}
+            options={[
+              { value: 'auto', label: 'Auto' },
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
         </Row>
         <Row label="Reduce transparency" detail="Solid panels instead of glass">
           <Switch checked={s.reduceTransparency} onChange={(v) => s.set({ reduceTransparency: v })} />

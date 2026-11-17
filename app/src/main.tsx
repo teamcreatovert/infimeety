@@ -8,6 +8,7 @@ import { getToken } from './lib/api';
 import { meetingInLocation } from './lib/meeting';
 import { startPhoneApp } from './lib/phone';
 import { startErrorReports } from './lib/errors';
+import { watchLite } from './lib/lite';
 import { isTauri } from './lib/platform';
 import './styles.css';
 
@@ -27,4 +28,7 @@ startPhoneApp();
 const asGuest = !!meeting && (!getToken() || new URLSearchParams(location.search).has('guest'));
 
 // No StrictMode: its double-mounted effects would open duplicate WebSocket/WebRTC sessions in dev.
+// Lite mode for slow PCs (lib/lite.ts), before the first paint.
+watchLite();
+
 createRoot(document.getElementById('root')!).render(<ErrorBoundary>{asGuest ? <GuestApp code={meeting} /> : <App />}</ErrorBoundary>);
