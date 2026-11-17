@@ -11,6 +11,10 @@ echo "Installing Infimeety..."
 
 # The same file the app checks for updates: it names the newest Mac app (one build for Apple and Intel chips).
 URL=$(curl -fsSL "$LATEST" | grep -o 'https://[^"]*universal\.app\.tar\.gz' | head -1 || true)
+# A release whose Mac build didn't make it (GitHub had no Mac free): the newest one that has it.
+if [ -z "$URL" ]; then
+  URL=$(curl -fsSL "https://api.github.com/repos/teamcreatovert/infimeety/releases?per_page=15" | grep -o 'https://[^"]*universal\.app\.tar\.gz' | head -1 || true)
+fi
 if [ -z "$URL" ]; then
   echo "Couldn't find the download. Check your internet connection and try again."
   exit 1
