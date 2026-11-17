@@ -80,8 +80,13 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  windows:
+  # The small ffmpeg the desktop app bundles for watch parties, for every platform.
+  ffmpeg:
     needs: check
+    uses: ./.github/workflows/ffmpeg.yml
+
+  windows:
+    needs: [check, ffmpeg]
     runs-on: windows-latest
     # A signing request waits for you to approve it in SignPath, up to two hours each.
     timeout-minutes: 300
@@ -117,6 +122,12 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # The small ffmpeg the app bundles (ffmpeg.yml, built earlier in this run).
+      - name: Get ffmpeg
+        uses: actions/download-artifact@v7
+        with:
+          name: ffmpeg-x86_64-pc-windows-msvc
+          path: app/src-tauri/binaries
       # Compiles infimeety.exe and stamps it with its bundle type (nsis). The installer this
       # makes is only a by-product when signing is on: it's rebuilt around the signed exe.
       - name: Build
@@ -245,7 +256,7 @@ jobs:
   # The Mac app (mac.yml): GitHub's Intel Macs first, then its Apple Silicon ones if that
   # build fails or never starts. Either kind builds the universal app.
   macos:
-    needs: check
+    needs: [check, ffmpeg]
     uses: ./.github/workflows/mac.yml
     with:
       runner: macos-15-intel
@@ -253,7 +264,7 @@ jobs:
     secrets: inherit
 
   macos-retry:
-    needs: [check, macos]
+    needs: [check, macos, ffmpeg]
     if: ${{ !cancelled() && needs.macos.outputs.built != 'true' }}
     uses: ./.github/workflows/mac.yml
     with:
@@ -263,7 +274,7 @@ jobs:
 
   # The Linux app (linux.yml): an AppImage that updates itself, and a .deb.
   linux:
-    needs: check
+    needs: [check, ffmpeg]
     uses: ./.github/workflows/linux.yml
     with:
       version: ${{ needs.check.outputs.version }}

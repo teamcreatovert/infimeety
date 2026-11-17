@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
 import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettings, PartyState } from '../../../shared/protocol';
 import { rememberCopy, savedCopies } from './copies';
-import { isTauri, localMedia, probeMkv, type SharedFile } from './platform';
+import { canConvert, convertMovie, isTauri, localMedia, probeMkv, type SharedFile } from './platform';
 import { getHub } from './realtime';
 import { featureOn } from './remote';
 import { isSubtitle, toVtt } from './subtitles';
@@ -389,10 +389,16 @@ async function scanMovie(roomId: string, movie: SharedFile, pickSubtitle: boolea
   if (!isTauri || !/\.(mkv|webm|mk3d)$/i.test(movie.name)) return;
   const probe = await probeMkv(movie.id).catch(() => null);
   if (!probe) return;
-  const sound = probe.tracks.find((t) => t.kind === 'audio');
+  // The sound to play: the movie's default track, else English, else the first.
+  const sounds = probe.tracks.filter((t) => t.kind === 'audio');
+  const pickSound = Math.max(0, sounds.findIndex((t) => t.default) >= 0 ? sounds.findIndex((t) => t.default) : sounds.findIndex((t) => /^en/i.test(t.language)));
+  const sound = sounds[pickSound];
   if (sound && SILENT_SOUND.test(sound.codec)) {
-    const format = /DTS/.test(sound.codec) ? 'DTS' : 'Dolby';
-    toast({ kind: 'info', title: `This movie’s sound is ${format}`, body: 'The app can’t play that sound format yet, so the movie would be silent. A copy with AAC or MP3 sound plays fine.' });
+    if (await canConvert()) void convertSound(roomId, movie, pickSound);
+    else {
+      const format = /DTS/.test(sound.codec) ? 'DTS' : 'Dolby';
+      toast({ kind: 'info', title: `This movie’s sound is ${format}`, body: 'This app can’t play that sound format, so the movie would be silent. A copy with AAC or MP3 sound plays fine.' });
+    }
   }
   if (!probe.subtitles.length) {
     if (probe.tracks.some((t) => t.kind === 'subtitle'))
@@ -419,6 +425,34 @@ async function scanMovie(roomId: string, movie: SharedFile, pickSubtitle: boolea
       return;
     }
     await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+/** Movies whose sound is being made playable, by movie id: how far along (0 to 1). */
+export const useConverting = create<Record<string, number>>()(() => ({}));
+
+/**
+ * Dolby or DTS sound: the host's app makes a copy with AAC sound (the bundled converter, a
+ * minute or two) and the party switches to it, keeping its subtitles. Friends get that copy.
+ */
+async function convertSound(roomId: string, movie: SharedFile, audio: number) {
+  toast({ kind: 'info', title: 'Making the sound playable', body: 'This movie’s Dolby or DTS sound is being turned into a format every device plays. It takes a minute or two, and the party switches over by itself.' });
+  useConverting.setState({ [movie.id]: 0 });
+  try {
+    const file = await convertMovie(movie.id, audio, (done) => useConverting.setState({ [movie.id]: done }));
+    useEmbedded.setState((s) => ({ [file.id]: s[movie.id] ?? [] }));
+    const party = useParty.getState().parties[roomId];
+    const me = useAuth.getState().me?.id;
+    if (me && party?.file.id === movie.id) set(roomId, { file: fileOf(file, me), subtitle: party.subtitle, playing: false, position: 0, at: serverNow() });
+    toast({ kind: 'success', title: 'The sound is ready', body: 'Everyone gets the copy with sound that plays everywhere.' });
+  } catch (err) {
+    toast({ kind: 'error', title: 'Couldn’t convert the sound', body: String(err) });
+  } finally {
+    useConverting.setState((s) => {
+      const next = { ...s };
+      delete next[movie.id];
+      return next;
+    }, true);
   }
 }
 

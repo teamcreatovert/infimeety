@@ -86,7 +86,10 @@
           "y": 170
         }
       }
-    }
+    },
+    "externalBin": [
+      "binaries/ffmpeg"
+    ]
   },
   "plugins": {
     "deep-link": {

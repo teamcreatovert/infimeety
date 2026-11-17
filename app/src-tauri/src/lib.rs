@@ -8,6 +8,8 @@ mod games;
 mod media;
 #[cfg(desktop)]
 mod mkv;
+#[cfg(desktop)]
+mod convert;
 mod names;
 #[cfg(mobile)]
 mod phone;
@@ -127,6 +129,8 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             media::media_read,
             media::media_stat,
             media::media_mkv,
+            media::media_can_convert,
+            media::media_convert,
             media::media_missing,
             media::media_forget,
             media::media_reveal,

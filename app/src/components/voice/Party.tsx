@@ -56,6 +56,7 @@ import {
   setReady,
   startNow,
   pickOwnCopy,
+  useConverting,
   useEmbedded,
   chooseEmbeddedSubtitle,
   useParty,
@@ -427,6 +428,7 @@ function PartyLobby({ roomId, party, checking }: { roomId: string; party: PartyS
   // live there and the poster only says where things stand.
   const compact = useCompact();
   const panelOnParty = useUI((s) => s.sideTab === 'party' && (compact || (s.voiceChat && !s.immersive && s.watchLayout === 'theater')));
+  const converting = useConverting((s) => s[party.file.id] as number | undefined);
   const people = useRoomPeople(roomId);
   const live = party.phase === 'live';
   const ready = party.ready.includes(me ?? '');
@@ -469,6 +471,14 @@ function PartyLobby({ roomId, party, checking }: { roomId: string; party: PartyS
           </span>
         </div>
 
+        {converting !== undefined && (
+          <div className="mt-4 w-[min(280px,80%)]">
+            <div className="mb-1.5 text-[12.5px] text-white/75">Making the sound playable… {Math.round(converting * 100)}%</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/15">
+              <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${Math.max(3, converting * 100)}%` }} />
+            </div>
+          </div>
+        )}
         {panelOnParty ? (
           <p className="mt-5 text-[12.5px] text-white/55">{compact ? 'Get ready in the Watch party tab below' : 'Get ready in the Watch party panel →'}</p>
         ) : (

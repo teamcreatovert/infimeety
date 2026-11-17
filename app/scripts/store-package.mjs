@@ -20,6 +20,9 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(join(layout, 'Assets'), { recursive: true });
 
 copyFileSync(exe, join(layout, 'infimeety.exe'));
+// The watch party's converter for Dolby/DTS sound (bundle.externalBin), when the build has it.
+const ffmpeg = join(tauri, 'target', 'release', 'ffmpeg.exe');
+if (existsSync(ffmpeg)) copyFileSync(ffmpeg, join(layout, 'ffmpeg.exe'));
 // Every size Windows asks for: the taskbar and Start take the "unplated" target sizes (no
 // colored square behind the icon); store/Assets is made from icons/icon.png.
 for (const icon of readdirSync(join(tauri, 'store', 'Assets'))) copyFileSync(join(tauri, 'store', 'Assets', icon), join(layout, 'Assets', icon));

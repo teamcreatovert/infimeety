@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isPhoneApp } from './phone';
 import { webMedia } from './webMedia';
@@ -93,6 +93,16 @@ export interface MkvProbe {
 
 /** Desktop: the tracks and built-in text subtitles of a shared MKV movie (src-tauri/src/mkv.rs). */
 export const probeMkv = (id: string) => (isTauri ? invoke<MkvProbe>('media_mkv', { id }) : Promise.reject(new Error('desktop only')));
+
+/** Desktop: whether this copy has the bundled converter for Dolby/DTS sound. */
+export const canConvert = () => (isTauri ? invoke<boolean>('media_can_convert').catch(() => false) : Promise.resolve(false));
+
+/** Desktop: a copy of a shared movie with AAC sound (audio track `audio`), shared like any file. */
+export function convertMovie(id: string, audio: number, onProgress: (done: number) => void) {
+  const channel = new Channel<number>();
+  channel.onmessage = onProgress;
+  return invoke<SharedFile>('media_convert', { id, audio, onProgress: channel });
+}
 
 /** Where your shared files live: on disk in the desktop app, in the browser's storage on the web. */
 export const localMedia: typeof desktopMedia = isTauri ? desktopMedia : webMedia;

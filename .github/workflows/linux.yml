@@ -46,6 +46,15 @@ jobs:
         with:
           workspaces: 'app/src-tauri -> target'
 
+      # The small ffmpeg the app bundles (ffmpeg.yml, built earlier in this run).
+      - name: Get ffmpeg
+        uses: actions/download-artifact@v7
+        with:
+          name: ffmpeg-x86_64-unknown-linux-gnu
+          path: app/src-tauri/binaries
+      - name: Make ffmpeg runnable
+        run: chmod +x app/src-tauri/binaries/*
+
       - name: Install app dependencies
         working-directory: app
         run: npm ci
