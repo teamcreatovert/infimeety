@@ -533,7 +533,9 @@ function Grid({ tiles, screenOf, ...rest }: StreamProps & { tiles: Tile[]; scree
     <div className="absolute inset-0 px-6 pb-[100px] pt-4 compact:px-2.5 compact:pb-[84px] compact:pt-2.5">
       <div ref={ref} className="flex h-full w-full flex-wrap content-center items-center justify-center" style={{ gap }}>
         <LayoutGroup>
-          <AnimatePresence>
+          {/* popLayout: a card that leaves steps out of the layout at once, so the others glide into place
+              while it fades (instead of holding its slot, then everyone snapping). */}
+          <AnimatePresence mode="popLayout" initial={false}>
             {w > 0 &&
               tiles.map((t) =>
                 t.kind === 'music' ? (
@@ -558,7 +560,8 @@ function TileView({
   speakingOf,
   myPeer,
   channelId,
-}: StreamProps & { tile: Tile; width: number; height: number; stream?: MediaStream }) {
+  ref,
+}: StreamProps & { tile: Tile; width: number; height: number; stream?: MediaStream; ref?: React.Ref<HTMLDivElement> }) {
   const { p, kind } = tile;
   const user = users[p.userId];
   const isMe = p.peerId === myPeer;
@@ -571,6 +574,7 @@ function TileView({
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}

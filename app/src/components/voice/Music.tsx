@@ -105,13 +105,14 @@ export function MusicPicker({ busy, onDone }: { busy?: string; onDone: () => voi
  * Shared music joins the call as its own tile, like a player in the room: the song, who shares
  * it and from which app, and how loud it plays for you (or Stop, for the person sharing).
  */
-export function MusicTile({ p, mine, width, height }: { p: VoiceParticipant; mine: boolean; width: number; height: number }) {
+export function MusicTile({ p, mine, width, height, ref }: { p: VoiceParticipant; mine: boolean; width: number; height: number; ref?: React.Ref<HTMLDivElement> }) {
   const user = useChannels((s) => s.users[p.userId]);
   const volume = useSettings((s) => s.musicVolume);
   const art = Math.round(Math.min(112, height * 0.4, width * 0.3));
   const small = height < 190;
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
