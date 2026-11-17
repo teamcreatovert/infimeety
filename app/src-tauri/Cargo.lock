@@ -1849,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "infimeety"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "device_query",
  "mime_guess",
