@@ -53,12 +53,17 @@ jobs:
         with:
           workspaces: 'app/src-tauri -> target'
 
-      # The small ffmpeg the app bundles (ffmpeg.yml, built earlier in this run).
-      - name: Get ffmpeg
-        uses: actions/download-artifact@v7
+      # The small ffmpeg the app bundles (scripts/build-ffmpeg.sh), built on this same Mac: waiting
+      # for a second Mac runner is what held releases up. Cached until the script changes.
+      - id: ffmpeg-cache
+        uses: actions/cache@v4
         with:
-          name: ffmpeg-universal-apple-darwin
           path: app/src-tauri/binaries
+          key: ffmpeg-universal-apple-darwin-${{ hashFiles('app/scripts/build-ffmpeg.sh') }}
+      - name: Build ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        working-directory: app
+        run: bash scripts/build-ffmpeg.sh universal-apple-darwin
       - name: Make ffmpeg runnable
         run: chmod +x app/src-tauri/binaries/*
 

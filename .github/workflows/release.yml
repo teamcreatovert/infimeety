@@ -80,7 +80,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # The small ffmpeg the desktop app bundles for watch parties, for every platform.
+  # The small ffmpeg the Windows and Linux apps bundle for watch parties (the Mac build makes its own).
   ffmpeg:
     needs: check
     uses: ./.github/workflows/ffmpeg.yml
@@ -256,7 +256,7 @@ jobs:
   # The Mac app (mac.yml): GitHub's Intel Macs first, then its Apple Silicon ones if that
   # build fails or never starts. Either kind builds the universal app.
   macos:
-    needs: [check, ffmpeg]
+    needs: check
     uses: ./.github/workflows/mac.yml
     with:
       runner: macos-15-intel
@@ -264,7 +264,7 @@ jobs:
     secrets: inherit
 
   macos-retry:
-    needs: [check, macos, ffmpeg]
+    needs: [check, macos]
     if: ${{ !cancelled() && needs.macos.outputs.built != 'true' }}
     uses: ./.github/workflows/mac.yml
     with:

@@ -1,5 +1,5 @@
 # The small ffmpeg the desktop app bundles for watch parties (app/scripts/build-ffmpeg.sh), for
-# each platform. The Release workflow calls this first; a run on its own (Actions → ffmpeg → Run
+# Windows and Linux (the Mac build makes its own, mac.yml). The Release workflow calls this first; a run on its own (Actions → ffmpeg → Run
 # workflow) checks the build without releasing. Cached until the build script changes.
 name: ffmpeg
 
@@ -14,7 +14,6 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { os: macos-15-intel, target: universal-apple-darwin }
           - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
