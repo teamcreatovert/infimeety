@@ -224,3 +224,23 @@ pub fn offer_move_to_applications(app: &tauri::App) {
             }
         });
 }
+
+/// Hidden or minimized (a game in front): WebView2 trims its memory (Microsoft's "low" target),
+/// and goes back to normal when the window shows again. Calls keep working.
+#[tauri::command]
+pub fn webview_memory(webview: tauri::Webview, low: bool) {
+    #[cfg(windows)]
+    let _ = webview.with_webview(move |platform| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL};
+        use windows::core::Interface;
+        let level = if low { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };
+        // SAFETY: plain COM calls on the live controller, on the UI thread (Tauri runs this there).
+        unsafe {
+            if let Ok(core) = platform.controller().CoreWebView2().and_then(|c| c.cast::<ICoreWebView2_19>()) {
+                let _ = core.SetMemoryUsageTargetLevel(level);
+            }
+        }
+    });
+    #[cfg(not(windows))]
+    let _ = (webview, low);
+}

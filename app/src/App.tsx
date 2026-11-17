@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from './lib/platform';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
 import { Onboarding } from './components/auth/Onboarding';
@@ -111,7 +113,15 @@ export default function App() {
     };
 
     // Not the focused window (a game in front): pause the app's animations (styles.css).
-    const away = () => document.documentElement.toggleAttribute('data-away', document.hidden || !document.hasFocus());
+    // Hidden or minimized: the desktop app also asks WebView2 to trim its memory (desktop.rs).
+    let low = false;
+    const away = () => {
+      document.documentElement.toggleAttribute('data-away', document.hidden || !document.hasFocus());
+      if (isTauri && document.hidden !== low) {
+        low = document.hidden;
+        void invoke('webview_memory', { low }).catch(() => {});
+      }
+    };
     window.addEventListener('blur', away);
     window.addEventListener('focus', away);
     document.addEventListener('visibilitychange', away);

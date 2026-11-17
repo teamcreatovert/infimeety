@@ -151,6 +151,7 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             desktop::overlay_open,
             desktop::overlay_close,
             desktop::notify,
+            desktop::webview_memory,
             games::running_game,
             apps::audio_apps,
             apps::app_title,
