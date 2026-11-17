@@ -545,6 +545,18 @@ class VoiceEngine {
   }
 
   /** How loud your mic is right now (0 to 1), for Fixer's mic check. */
+  /** The call's round trip right now (ms): the slowest friend's, from the voice's own reports. */
+  async voiceRtt(): Promise<number | null> {
+    let worst: number | null = null;
+    for (const peer of this.peers.values()) {
+      const stats = await peer.pc.getStats().catch(() => null);
+      stats?.forEach((s) => {
+        if (s.type === 'remote-inbound-rtp' && s.kind === 'audio' && typeof s.roundTripTime === 'number') worst = Math.max(worst ?? 0, s.roundTripTime * 1000);
+      });
+    }
+    return worst;
+  }
+
   micLevel() {
     return this.micMeter ? rms(this.micMeter.analyser, this.micMeter.data) : 0;
   }

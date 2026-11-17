@@ -5,9 +5,10 @@ import type { HubClient } from './hub';
 import { localMedia, type ReceiveTarget, type SharedFile } from './platform';
 import { allHubs } from './realtime';
 import { startReceive } from './saveFolder';
-import { iceNow } from './voice/engine';
+import { iceNow, voice } from './voice/engine';
 import { Peer, type Signal } from './voice/peer';
 import { useMedia } from '@/stores/media';
+import { useVoice } from '@/stores/voice';
 
 /**
  * Peer-to-peer files. Chat attachments stream straight from the sender's device over WebRTC
@@ -66,6 +67,41 @@ interface Incoming {
 const incoming = new Map<string, Incoming>();
 const outgoing = new Map<string, Peer>();
 let uploads = 0;
+
+/**
+ * Copies make room for the call. A copy sent flat out fills the home router's queue, and the
+ * call's voice waits behind it (choppy, late). While you're in a call, every outgoing copy
+ * shares one allowance that follows the call's own round trip, like BitTorrent's uTP: when it
+ * rises above its usual, copies slow at once; while it stays low, they speed back up.
+ */
+const pacer = { rate: Infinity, tokens: 0, at: 0, base: Infinity, baseAt: 0 };
+
+async function pace(bytes: number) {
+  if (!Number.isFinite(pacer.rate)) return;
+  const now = performance.now();
+  // Up to a quarter second banked, so a pause doesn't turn into a burst.
+  pacer.tokens = Math.min(pacer.rate / 4, pacer.tokens + ((now - pacer.at) / 1000) * pacer.rate) - bytes;
+  pacer.at = now;
+  if (pacer.tokens < 0) await new Promise((r) => setTimeout(r, (-pacer.tokens / pacer.rate) * 1000));
+}
+
+setInterval(async () => {
+  if (uploads === 0 || useVoice.getState().status !== 'connected') {
+    pacer.rate = Infinity;
+    pacer.base = Infinity;
+    return;
+  }
+  const rtt = await voice.voiceRtt();
+  if (rtt === null) return;
+  const now = performance.now();
+  // The usual round trip: the lowest seen lately (forgotten every half minute, as routes change).
+  if (rtt < pacer.base || now - pacer.baseAt > 30_000) {
+    pacer.base = rtt;
+    pacer.baseAt = now;
+  }
+  if (!Number.isFinite(pacer.rate)) pacer.rate = 1_500_000;
+  pacer.rate = rtt > pacer.base + 60 ? Math.max(96_000, pacer.rate * 0.6) : Math.min(60_000_000, pacer.rate * 1.15);
+}, 1000);
 const waiting: (() => void)[] = [];
 const laneKey = (reqId: string, lane: number) => `${reqId}#${lane}`;
 
@@ -365,7 +401,9 @@ function serveLane(hub: HubClient, to: string, reqId: string, file: SharedFile, 
           for (let i = 0; i < buf.byteLength; i += frame) {
             if (dc.readyState !== 'open') throw new Error('closed');
             if (dc.bufferedAmount > HIGH_WATER) await drained();
-            dc.send(new Uint8Array(buf, i, Math.min(frame, buf.byteLength - i)));
+            const size = Math.min(frame, buf.byteLength - i);
+            await pace(size);
+            dc.send(new Uint8Array(buf, i, size));
           }
         }
         dc.send(JSON.stringify({ done: true }));
