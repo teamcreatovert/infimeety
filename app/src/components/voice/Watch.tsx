@@ -4,7 +4,7 @@ import { Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInP
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
-import { PartyPanel } from './Party';
+import { PartyPanel } from './PartyLazy';
 import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { Tooltip } from '../ui/overlay';

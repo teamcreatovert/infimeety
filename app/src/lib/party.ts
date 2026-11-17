@@ -744,3 +744,7 @@ export function describe(action: PartyAction) {
 
 // Dev builds: for testing parties from the console (like __voice in voice/engine.ts).
 if (import.meta.env.DEV) Object.assign(window, { __party: { createParty, useParty, useEmbedded, saveBytes: localMedia.saveBytes } });
+
+/** You joined this live party and your copy of the movie is ready. */
+export const useWatchingAlong = (party: PartyState | undefined) =>
+  useParty((s) => !!party && party.phase === 'live' && !!s.joined[party.id] && s.copies[party.file.id]?.state === 'ready');

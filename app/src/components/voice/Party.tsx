@@ -208,9 +208,6 @@ export function PartyMedia({ roomId, party, chromeHidden }: { roomId: string; pa
 }
 
 /** Is this device watching the movie along (so it shows the player and its controls)? */
-export const useWatchingAlong = (party: PartyState | undefined) =>
-  useParty((s) => !!party && party.phase === 'live' && !!s.joined[party.id] && s.copies[party.file.id]?.state === 'ready');
-
 /** 3, 2, 1… while a start is scheduled (the start and every play are a moment ahead). */
 function Countdown({ party }: { party: PartyState }) {
   const [left, setLeft] = useState(0);

@@ -35,7 +35,7 @@ import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
 import { SoundBursts } from './Soundboard';
-import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, PartyVotes, useWatchingAlong } from './Party';
+import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, PartyVotes, preloadParty } from './PartyLazy';
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { FloatingReactions, FunPanel } from './Fun';
@@ -44,7 +44,7 @@ import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Wat
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
-import { useParty } from '@/lib/party';
+import { useParty, useWatchingAlong } from '@/lib/party';
 import { useFeatureOn } from '@/lib/remote';
 import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
 import { getHub } from '@/lib/realtime';
@@ -284,6 +284,10 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const watching = !!focused || watchingParty;
   // The movie (and its controls) once it's on and this device watches along; the lobby before.
   const watchingAlong = useWatchingAlong(party);
+  // The player's code loads as soon as this room has a party, so it is ready before anyone opens it.
+  useEffect(() => {
+    if (party) void preloadParty();
+  }, [party]);
 
   // When a friend starts sharing their screen, notify without hijacking everyone's view
   const sharers = participants.filter((p) => p.screen && p.peerId !== myPeer).map((p) => p.peerId);
