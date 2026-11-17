@@ -1,14 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './lib/platform';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Onboarding } from './components/auth/Onboarding';
 import { SignIn } from './components/auth/SignIn';
 import { Lightbox } from './components/Lightbox';
-import { ChannelSettingsModal } from './components/modals/ChannelSettingsModal';
-import { CreateChannelModal } from './components/modals/CreateChannelModal';
 import { InviteModal, JoinInviteModal } from './components/modals/InviteModals';
-import { SettingsModal } from './components/modals/SettingsModal';
 import { PartyPlanner } from './components/voice/PartyPlanner';
 import { ScreenPicker } from './components/voice/ScreenPicker';
 import { Background } from './components/shell/Background';
@@ -44,7 +41,7 @@ import { useAuth } from './stores/auth';
 import { useChannels } from './stores/channels';
 import { useFriends } from './stores/friends';
 import { ACCENTS, useSettings } from './stores/settings';
-import { toast } from './stores/ui';
+import { toast, useUI } from './stores/ui';
 import { useVoice } from './stores/voice';
 
 export function useAppearance() {
@@ -72,7 +69,23 @@ export function useAppearance() {
   }, [reduce]);
 }
 
+
+// Loaded the first time they open (then kept, so they can animate closed): a slow PC doesn't
+// download or parse them at startup.
+const SettingsModal = lazy(() => import('./components/modals/SettingsModal').then((m) => ({ default: m.SettingsModal })));
+const CreateChannelModal = lazy(() => import('./components/modals/CreateChannelModal').then((m) => ({ default: m.CreateChannelModal })));
+const ChannelSettingsModal = lazy(() => import('./components/modals/ChannelSettingsModal').then((m) => ({ default: m.ChannelSettingsModal })));
+
+function LoadOnOpen({ open, children }: { open: boolean; children: ReactNode }) {
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
+  return opened ? <Suspense fallback={null}>{children}</Suspense> : null;
+}
+
 export default function App() {
+  const settingsOpen = useUI((s) => !!s.settingsTab);
+  const createOpen = useUI((s) => !!s.createChannel);
+  const channelSettingsOpen = useUI((s) => !!s.channelSettings);
   const status = useAuth((s) => s.status);
   const channelIds = useChannels((s) => s.channels.map((c) => c.id).join(','));
   useAppearance();
@@ -198,9 +211,9 @@ export default function App() {
         <ErrorBoundary quiet area="confirm"><ConfirmDialog /></ErrorBoundary>
         <ErrorBoundary quiet area="user-menu"><UserMenu /></ErrorBoundary>
         <ErrorBoundary quiet area="profile-card"><ProfileCard /></ErrorBoundary>
-        <ErrorBoundary quiet area="settings"><SettingsModal /></ErrorBoundary>
-        <ErrorBoundary quiet area="create-channel"><CreateChannelModal /></ErrorBoundary>
-        <ErrorBoundary quiet area="channel-settings"><ChannelSettingsModal /></ErrorBoundary>
+        <ErrorBoundary quiet area="settings"><LoadOnOpen open={settingsOpen}><SettingsModal /></LoadOnOpen></ErrorBoundary>
+        <ErrorBoundary quiet area="create-channel"><LoadOnOpen open={createOpen}><CreateChannelModal /></LoadOnOpen></ErrorBoundary>
+        <ErrorBoundary quiet area="channel-settings"><LoadOnOpen open={channelSettingsOpen}><ChannelSettingsModal /></LoadOnOpen></ErrorBoundary>
         <ErrorBoundary quiet area="invite"><InviteModal /></ErrorBoundary>
         <ErrorBoundary quiet area="party-planner"><PartyPlanner /></ErrorBoundary>
         <ErrorBoundary quiet area="screen-picker"><ScreenPicker /></ErrorBoundary>
