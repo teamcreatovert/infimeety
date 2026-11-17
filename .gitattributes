@@ -1,0 +1,2 @@
+# Shell installers run on Mac and Linux: keep Unix line endings on every checkout.
+*.sh text eol=lf
