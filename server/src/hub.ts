@@ -551,7 +551,7 @@ export class ChannelHub extends DurableObject<Env> {
           roomId: msg.roomId,
           peerId: me.peerId,
           userId: me.userId,
-          status: { state: ['choosing', 'copying', 'ready', 'failed'].includes(msg.status.state) ? msg.status.state : 'choosing', progress: Number(msg.status.progress) || 0 },
+          status: { state: ['choosing', 'copying', 'ready', 'buffering', 'failed'].includes(msg.status.state) ? msg.status.state : 'choosing', progress: Number(msg.status.progress) || 0 },
         });
       case 'clock':
         return this.send(ws, { t: 'clock', c: Number(msg.c) || 0, s: Date.now() });

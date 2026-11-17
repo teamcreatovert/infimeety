@@ -328,7 +328,8 @@ export type PartyAction = { kind: 'play'; position?: number } | { kind: 'pause' 
 
 /** Where each person stands with the movie. */
 export interface PartyMemberStatus {
-  state: 'choosing' | 'copying' | 'ready' | 'failed';
+  /** buffering: has the movie, but is still loading the part being played. */
+  state: 'choosing' | 'copying' | 'ready' | 'buffering' | 'failed';
   progress?: number;
 }
 

@@ -56,6 +56,7 @@ import {
   setReady,
   startNow,
   pickOwnCopy,
+  setBuffering,
   inspectCopy,
   repackForMac,
   useLocalTracks,
@@ -337,8 +338,18 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
     const timer = setInterval(tick, 200);
     const off = useParty.subscribe((s, prev) => s.parties[roomId] !== prev.parties[roomId] && tick());
     const onTime = () => usePlayer.setState({ time: video.currentTime, duration: video.duration || 0 });
-    const onWaiting = () => usePlayer.setState({ buffering: true });
-    const onPlaying = () => usePlayer.setState({ buffering: false });
+    // Loading for more than a moment while the movie plays: tell the room, so it waits for us.
+    let loadTimer: ReturnType<typeof setTimeout> | undefined;
+    const onWaiting = () => {
+      usePlayer.setState({ buffering: true });
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(() => useParty.getState().parties[roomId]?.playing && setBuffering(roomId, true), 700);
+    };
+    const onPlaying = () => {
+      usePlayer.setState({ buffering: false });
+      clearTimeout(loadTimer);
+      setBuffering(roomId, false);
+    };
     // Sound tracks (dual audio): the ones the engine reports, named by language.
     const onTracks = () => {
       const tracks = audioTracksOf(video);
@@ -366,10 +377,13 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplaythrough', onPlaying);
+    video.addEventListener('canplay', onPlaying);
     video.addEventListener('error', onError);
     return () => {
       clearInterval(timer);
       clearTimeout(startTimer);
+      clearTimeout(loadTimer);
+      setBuffering(roomId, false);
       off();
       attachPlayer(null);
       if (stage === video) stage = null;
@@ -384,6 +398,7 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplaythrough', onPlaying);
+      video.removeEventListener('canplay', onPlaying);
       video.removeEventListener('error', onError);
     };
   }, [roomId, url]);

@@ -170,12 +170,41 @@ export function onParty(roomId: string, party: PartyState | null, resolved?: str
     toast({ kind: 'info', title: `${nameOf(party.by)} ${party.playing ? 'pressed play' : 'paused'}` });
   }
   if (before?.hostId !== party.hostId && party.hostId === me && before) toast({ kind: 'info', title: 'You’re now the watch party’s host' });
+  if (party.by && party.by !== me) holds.delete(roomId); // someone else pressed play or pause: theirs wins
   void prepare(roomId);
 }
 
 export function onStatus(roomId: string, peerId: string, userId: string, status: PartyMemberStatus) {
   useParty.setState((s) => ({ statuses: { ...s.statuses, [roomId]: { ...s.statuses[roomId], [peerId]: { ...status, userId } } } }));
+  holdForLoading(roomId);
 }
+
+/** Rooms the host's app paused because someone was still loading: since when. */
+const holds = new Map<string, number>();
+const HOLD_MAX = 15_000;
+
+/**
+ * Everyone starts together, like Teleparty: while anyone in the room is still loading the part
+ * being played, the host's app pauses the party right there, then plays it for all at once when
+ * nobody is (or after 15 s, so one slow copy doesn't hold everyone forever).
+ */
+function holdForLoading(roomId: string) {
+  const party = useParty.getState().parties[roomId];
+  const me = useAuth.getState().me?.id;
+  if (!party || party.phase !== 'live' || party.hostId !== me) return;
+  const here = new Set(roomPeople(roomId));
+  const loading = Object.values(useParty.getState().statuses[roomId] ?? {}).some((s) => s.state === 'buffering' && here.has(s.userId));
+  const since = holds.get(roomId);
+  if (party.playing && loading && since === undefined) {
+    holds.set(roomId, Date.now());
+    set(roomId, { playing: false, position: expectedPosition(party), at: serverNow() });
+  } else if (since !== undefined && !party.playing && (!loading || Date.now() - since > HOLD_MAX)) {
+    holds.delete(roomId);
+    // A moment ahead, so every copy is on the frame when it starts.
+    set(roomId, { playing: true, position: party.position, at: serverNow() + 1000 });
+  }
+}
+setInterval(() => holds.forEach((_, roomId) => holdForLoading(roomId)), 1000);
 
 export function onRequest(r: Omit<PartyRequest, 'at'>) {
   const party = useParty.getState().parties[r.roomId];
@@ -189,6 +218,14 @@ const nameOf = (userId: string) => useChannels.getState().users[userId]?.name ??
 // ─── This device's copy ──────────────────────────────────────────────────────
 
 let lastStatus = '';
+/** This device has the movie but is loading the part being played. */
+let buffering = false;
+
+export function setBuffering(roomId: string, on: boolean) {
+  if (buffering === on) return;
+  buffering = on;
+  sendStatus(roomId);
+}
 
 /** Tells the room where this device stands with the movie. */
 export function sendStatus(roomId: string, force = false) {
@@ -199,7 +236,7 @@ export function sendStatus(roomId: string, force = false) {
   const entry = useMedia.getState().items[party.file.id];
   const status: PartyMemberStatus =
     copy?.state === 'ready'
-      ? { state: 'ready' }
+      ? { state: buffering ? 'buffering' : 'ready' }
       : entry?.status === 'loading' || entry?.status === 'requesting' || entry?.status === 'waiting' || entry?.status === 'saving'
         ? { state: 'copying', progress: Math.round((entry.progress ?? 0) * 100) / 100 }
         : entry?.status === 'error' || entry?.status === 'offline'
