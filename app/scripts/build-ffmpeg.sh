@@ -46,7 +46,7 @@ build() {
   local dir="$WORK/build-$1"
   shift
   mkdir -p "$dir"
-  (cd "$dir" && "$SRC/configure" "${FLAGS[@]}" "$@" >/dev/null && make -j"$JOBS" ffmpeg >/dev/null) >&2
+  (cd "$dir" && "$SRC/configure" "${FLAGS[@]}" "$@" >/dev/null && make -j"$JOBS" >/dev/null) >&2
   if [ -f "$dir/ffmpeg.exe" ]; then echo "$dir/ffmpeg.exe"; else echo "$dir/ffmpeg"; fi
 }
 
