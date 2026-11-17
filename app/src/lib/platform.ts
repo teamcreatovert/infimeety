@@ -77,5 +77,22 @@ const desktopMedia = {
   reveal: (id: string) => invoke<void>('media_reveal', { id }),
 };
 
+export interface MkvTrack {
+  number: number;
+  kind: 'video' | 'audio' | 'subtitle' | 'other';
+  codec: string;
+  language: string;
+  name: string;
+  default: boolean;
+  forced: boolean;
+}
+export interface MkvProbe {
+  tracks: MkvTrack[];
+  subtitles: { track: number; language: string; name: string; default: boolean; forced: boolean; vtt: string }[];
+}
+
+/** Desktop: the tracks and built-in text subtitles of a shared MKV movie (src-tauri/src/mkv.rs). */
+export const probeMkv = (id: string) => (isTauri ? invoke<MkvProbe>('media_mkv', { id }) : Promise.reject(new Error('desktop only')));
+
 /** Where your shared files live: on disk in the desktop app, in the browser's storage on the web. */
 export const localMedia: typeof desktopMedia = isTauri ? desktopMedia : webMedia;

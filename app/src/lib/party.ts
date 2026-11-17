@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
 import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettings, PartyState } from '../../../shared/protocol';
 import { rememberCopy, savedCopies } from './copies';
-import { localMedia, type SharedFile } from './platform';
+import { isTauri, localMedia, probeMkv, type SharedFile } from './platform';
 import { getHub } from './realtime';
 import { featureOn } from './remote';
 import { isSubtitle, toVtt } from './subtitles';
@@ -363,6 +363,71 @@ export function whenInRoom(roomId: string, timeout = 8000) {
   });
 }
 
+/** The built-in subtitles of movies this device hosts, by movie id, for the subtitle menu. */
+export const useEmbedded = create<Record<string, { label: string; file: SharedFile }[]>>()(() => ({}));
+
+/** Sound formats web engines don't play: the picture shows, the sound doesn't. */
+const SILENT_SOUND = /^A_(AC3|EAC3|DTS|TRUEHD|MLP)/;
+const LANGUAGES: Record<string, string> = { eng: 'en', spa: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', por: 'pt', rus: 'ru', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', ara: 'ar', hin: 'hi', ben: 'bn', tur: 'tr', urd: 'ur', ind: 'id', tha: 'th', vie: 'vi', pol: 'pl', dut: 'nl', nld: 'nl', swe: 'sv' };
+
+function languageName(code: string) {
+  const tag = LANGUAGES[code.toLowerCase()] ?? code;
+  if (!tag || tag === 'und') return '';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(tag) ?? tag;
+  } catch {
+    return tag;
+  }
+}
+
+/**
+ * The host picked an MKV: its built-in subtitles become subtitle files friends get like any other
+ * (browsers too), the best one turned on (the movie's default, or English), and a sound format
+ * the app can't play is said up front.
+ */
+async function scanMovie(roomId: string, movie: SharedFile, pickSubtitle: boolean) {
+  if (!isTauri || !/\.(mkv|webm|mk3d)$/i.test(movie.name)) return;
+  const probe = await probeMkv(movie.id).catch(() => null);
+  if (!probe) return;
+  const sound = probe.tracks.find((t) => t.kind === 'audio');
+  if (sound && SILENT_SOUND.test(sound.codec)) {
+    const format = /DTS/.test(sound.codec) ? 'DTS' : 'Dolby';
+    toast({ kind: 'info', title: `This movie’s sound is ${format}`, body: 'The app can’t play that sound format yet, so the movie would be silent. A copy with AAC or MP3 sound plays fine.' });
+  }
+  if (!probe.subtitles.length) {
+    if (probe.tracks.some((t) => t.kind === 'subtitle'))
+      toast({ kind: 'info', title: 'Its subtitles are pictures', body: 'This movie’s built-in subtitles are images, which can’t be shown yet. Add an .srt file instead.' });
+    return;
+  }
+  const base = movie.name.replace(/\.[^.]+$/, '');
+  const saved: { label: string; file: SharedFile; sub: (typeof probe.subtitles)[number] }[] = [];
+  for (const sub of probe.subtitles) {
+    const label = (sub.name || languageName(sub.language) || `Track ${sub.track}`) + (sub.forced ? ' (forced)' : '');
+    const file = await localMedia.saveBytes(`${base}.${sub.language || sub.track}.vtt`, new TextEncoder().encode(sub.vtt)).catch(() => null);
+    if (file) saved.push({ label, file, sub });
+  }
+  useEmbedded.setState({ [movie.id]: saved.map(({ label, file }) => ({ label, file })) });
+  if (!pickSubtitle || !saved.length) return;
+  const pick =
+    saved.find((s) => s.sub.default && !s.sub.forced) ?? saved.find((s) => /^en/i.test(s.sub.language) && !s.sub.forced) ?? saved.find((s) => !s.sub.forced) ?? saved[0];
+  // The party appears a moment after it's sent; wait for it (not long).
+  for (let i = 0; i < 25; i++) {
+    const party = useParty.getState().parties[roomId];
+    if (party?.file.id === movie.id) {
+      const me = useAuth.getState().me?.id;
+      if (me && !party.subtitle) set(roomId, { subtitle: fileOf(pick.file, me) });
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
+/** Turns on one of the movie's built-in subtitles for everyone. */
+export function chooseEmbeddedSubtitle(roomId: string, file: SharedFile) {
+  const me = useAuth.getState().me?.id;
+  if (me) set(roomId, { subtitle: fileOf(file, me) });
+}
+
 /** Opens a planned party as a lobby in `roomId` (this device must be in that room's call). */
 export function createParty(roomId: string, movie: SharedFile, subtitle: SharedFile | null, settings: PartySettings) {
   if (!featureOn('watchParty')) return toast({ kind: 'info', title: 'Watch parties are paused', body: 'We switched them off for a moment while we fix something. They’ll be back soon.' });
@@ -375,6 +440,7 @@ export function createParty(roomId: string, movie: SharedFile, subtitle: SharedF
     roomId,
     party: { file: fileOf(movie, me), subtitle: subtitle ? fileOf(subtitle, me) : null, playing: false, position: 0, at: serverNow(), settings },
   });
+  void scanMovie(roomId, movie, !subtitle);
 }
 
 /** The host (or a co-host) starts the lobby for everyone. */
@@ -388,6 +454,7 @@ export const saveSettings = (roomId: string, settings: PartySettings) => hubFor(
 export function changeMovie(roomId: string, movie: SharedFile, subtitle: SharedFile | null) {
   const me = useAuth.getState().me?.id;
   if (me) set(roomId, { file: fileOf(movie, me), subtitle: subtitle ? fileOf(subtitle, me) : null, playing: false, position: 0, at: serverNow() });
+  void scanMovie(roomId, movie, !subtitle);
 }
 
 export async function addSubtitles(roomId: string) {
@@ -447,3 +514,6 @@ export function describe(action: PartyAction) {
   return action.kind === 'pause' ? 'Pause' : action.kind === 'seek' ? `Jump to ${formatTime(action.position)}` : action.position !== undefined ? `Play from ${formatTime(action.position)}` : 'Play';
 }
 
+
+// Dev builds: for testing parties from the console (like __voice in voice/engine.ts).
+if (import.meta.env.DEV) Object.assign(window, { __party: { createParty, useParty, useEmbedded, saveBytes: localMedia.saveBytes } });

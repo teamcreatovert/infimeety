@@ -237,6 +237,13 @@ pub async fn media_read(registry: State<'_, Registry>, id: String, offset: u64, 
     Ok(Response::new(buf))
 }
 
+/// What's inside a shared MKV movie: its tracks and built-in text subtitles (mkv.rs).
+#[tauri::command]
+pub async fn media_mkv(registry: State<'_, Registry>, id: String) -> Result<crate::mkv::Probe, String> {
+    let path = registry.get(&id).ok_or("unknown")?.path;
+    tauri::async_runtime::spawn_blocking(move || crate::mkv::probe(&path)).await.map_err(|e| e.to_string())?
+}
+
 /// Returns the file if it is still shared and present on disk.
 #[tauri::command]
 pub async fn media_stat(registry: State<'_, Registry>, id: String) -> Result<Option<SharedFile>, String> {

@@ -56,6 +56,8 @@ import {
   setReady,
   startNow,
   pickOwnCopy,
+  useEmbedded,
+  chooseEmbeddedSubtitle,
   useParty,
   type PartyRequest,
 } from '@/lib/party';
@@ -67,7 +69,7 @@ import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMedia } from '@/stores/media';
 import { useSettings } from '@/stores/settings';
-import { useUI } from '@/stores/ui';
+import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 /**
@@ -76,6 +78,22 @@ import { useVoice } from '@/stores/voice';
  */
 
 const VOLUME_KEY = 'infimeety.partyVolume';
+const NO_EMBEDDED: { label: string; file: { id: string } }[] = [];
+
+function nudgeSubtitles(by: number) {
+  const subDelay = Math.round((usePlayer.getState().subDelay + by) * 100) / 100;
+  usePlayer.setState({ subDelay });
+  toast({ kind: 'info', title: subDelay === 0 ? 'Subtitles on time' : `Subtitles ${subDelay > 0 ? 'later' : 'earlier'} by ${Math.abs(subDelay).toFixed(2)} s` });
+}
+
+function setSubSize(subSize: 'small' | 'medium' | 'large') {
+  usePlayer.setState({ subSize });
+  try {
+    localStorage.setItem('infimeety.subSize', subSize);
+  } catch {
+    /* private mode */
+  }
+}
 
 /** What the player is doing right now, for the controls (which live elsewhere on screen). */
 const usePlayer = create<{
@@ -88,16 +106,21 @@ const usePlayer = create<{
   muted: boolean;
   captions: boolean;
   cue: string;
+  /** Subtitle timing, seconds (positive: later), and size. This device only. */
+  subDelay: number;
+  subSize: 'small' | 'medium' | 'large';
 }>()(() => ({
   time: 0,
   duration: 0,
   buffering: false,
   blocked: false,
   error: null,
-  volume: Number(localStorage.getItem(VOLUME_KEY) ?? 1) || 1,
+  volume: Math.min(2, Number(localStorage.getItem(VOLUME_KEY) ?? 1) || 1),
   muted: false,
   captions: true,
   cue: '',
+  subDelay: 0,
+  subSize: (localStorage.getItem('infimeety.subSize') as 'small' | 'medium' | 'large' | null) ?? 'medium',
 }));
 
 const nameOf = (userId: string) => useChannels.getState().users[userId]?.name ?? 'Someone';
@@ -176,11 +199,32 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
   const error = usePlayer((s) => s.error);
   const captions = usePlayer((s) => s.captions);
   const cue = usePlayer((s) => s.cue);
+  const subSize = usePlayer((s) => s.subSize);
 
+  // Past 100% (up to 200%, like VLC) the sound goes through Web Audio to be boosted; once routed
+  // there it stays (an element can't be unrouted), with the gain doing all the volume.
+  const boost = useRef<{ ctx: AudioContext; gain: GainNode } | null>(null);
   useEffect(() => {
     const video = ref.current;
-    if (video) (video.volume = Math.min(1, volume), (video.muted = muted));
+    if (!video) return;
+    video.muted = muted;
+    if (volume > 1 && !boost.current) {
+      try {
+        const ctx = new AudioContext();
+        const gain = ctx.createGain();
+        ctx.createMediaElementSource(video).connect(gain).connect(ctx.destination);
+        boost.current = { ctx, gain };
+      } catch {
+        /* stays at 100% */
+      }
+    }
+    if (boost.current) {
+      video.volume = 1;
+      boost.current.gain.gain.value = volume;
+      void boost.current.ctx.resume().catch(() => {});
+    } else video.volume = Math.min(1, volume);
   }, [volume, muted]);
+  useEffect(() => () => void boost.current?.ctx.close().catch(() => {}), []);
 
   // Keep this copy on the shared timeline.
   useEffect(() => {
@@ -280,10 +324,14 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
   // Subtitles are drawn by us (above the controls, at a readable size), not by the browser.
   useEffect(() => {
     const track = trackRef.current?.track;
-    if (!track) return usePlayer.setState({ cue: '' });
+    const video = ref.current;
+    if (!track || !video) return usePlayer.setState({ cue: '' });
     track.mode = 'hidden';
     const onCue = () => {
-      const lines = [...(track.activeCues ?? [])].map((c) =>
+      // The lines on screen at this moment, moved by the subtitle timing.
+      const t = video.currentTime - usePlayer.getState().subDelay;
+      const active = [...(track.cues ?? [])].filter((c) => c.startTime <= t && c.endTime > t);
+      const lines = active.map((c) =>
         (c as VTTCue).text
           .replace(/<[^>]+>/g, '')
           .replace(/\{[^}]*\}/g, '')
@@ -291,13 +339,14 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
       );
       usePlayer.setState({ cue: lines.filter(Boolean).join('\n') });
     };
-    track.addEventListener('cuechange', onCue);
-    return () => track.removeEventListener('cuechange', onCue);
+    const timer = setInterval(onCue, 100);
+    return () => clearInterval(timer);
   }, [subtitleUrl]);
 
   return (
     <div className="absolute inset-0 bg-black">
-      <video ref={ref} data-stage src={url} playsInline preload="auto" className="h-full w-full object-contain" onDoubleClick={(e) => e.preventDefault()}>
+      {/* crossOrigin: the 200% boost reads the sound through Web Audio, which gets silence from a file it may not read. */}
+      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" onDoubleClick={(e) => e.preventDefault()}>
         {subtitleUrl && <track key={subtitleUrl} ref={trackRef} kind="subtitles" src={subtitleUrl} default />}
       </video>
       {captions && cue && (
@@ -307,7 +356,12 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
             chromeHidden ? 'bottom-[6%]' : 'bottom-[calc(var(--dock-space)+92px)] compact:bottom-[calc(var(--dock-space)+80px)]',
           )}
         >
-          <span className="max-w-[min(900px,90%)] whitespace-pre-line rounded-[8px] bg-black/60 px-3 py-1 text-center text-[clamp(16px,2.4vw,32px)] font-medium leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]">
+          <span
+            className={clsx(
+              'max-w-[min(900px,90%)] whitespace-pre-line rounded-[8px] bg-black/60 px-3 py-1 text-center font-medium leading-snug text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]',
+              subSize === 'small' ? 'text-[clamp(13px,1.8vw,24px)]' : subSize === 'large' ? 'text-[clamp(20px,3.2vw,44px)]' : 'text-[clamp(16px,2.4vw,32px)]',
+            )}
+          >
             {cue}
           </span>
         </div>
@@ -764,6 +818,9 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const captions = usePlayer((s) => s.captions);
+  const subDelay = usePlayer((s) => s.subDelay);
+  const subSize = usePlayer((s) => s.subSize);
+  const embedded = useEmbedded((s) => s[party.file.id] ?? NO_EMBEDDED);
   const ready = useParty((s) => s.copies[party.file.id]?.state === 'ready');
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [, rerender] = useState(0);
@@ -796,6 +853,12 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
       else if (e.key === 'ArrowRight' || e.key === 'l') (e.preventDefault(), skip(10));
       else if (e.key === 'c') usePlayer.setState((s) => ({ captions: !s.captions }));
       else if (e.key === 'm') usePlayer.setState((s) => ({ muted: !s.muted }));
+      else if (e.key === 'ArrowUp') (e.preventDefault(), setVolume(Math.min(2, Math.round((volume + 0.05) * 100) / 100)));
+      else if (e.key === 'ArrowDown') (e.preventDefault(), setVolume(Math.max(0, Math.round((volume - 0.05) * 100) / 100)));
+      // VLC: G earlier, H later. Shown for a moment.
+      else if (e.key === 'g' || e.key === 'h') nudgeSubtitles(e.key === 'g' ? -0.05 : 0.05);
+      // 0 to 9 jump to that tenth of the movie.
+      else if (/^[0-9]$/.test(e.key) && length) seek((Number(e.key) / 10) * length);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -840,9 +903,9 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
         <div className="flex-1" />
         <div className="group flex items-center compact:hidden">
           <div className="w-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:w-[96px] group-hover:opacity-100">
-            <Slider value={muted ? 0 : volume} onChange={setVolume} className="w-[88px]" />
+            <Slider value={muted ? 0 : volume / 2} onChange={(v) => setVolume(Math.round(v * 200) / 100)} className="w-[88px]" />
           </div>
-          <Control label={muted ? 'Unmute the movie' : 'Mute the movie'} onClick={() => usePlayer.setState({ muted: !muted })}>
+          <Control label={muted ? 'Unmute the movie' : `Mute the movie (volume ${Math.round(volume * 100)}%)`} onClick={() => usePlayer.setState({ muted: !muted })}>
             <VolumeIcon size={18} />
           </Control>
         </div>
@@ -857,6 +920,49 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
       </div>
 
       <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[250px] p-1.5">
+        {control && embedded.length > 0 && (
+          <>
+            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Built-in subtitles</div>
+            {embedded.map((s) => (
+              <MenuItem key={s.file.id} icon={party.subtitle?.id === s.file.id ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), chooseEmbeddedSubtitle(roomId, s.file))}>
+                {s.label}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+          </>
+        )}
+        {party.subtitle && (
+          <div className="px-2 py-1.5">
+            <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
+              <span>Subtitle timing</span>
+              <span className="tabular-nums text-fg-3">{subDelay === 0 ? 'on time' : `${subDelay > 0 ? '+' : ''}${subDelay.toFixed(2)} s`}</span>
+            </div>
+            <div className="flex gap-1">
+              {[
+                ['Earlier', -0.25],
+                ['Reset', 0],
+                ['Later', 0.25],
+              ].map(([label, by]) => (
+                <button key={label} onClick={() => (by === 0 ? usePlayer.setState({ subDelay: 0 }) : nudgeSubtitles(by as number))} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mb-1.5 mt-2.5 text-[12.5px]">Subtitle size</div>
+            <div className="flex gap-1">
+              {(['small', 'medium', 'large'] as const).map((size) => (
+                <button
+                  key={size}
+                  onClick={() => setSubSize(size)}
+                  className={clsx('flex-1 rounded-[7px] py-1 text-[12px] capitalize', subSize === size ? 'bg-accent text-white' : 'bg-fill-2 hover:bg-fill-3')}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {party.subtitle && <MenuSeparator />}
         {control && (
           <MenuItem icon={<Subtitles size={15} />} onClick={() => (setMenu(null), void addSubtitles(roomId))}>
             {party.subtitle ? 'Change subtitles…' : 'Add subtitles…'}
