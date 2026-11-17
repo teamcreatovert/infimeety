@@ -80,7 +80,9 @@ export function WatchStage(props: Props) {
   const [touched, setTouched] = useState(false);
   const full = effective === 'full';
   const dockHidden = full ? !(nearBottom || (touched && !idle)) : floatingDock && idle;
-  const dockSpace = !floatingDock || (full && dockHidden) ? '0px' : compact ? '72px' : '88px';
+  // The room the movie's controls leave for the call's bar. It stays the same while the bar hides
+  // and comes back (full screen shows it near the bottom): the controls never jump under the mouse.
+  const dockSpace = !floatingDock ? '0px' : compact ? '72px' : '88px';
 
   const stage = (
     <div

@@ -103,6 +103,15 @@ function nudgeSubtitles(by: number) {
   toast({ kind: 'info', title: subDelay === 0 ? 'Subtitles on time' : `Subtitles ${subDelay > 0 ? 'later' : 'earlier'} by ${Math.abs(subDelay).toFixed(2)} s` });
 }
 
+function setBrightness(brightness: number) {
+  usePlayer.setState({ brightness });
+  try {
+    localStorage.setItem('infimeety.partyBrightness', String(brightness));
+  } catch {
+    /* private mode */
+  }
+}
+
 function setSubSize(subSize: 'small' | 'medium' | 'large') {
   usePlayer.setState({ subSize });
   try {
@@ -131,6 +140,8 @@ const usePlayer = create<{
   audio: number;
   /** This device's own subtitle choice: a built-in track's URL, 'off', or null for the party's. */
   mySub: string | null;
+  /** How bright the picture looks here (0.5 to 1.5). This device only, like the volume. */
+  brightness: number;
 }>()(() => ({
   time: 0,
   duration: 0,
@@ -145,6 +156,7 @@ const usePlayer = create<{
   audios: [],
   audio: 0,
   mySub: null,
+  brightness: Math.min(1.5, Math.max(0.5, Number(localStorage.getItem('infimeety.partyBrightness') ?? 1) || 1)),
   subSize: (localStorage.getItem('infimeety.subSize') as 'small' | 'medium' | 'large' | null) ?? 'medium',
 }));
 
@@ -227,6 +239,7 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   const captions = usePlayer((s) => s.captions);
   const cue = usePlayer((s) => s.cue);
   const subSize = usePlayer((s) => s.subSize);
+  const brightness = usePlayer((s) => s.brightness);
 
   // Past 100% (up to 200%, like VLC) the sound goes through Web Audio to be boosted; once routed
   // there it stays (an element can't be unrouted), with the gain doing all the volume.
@@ -400,7 +413,7 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   return (
     <div className="absolute inset-0 bg-black">
       {/* crossOrigin: the 200% boost reads the sound through Web Audio, which gets silence from a file it may not read. */}
-      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" onDoubleClick={(e) => e.preventDefault()}>
+      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={brightness === 1 ? undefined : { filter: `brightness(${brightness})` }} onDoubleClick={(e) => e.preventDefault()}>
         {subtitleUrl && <track key={subtitleUrl} ref={trackRef} kind="subtitles" src={subtitleUrl} default />}
       </video>
       {captions && cue && (
@@ -883,6 +896,7 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const captions = usePlayer((s) => s.captions);
   const subDelay = usePlayer((s) => s.subDelay);
   const subSize = usePlayer((s) => s.subSize);
+  const brightness = usePlayer((s) => s.brightness);
   const embedded = useEmbedded((s) => s[party.file.id] ?? NO_EMBEDDED);
   const audios = usePlayer((s) => s.audios);
   const audio = usePlayer((s) => s.audio);
@@ -1030,6 +1044,16 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
             <MenuSeparator />
           </>
         )}
+        <div className="px-2 py-1.5">
+          <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
+            <span>Brightness (just for you)</span>
+            <button onClick={() => setBrightness(1)} className="tabular-nums text-fg-3 hover:text-fg">
+              {Math.round(brightness * 100)}%
+            </button>
+          </div>
+          <Slider value={brightness - 0.5} onChange={(v) => setBrightness(Math.round((v + 0.5) * 100) / 100)} className="w-full" />
+        </div>
+        <MenuSeparator />
         {party.subtitle && (
           <div className="px-2 py-1.5">
             <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
