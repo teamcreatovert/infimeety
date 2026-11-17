@@ -1,0 +1,64 @@
+# The small ffmpeg the desktop app bundles for watch parties (app/scripts/build-ffmpeg.sh), for
+# each platform. The Release workflow calls this first; a run on its own (Actions → ffmpeg → Run
+# workflow) checks the build without releasing. Cached until the build script changes.
+name: ffmpeg
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: macos-14, target: universal-apple-darwin }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: app/src-tauri/binaries
+          key: ffmpeg-${{ matrix.target }}-${{ hashFiles('app/scripts/build-ffmpeg.sh') }}
+
+      - name: MSYS2 (the Windows build's compiler)
+        if: runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc make diffutils
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        working-directory: app
+        run: bash scripts/build-ffmpeg.sh ${{ matrix.target }}
+
+      - name: Build (Mac, Linux)
+        if: runner.os != 'Windows' && steps.cache.outputs.cache-hit != 'true'
+        working-directory: app
+        run: bash scripts/build-ffmpeg.sh ${{ matrix.target }}
+
+      # It runs, and has what the watch party needs: Dolby and DTS in, AAC out.
+      - name: Check
+        shell: bash
+        working-directory: app/src-tauri/binaries
+        run: |
+          BIN=$(ls ffmpeg-${{ matrix.target }}*)
+          ls -la
+          ./$BIN -hide_banner -version | head -1
+          ./$BIN -hide_banner -decoders | grep -E ' (ac3|eac3|dca|truehd) '
+          ./$BIN -hide_banner -encoders | grep -E ' aac '
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: app/src-tauri/binaries/
+          if-no-files-found: error
+          retention-days: 7
