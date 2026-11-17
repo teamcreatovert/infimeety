@@ -210,6 +210,7 @@ class VoiceEngine {
 
     useVoice.setState({
       channelId: null,
+      hand: false,
       roomId: null,
       status: 'idle',
       serverMuted: false,
@@ -482,6 +483,12 @@ class VoiceEngine {
     sounds.shareStart();
   }
 
+  /** Raise or lower your hand. */
+  toggleHand() {
+    useVoice.setState((s) => ({ hand: !s.hand }));
+    this.pushState();
+  }
+
   stopMusic(quiet = false) {
     const music = this.music;
     if (!music) return;
@@ -541,6 +548,7 @@ class VoiceEngine {
       streams: { mic: this.micOut.id, cam: this.camOut.id, screen: this.screenOut.id, music: this.musicOut.id },
       watching: watchedPeers(),
       music: this.music ? { app: this.music.app, title: this.music.title } : null,
+      hand: useVoice.getState().hand,
     };
   }
 

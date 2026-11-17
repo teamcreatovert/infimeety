@@ -25,6 +25,8 @@ interface VoiceState {
   localScreen: MediaStream | null;
   /** The music you're sharing with the room (Share music). */
   music: MusicShare | null;
+  /** Your hand is raised. */
+  hand: boolean;
   micAvailable: boolean;
   /** The browser hasn't let the call's sound start yet (mobile: until the first tap). */
   audioBlocked: boolean;
@@ -46,6 +48,7 @@ export const useVoice = create<VoiceState>()(() => ({
   localCam: null,
   localScreen: null,
   music: null,
+  hand: false,
   micAvailable: true,
   audioBlocked: false,
   pttActive: false,

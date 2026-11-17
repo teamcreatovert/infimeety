@@ -242,7 +242,12 @@ export interface VoiceLocalState {
   watching?: string[];
   /** The music this person shares with the room, if any. */
   music?: MusicShare | null;
+  /** A raised hand (meetings, or "me next"). */
+  hand?: boolean;
 }
+
+/** The reactions that float up over a call. */
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
 
 export interface VoiceParticipant extends VoiceLocalState {
   peerId: string;
@@ -382,6 +387,8 @@ export type ClientMsg =
   | { t: 'sound.play'; sound: SoundRef }
   /** Stops the sound you're playing, for everyone. */
   | { t: 'sound.stop' }
+  /** A reaction that floats up over the call for everyone in your voice room. */
+  | { t: 'reaction'; emoji: string }
   /** You declined a call ringing in this room: the caller is told. */
   | { t: 'call.decline'; roomId: string }
   /** Your app heard you say a fun-rule word in the call (Windows app, on-device speech). */
@@ -436,6 +443,7 @@ export type ServerMsg =
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'sound.stop'; peerId: string; userId: string }
   | { t: 'call.declined'; roomId: string; userId: string }
+  | { t: 'reaction'; peerId: string; userId: string; emoji: string }
   /** Your music share was turned down (not an admin or moderator, or someone else is sharing). */
   | { t: 'music.denied'; message: string }
   /** Your sound didn't play for anyone (you're muted): stop it on your side too. */

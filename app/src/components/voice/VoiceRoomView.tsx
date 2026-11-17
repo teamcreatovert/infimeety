@@ -6,7 +6,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clapperboard,
-  Speaker,
   Ellipsis,
   EyeOff,
   HeadphoneOff,
@@ -14,7 +13,7 @@ import {
   MessageSquareText,
   Mic,
   MicOff,
-  Music2,
+  SmilePlus,
   MonitorPlay,
   Phone,
   PhoneOff,
@@ -35,11 +34,12 @@ import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Segmented, Slider, Spinner, Switch } from '../ui/primitives';
-import { SoundBursts, SoundboardPanel } from './Soundboard';
+import { SoundBursts } from './Soundboard';
 import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtra, PartyRequests, PartyVotes, useWatchingAlong } from './Party';
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
-import { MusicPicker, MusicTile, canShareMusic } from './Music';
+import { FloatingReactions, FunPanel } from './Fun';
+import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
@@ -422,6 +422,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               {soundPrompt}
               {watchingParty && <PartyRequests roomId={room.id} />}
               {watchingParty && <PartyVotes roomId={room.id} />}
+              <FloatingReactions />
             </>
           }
           dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}
@@ -476,6 +477,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           ) : (
             <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
+          <FloatingReactions />
           {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
         </div>
 
@@ -627,6 +629,7 @@ function TileView({
       <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium text-white glass-ink">
         {kind === 'screen' && <MonitorPlay size={12} />}
         <span className="truncate">
+          {kind === 'user' && p.hand && <span className="emoji" aria-label="Hand raised">✋</span>}
           {kind === 'screen' ? `${isMe ? 'Your' : `${user?.name ?? 'Someone'}’s`} screen` : `${user?.name ?? 'Someone'}${isMe ? ' (you)' : ''}`}
         </span>
         {/* Sound comes from the sharer's side: say so when there is none, instead of leaving people guessing. */}
@@ -737,7 +740,7 @@ function Dock({
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
   const [moreMenu, setMoreMenu] = useState<Anchor | null>(null);
   const [soundMenu, setSoundMenu] = useState<Anchor | null>(null);
-  const [musicMenu, setMusicMenu] = useState<Anchor | null>(null);
+  const hand = useVoice((s) => s.hand);
   const music = useVoice((s) => s.music);
   const soundboard = useFeatureOn('soundboard');
   const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
@@ -798,11 +801,9 @@ function Dock({
           <MenuItem icon={<AudioWaveform size={15} />} onClick={() => (setMoreMenu(null), toggleNoise())}>
             {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
-          {soundboard && (
-            <MenuItem icon={<Speaker size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
-              Soundboard
-            </MenuItem>
-          )}
+          <MenuItem icon={<SmilePlus size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
+            {hand ? 'Reactions and hand (raised)' : 'Reactions, hand and sounds'}
+          </MenuItem>
           {sharer && (
             <MenuItem icon={<Clapperboard size={15} />} onClick={() => (setMoreMenu(null), toggleWatch())}>
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
@@ -823,7 +824,7 @@ function Dock({
           )}
         </Popover>
         <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12} material="float">
-          <SoundboardPanel />
+          <FunPanel sounds={soundboard} music={false} onDone={() => setSoundMenu(null)} />
         </Popover>
       </motion.div>
     );
@@ -873,16 +874,9 @@ function Dock({
           </span>
         </DockButton>
       )}
-      {soundboard && (
-        <DockButton label="Soundboard" state={soundMenu ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
-          <Speaker size={19} />
-        </DockButton>
-      )}
-      {canShareMusic && (channel.kind === 'dm' || isAdmin) && (
-        <DockButton label={music ? `Sharing music: ${music.title}` : 'Share music'} state={music || musicMenu ? 'on' : 'normal'} onClick={(el) => setMusicMenu(el.getBoundingClientRect())}>
-          <Music2 size={19} />
-        </DockButton>
-      )}
+      <DockButton label="Reactions, raise hand, sounds and music" state={soundMenu || hand || music ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
+        <SmilePlus size={19} />
+      </DockButton>
       {isAdmin && (
         <DockButton
           label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins and moderators can still talk)'}
@@ -908,10 +902,12 @@ function Dock({
       </Tooltip>
 
       <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14} material="float">
-        <SoundboardPanel />
-      </Popover>
-      <Popover open={!!musicMenu} anchor={musicMenu} onClose={() => setMusicMenu(null)} side="top" align="center" offset={14} material="float">
-        <MusicPicker busy={participants.find((p) => p.music && p.peerId !== myPeer)?.userId} onDone={() => setMusicMenu(null)} />
+        <FunPanel
+          sounds={soundboard}
+          music={canShareMusic && (channel.kind === 'dm' || isAdmin)}
+          busy={participants.find((p) => p.music && p.peerId !== myPeer)?.userId}
+          onDone={() => setSoundMenu(null)}
+        />
       </Popover>
       <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14} material="float">
         <ShareOptions

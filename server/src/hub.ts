@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
-import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS, REACTIONS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
 import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
@@ -368,6 +368,7 @@ export class ChannelHub extends DurableObject<Env> {
             screen: !!s.screen,
             streams: streamIds(s.streams),
             music: await this.musicFor(ws, me, msg.roomId, cleanMusic(s.music)),
+            hand: !!s.hand,
             ...(Array.isArray(s.watching) ? { watching: (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined) } : {}),
             forceMuted: false,
             ...(mutedUntil ? { mutedUntil } : {}),
@@ -392,6 +393,7 @@ export class ChannelHub extends DurableObject<Env> {
         if (typeof s.screen === 'boolean') v.screen = s.screen;
         if (s.streams && typeof s.streams === 'object') v.streams = streamIds(s.streams);
         if ('music' in s) v.music = await this.musicFor(ws, me, v.roomId, cleanMusic(s.music));
+        if ('hand' in s) v.hand = !!s.hand;
         if (Array.isArray(s.watching)) v.watching = (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined);
         this.save(ws, { ...me, voice: v });
         return this.broadcastVoice();
@@ -468,6 +470,12 @@ export class ChannelHub extends DurableObject<Env> {
         const after = this.activityOf(me.userId);
         if (before?.id !== after?.id) this.broadcast({ t: 'activity', userId: me.userId, activity: after }, ws);
         return;
+      }
+
+      case 'reaction': {
+        // Floats up for everyone in your voice room; only the known ones, at the reactions' rate.
+        if (!me.voice || !(REACTIONS as readonly string[]).includes(msg.emoji)) return;
+        return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: msg.emoji }, ws);
       }
 
       case 'call.decline': {
@@ -1244,6 +1252,7 @@ function rateOf(t: unknown): SocketRate {
     case 'chat.delete':
       return 'chat';
     case 'chat.react':
+    case 'reaction':
       return 'react';
     case 'typing':
       return 'typing';

@@ -73,6 +73,7 @@ export function cleanParticipant(v: unknown): VoiceParticipant | null {
     screen: bool(p.screen),
     streams: cleanStreams(p.streams),
     music: cleanMusic(p.music),
+    hand: p.hand === true,
     ...(Array.isArray(p.watching) ? { watching: p.watching.filter((w): w is string => typeof w === 'string') } : {}),
     serverMuted: bool(p.serverMuted),
     joinedAt: num(p.joinedAt),

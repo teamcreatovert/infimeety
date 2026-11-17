@@ -9,6 +9,7 @@ import { cleanAttachments, cleanIds, cleanMessage, cleanReactions, cleanVoiceSna
 import { clock, setPenalty, usePenalties } from './penalties';
 import { myActivity, onMyActivity, setActivities, setActivity } from './activity';
 import { onCallDeclined } from './calls';
+import { onReaction } from './reactions';
 import { onSound, onSoundBlocked, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
@@ -175,6 +176,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
     case 'music.denied':
       voice.stopMusic(true);
       return toast({ kind: 'info', title: 'Music isn’t shared', body: msg.message });
+    case 'reaction':
+      return onReaction(msg.userId, msg.emoji);
     case 'call.declined':
       return onCallDeclined(msg.roomId);
     case 'media.request':
