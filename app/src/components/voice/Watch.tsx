@@ -316,7 +316,8 @@ function PanelTab({ active, onClick, children }: { active: boolean; onClick: () 
 function PeopleList({ people, users, camOf, speakingOf, myPeer, channel, extra }: WatchPeople & { channel: Channel }) {
   return (
     <div className="scroll h-full p-2" style={{ scrollbarGutter: 'auto' }}>
-      {people.map((p) => {
+      {/* Raised hands first, so whoever wants to talk is easy to see. */}
+      {[...people.filter((p) => p.hand), ...people.filter((p) => !p.hand)].map((p) => {
         const cam = camOf(p);
         const speaking = speakingOf(p);
         const user = users[p.userId];
@@ -339,6 +340,11 @@ function PeopleList({ people, users, camOf, speakingOf, myPeer, channel, extra }
               <span className="flex items-center gap-1.5">
                 <span className="truncate text-[13px] font-medium">{user?.name ?? 'Someone'}</span>
                 {p.peerId === myPeer && <span className="text-[11.5px] text-fg-3">(you)</span>}
+                {p.hand && (
+                  <span className="emoji text-[13px]" aria-label="Hand raised" title="Hand raised">
+                    ✋
+                  </span>
+                )}
               </span>
               <span className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-fg-3">
                 <ParticipantIcons p={p} size={12} />
