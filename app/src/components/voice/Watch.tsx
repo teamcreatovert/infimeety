@@ -137,7 +137,7 @@ export function WatchStage(props: Props) {
 /** Fades out with the rest of the chrome while nobody moves. */
 function Chrome({ idle, children }: { idle: boolean; children: ReactNode }) {
   return (
-    <motion.div animate={{ opacity: idle ? 0 : 1 }} transition={{ duration: 0.25 }} style={{ pointerEvents: idle ? 'none' : 'auto' }}>
+    <motion.div data-keep-awake animate={{ opacity: idle ? 0 : 1 }} transition={{ duration: 0.25 }} style={{ pointerEvents: idle ? 'none' : 'auto' }}>
       {children}
     </motion.div>
   );

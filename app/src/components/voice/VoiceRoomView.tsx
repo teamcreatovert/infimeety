@@ -331,7 +331,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const wake = () => {
     setIdle(false);
     clearTimeout(idleTimer.current);
-    if (watching || anyShare) idleTimer.current = setTimeout(() => setIdle(true), 2800);
+    // Never while the pointer rests on the controls or the call bar: they'd vanish under it, mid-click.
+    const sleep = () => {
+      if (document.querySelector('[data-keep-awake]:hover')) idleTimer.current = setTimeout(sleep, 1000);
+      else setIdle(true);
+    };
+    if (watching || anyShare) idleTimer.current = setTimeout(sleep, 2800);
   };
   useEffect(() => {
     wake();
@@ -745,6 +750,7 @@ function Dock({
   if (compact)
     return (
       <motion.div
+        data-keep-awake
         animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
         transition={spring}
         style={{ pointerEvents: hidden ? 'none' : 'auto' }}
@@ -819,6 +825,7 @@ function Dock({
 
   return (
     <motion.div
+      data-keep-awake
       animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
       transition={spring}
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}
