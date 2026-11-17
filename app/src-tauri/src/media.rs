@@ -245,12 +245,12 @@ pub fn media_can_convert() -> bool {
 
 /// A copy of a shared movie with sound every device plays (AAC), shared like any file.
 #[tauri::command]
-pub async fn media_convert(app: AppHandle, registry: State<'_, Registry>, id: String, audio: u32, on_progress: tauri::ipc::Channel<f64>) -> Result<SharedFile, String> {
+pub async fn media_convert(app: AppHandle, registry: State<'_, Registry>, id: String, audio: Option<u32>, hevc: bool, on_progress: tauri::ipc::Channel<f64>) -> Result<SharedFile, String> {
     let source = registry.get(&id).ok_or("unknown")?.path;
     let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "movie".into());
-    let output = registry.pasted_dir.join(format!("{stem} (AAC sound).mp4"));
+    let output = registry.pasted_dir.join(format!("{stem} ({}).mp4", if audio.is_some() { "AAC sound" } else { "MP4" }));
     let out = output.clone();
-    tauri::async_runtime::spawn_blocking(move || crate::convert::to_aac(&source, &out, audio, &on_progress)).await.map_err(|e| e.to_string())??;
+    tauri::async_runtime::spawn_blocking(move || crate::convert::to_aac(&source, &out, audio, hevc, &on_progress)).await.map_err(|e| e.to_string())??;
     registry.register(&app, vec![output]).into_iter().next().ok_or_else(|| "couldn't share the converted copy".into())
 }
 

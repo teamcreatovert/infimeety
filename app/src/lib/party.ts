@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
 import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartySettings, PartyState } from '../../../shared/protocol';
 import { rememberCopy, savedCopies } from './copies';
-import { canConvert, convertMovie, isTauri, localMedia, probeMkv, type SharedFile } from './platform';
+import { canConvert, convertMovie, isHevc, isMac, isTauri, localMedia, probeMkv, type SharedFile } from './platform';
 import { getHub } from './realtime';
 import { featureOn } from './remote';
 import { isSubtitle, toVtt } from './subtitles';
@@ -394,7 +394,7 @@ async function scanMovie(roomId: string, movie: SharedFile, pickSubtitle: boolea
   const pickSound = Math.max(0, sounds.findIndex((t) => t.default) >= 0 ? sounds.findIndex((t) => t.default) : sounds.findIndex((t) => /^en/i.test(t.language)));
   const sound = sounds[pickSound];
   if (sound && SILENT_SOUND.test(sound.codec)) {
-    if (await canConvert()) void convertSound(roomId, movie, pickSound);
+    if (await canConvert()) void convertSound(roomId, movie, pickSound, isHevc(probe));
     else {
       const format = /DTS/.test(sound.codec) ? 'DTS' : 'Dolby';
       toast({ kind: 'info', title: `This movie’s sound is ${format}`, body: 'This app can’t play that sound format, so the movie would be silent. A copy with AAC or MP3 sound plays fine.' });
@@ -435,11 +435,11 @@ export const useConverting = create<Record<string, number>>()(() => ({}));
  * Dolby or DTS sound: the host's app makes a copy with AAC sound (the bundled converter, a
  * minute or two) and the party switches to it, keeping its subtitles. Friends get that copy.
  */
-async function convertSound(roomId: string, movie: SharedFile, audio: number) {
+async function convertSound(roomId: string, movie: SharedFile, audio: number, hevc: boolean) {
   toast({ kind: 'info', title: 'Making the sound playable', body: 'This movie’s Dolby or DTS sound is being turned into a format every device plays. It takes a minute or two, and the party switches over by itself.' });
   useConverting.setState({ [movie.id]: 0 });
   try {
-    const file = await convertMovie(movie.id, audio, (done) => useConverting.setState({ [movie.id]: done }));
+    const file = await convertMovie(movie.id, audio, hevc, (done) => useConverting.setState({ [movie.id]: done }));
     useEmbedded.setState((s) => ({ [file.id]: s[movie.id] ?? [] }));
     const party = useParty.getState().parties[roomId];
     const me = useAuth.getState().me?.id;
@@ -451,6 +451,53 @@ async function convertSound(roomId: string, movie: SharedFile, audio: number) {
     useConverting.setState((s) => {
       const next = { ...s };
       delete next[movie.id];
+      return next;
+    }, true);
+  }
+}
+
+/** The built-in subtitle tracks of this device's own copy of a party movie, by movie id: anyone can pick theirs. */
+export const useLocalTracks = create<Record<string, { label: string; url: string }[]>>()(() => ({}));
+
+/** Desktop: reads the subtitle tracks of this device's MKV copy, for the "just for me" menu. */
+export async function inspectCopy(fileId: string, name: string) {
+  const localId = useParty.getState().copies[fileId]?.localId;
+  if (!isTauri || !localId || !/\.(mkv|webm)$/i.test(name) || useLocalTracks.getState()[fileId]) return;
+  const probe = await probeMkv(localId).catch(() => null);
+  if (!probe) return;
+  const list = probe.subtitles.map((sub) => ({
+    label: (sub.name || languageName(sub.language) || `Track ${sub.track}`) + (sub.forced ? ' (forced)' : ''),
+    url: URL.createObjectURL(new Blob([sub.vtt], { type: 'text/vtt' })),
+  }));
+  useLocalTracks.setState({ [fileId]: list });
+}
+
+const repacking = new Set<string>();
+
+/**
+ * Macs can't open MKV files at all (WebKit has no MKV reader), even when what's inside plays fine.
+ * This device's copy is repacked as an MP4 with the bundled converter: picture copied, every sound
+ * track kept (as AAC), HEVC labelled the way Macs play it. Only for this device; the party is unchanged.
+ */
+export async function repackForMac(fileId: string) {
+  const localId = useParty.getState().copies[fileId]?.localId;
+  if (!isTauri || !isMac || !localId || repacking.has(fileId) || !(await canConvert())) return false;
+  repacking.add(fileId);
+  useConverting.setState({ [fileId]: 0 });
+  try {
+    const probe = await probeMkv(localId).catch(() => null);
+    const file = await convertMovie(localId, null, !!probe && isHevc(probe), (done) => useConverting.setState({ [fileId]: done }));
+    rememberCopy(fileId, file.id);
+    setCopy(fileId, { state: 'ready', url: localMedia.src(file.path), localId: file.id });
+    return true;
+  } catch (err) {
+    toast({ kind: 'error', title: 'Couldn’t make a copy this Mac plays', body: String(err) });
+    return false;
+  } finally {
+    repacking.delete(fileId);
+    useConverting.setState((s) => {
+      const next = { ...s };
+      delete next[fileId];
       return next;
     }, true);
   }

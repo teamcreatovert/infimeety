@@ -10,7 +10,7 @@ use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilde
 /// tauri.conf.json, or WebView2 refuses to create the second window. Besides wry's defaults,
 /// they keep timers at full speed while the main window is hidden in the tray, so speaking
 /// detection (and with it the overlay) stays live.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --enable-blink-features=AudioVideoTracks";
 
 /// Whether the close button hides to the tray (the default) or quits. Synced from settings.
 pub struct CloseToTray(AtomicBool);

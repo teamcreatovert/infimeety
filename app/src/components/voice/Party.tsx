@@ -56,6 +56,9 @@ import {
   setReady,
   startNow,
   pickOwnCopy,
+  inspectCopy,
+  repackForMac,
+  useLocalTracks,
   useConverting,
   useEmbedded,
   chooseEmbeddedSubtitle,
@@ -80,6 +83,19 @@ import { useVoice } from '@/stores/voice';
 
 const VOLUME_KEY = 'infimeety.partyVolume';
 const NO_EMBEDDED: { label: string; file: { id: string } }[] = [];
+const NO_TRACKS: { label: string; url: string }[] = [];
+
+type AudioTracks = { length: number; [i: number]: { label: string; language: string; enabled: boolean } };
+let stage: HTMLVideoElement | null = null;
+const audioTracksOf = (v: HTMLVideoElement | null) => (v as (HTMLVideoElement & { audioTracks?: AudioTracks }) | null)?.audioTracks;
+
+/** Plays sound track `i` on this device (the movie's other tracks go quiet). */
+function pickAudio(i: number) {
+  const tracks = audioTracksOf(stage);
+  if (!tracks) return;
+  for (let n = 0; n < tracks.length; n++) tracks[n].enabled = n === i;
+  usePlayer.setState({ audio: i });
+}
 
 function nudgeSubtitles(by: number) {
   const subDelay = Math.round((usePlayer.getState().subDelay + by) * 100) / 100;
@@ -110,6 +126,11 @@ const usePlayer = create<{
   /** Subtitle timing, seconds (positive: later), and size. This device only. */
   subDelay: number;
   subSize: 'small' | 'medium' | 'large';
+  /** The movie's sound tracks (dual audio), and which one plays here. */
+  audios: string[];
+  audio: number;
+  /** This device's own subtitle choice: a built-in track's URL, 'off', or null for the party's. */
+  mySub: string | null;
 }>()(() => ({
   time: 0,
   duration: 0,
@@ -121,6 +142,9 @@ const usePlayer = create<{
   captions: true,
   cue: '',
   subDelay: 0,
+  audios: [],
+  audio: 0,
+  mySub: null,
   subSize: (localStorage.getItem('infimeety.subSize') as 'small' | 'medium' | 'large' | null) ?? 'medium',
 }));
 
@@ -148,7 +172,7 @@ export function PartyMedia({ roomId, party, chromeHidden }: { roomId: string; pa
   if (party.phase === 'live' && joined && copy?.state === 'ready' && copy.url)
     return (
       <>
-        <PartyPlayer key={copy.url} roomId={roomId} url={copy.url} subtitleId={party.subtitle?.id} chromeHidden={chromeHidden} />
+        <PartyPlayer key={copy.url} roomId={roomId} fileId={party.file.id} url={copy.url} subtitleId={party.subtitle?.id} chromeHidden={chromeHidden} />
         <Countdown party={party} />
       </>
     );
@@ -189,10 +213,12 @@ function Countdown({ party }: { party: PartyState }) {
   );
 }
 
-function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string; url: string; subtitleId?: string; chromeHidden: boolean }) {
+function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId: string; fileId: string; url: string; subtitleId?: string; chromeHidden: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
-  const subtitleUrl = useParty((s) => (subtitleId ? s.subtitles[subtitleId] : undefined));
+  const partySubtitle = useParty((s) => (subtitleId ? s.subtitles[subtitleId] : undefined));
+  const mySub = usePlayer((s) => s.mySub);
+  const subtitleUrl = mySub === 'off' ? undefined : (mySub ?? partySubtitle);
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const blocked = usePlayer((s) => s.blocked);
@@ -235,6 +261,15 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
     usePlayer.setState({ time: 0, duration: 0, buffering: false, blocked: false, error: null, cue: '' });
     let startTimer: ReturnType<typeof setTimeout> | undefined;
     let pausedOn = NaN;
+    // A big MKV can take seconds to seek: jumping to "now" lands behind again, forever (the endless
+    // spinner). Jumps aim ahead by how long the last one took, and at most one per few seconds;
+    // in between, a slightly faster or slower speed closes the gap.
+    let lead = 0.2;
+    let lastJump = 0;
+    let seekFrom = 0;
+    const onSeeking = () => (seekFrom = performance.now());
+    const onSeeked = () => (lead = Math.min(4, Math.max(0.2, ((performance.now() - seekFrom) / 1000) * 1.3)));
+    stage = video;
 
     const play = () =>
       video.play().then(
@@ -277,11 +312,12 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
       }
       if (video.seeking || video.readyState < 3) return;
       const drift = video.currentTime - target; // positive: ahead of everyone
-      if (Math.abs(drift) > 1.5) {
+      if (Math.abs(drift) > 1.5 && performance.now() - lastJump > 4000) {
+        lastJump = performance.now();
         video.playbackRate = 1;
-        video.currentTime = target + 0.2; // a jump takes a moment
+        video.currentTime = target + lead; // a jump takes a moment
       } else if (Math.abs(drift) > 0.03) {
-        video.playbackRate = Math.min(1.1, Math.max(0.9, 1 - drift * 0.6));
+        video.playbackRate = Math.min(1.25, Math.max(0.8, 1 - drift * 0.6));
       } else video.playbackRate = 1;
     };
 
@@ -290,15 +326,27 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
     const onTime = () => usePlayer.setState({ time: video.currentTime, duration: video.duration || 0 });
     const onWaiting = () => usePlayer.setState({ buffering: true });
     const onPlaying = () => usePlayer.setState({ buffering: false });
+    // Sound tracks (dual audio): the ones the engine reports, named by language.
+    const onTracks = () => {
+      const tracks = audioTracksOf(video);
+      if (!tracks) return;
+      const audios = Array.from({ length: tracks.length }, (_, i) => tracks[i].label || tracks[i].language || `Track ${i + 1}`);
+      const on = Math.max(0, audios.findIndex((_, i) => tracks[i].enabled));
+      usePlayer.setState({ audios, audio: on });
+    };
     const onError = () =>
-      usePlayer.setState({
+      // A Mac can't open MKV: make this device a copy it plays (repackForMac), then play that.
+      void repackForMac(fileId).then((ok) => !ok && usePlayer.setState({
         error: isTauri
           ? 'This movie’s format can’t play here. MP4 (H.264) and WebM play everywhere; some MKV files don’t.'
           : isPhoneApp
             ? 'This movie’s format can’t play on this phone. Try an MP4 (H.264) copy.'
             : 'This browser can’t play this movie’s format. The Infimeety app plays more formats, or try an MP4 copy.',
-      });
+      }));
     video.addEventListener('loadedmetadata', tick);
+    video.addEventListener('loadedmetadata', onTracks);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('canplay', tick);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('durationchange', onTime);
@@ -311,7 +359,12 @@ function PartyPlayer({ roomId, url, subtitleId, chromeHidden }: { roomId: string
       clearTimeout(startTimer);
       off();
       attachPlayer(null);
+      if (stage === video) stage = null;
+      usePlayer.setState({ audios: [], audio: 0 });
       video.removeEventListener('loadedmetadata', tick);
+      video.removeEventListener('loadedmetadata', onTracks);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('canplay', tick);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('durationchange', onTime);
@@ -831,7 +884,15 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const subDelay = usePlayer((s) => s.subDelay);
   const subSize = usePlayer((s) => s.subSize);
   const embedded = useEmbedded((s) => s[party.file.id] ?? NO_EMBEDDED);
+  const audios = usePlayer((s) => s.audios);
+  const audio = usePlayer((s) => s.audio);
+  const mySub = usePlayer((s) => s.mySub);
+  const myTracks = useLocalTracks((s) => s[party.file.id] ?? NO_TRACKS);
   const ready = useParty((s) => s.copies[party.file.id]?.state === 'ready');
+  // This device's own MKV copy: its subtitle tracks, for the "just for you" menu.
+  useEffect(() => {
+    if (ready) void inspectCopy(party.file.id, party.file.name);
+  }, [ready, party.file.id, party.file.name]);
   const [menu, setMenu] = useState<Anchor | null>(null);
   const [, rerender] = useState(0);
 
@@ -930,9 +991,37 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
       </div>
 
       <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[250px] p-1.5">
+        {audios.length > 1 && (
+          <>
+            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Sound (just for you)</div>
+            {audios.map((label, i) => (
+              <MenuItem key={i} icon={audio === i ? <Check size={15} /> : <Volume2 size={15} />} onClick={() => (setMenu(null), pickAudio(i))}>
+                {label}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+          </>
+        )}
+        {myTracks.length > 0 && (
+          <>
+            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles (just for you)</div>
+            <MenuItem icon={mySub === null ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: null, captions: true }))}>
+              Same as everyone
+            </MenuItem>
+            {myTracks.map((t) => (
+              <MenuItem key={t.url} icon={mySub === t.url ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: t.url, captions: true }))}>
+                {t.label}
+              </MenuItem>
+            ))}
+            <MenuItem icon={mySub === 'off' ? <Check size={15} /> : <CaptionsOff size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: 'off' }))}>
+              Off
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        )}
         {control && embedded.length > 0 && (
           <>
-            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Built-in subtitles</div>
+            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles for everyone</div>
             {embedded.map((s) => (
               <MenuItem key={s.file.id} icon={party.subtitle?.id === s.file.id ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), chooseEmbeddedSubtitle(roomId, s.file))}>
                 {s.label}

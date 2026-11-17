@@ -14,14 +14,16 @@ pub fn ffmpeg() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
-/// Writes `output` (MP4): the first picture track copied, audio track `audio` as stereo AAC.
+/// Writes `output` (MP4): the first picture track copied, audio track `audio` (or every one, so
+/// dual-audio movies keep both) as stereo AAC. `hevc`: label HEVC video `hvc1`, which Macs need.
 /// `on_progress` hears 0 to 1 as it goes.
-pub fn to_aac(input: &Path, output: &Path, audio: u32, on_progress: &Channel<f64>) -> Result<(), String> {
+pub fn to_aac(input: &Path, output: &Path, audio: Option<u32>, hevc: bool, on_progress: &Channel<f64>) -> Result<(), String> {
     let ffmpeg = ffmpeg().ok_or("The converter isn't installed with this copy of Infimeety.")?;
     let mut cmd = Command::new(ffmpeg);
     cmd.args(["-hide_banner", "-nostdin", "-y", "-i"])
         .arg(input)
-        .args(["-map", "0:v:0?", "-map", &format!("0:a:{audio}"), "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2"])
+        .args(["-map", "0:v:0?", "-map", &audio.map_or("0:a?".to_string(), |a| format!("0:a:{a}")), "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ac", "2"])
+        .args(if hevc { &["-tag:v", "hvc1"][..] } else { &[][..] })
         .args(["-sn", "-dn", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats"])
         .arg(output)
         .stdin(Stdio::null())
