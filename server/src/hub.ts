@@ -18,6 +18,9 @@ interface RoomAccess {
   post: Role;
 }
 
+/** How long a dropped connection keeps its call seat (Peer below), waiting for its app to reconnect. */
+const HOLD_MS = 45_000;
+
 interface Peer {
   peerId: string;
   userId: string;
@@ -27,6 +30,8 @@ interface Peer {
   guest?: boolean;
   /** The app window this socket belongs to (apps from 0.5 on), and the app's version. */
   client?: string;
+  /** The app keeps its calls through a reconnect (0.8.3 on), so its seat can be held for it. */
+  resume?: boolean;
   /** When it connected, for spotting a connection that went silent. */
   at?: number;
   /** What this app says its person is playing. */
@@ -76,6 +81,12 @@ export class ChannelHub extends DurableObject<Env> {
   private rates = new Buckets();
   /** This channel's AI bots (Nova and the admins' own), loaded when first called on. */
   private botList: BotInfo[] | null = null;
+  /**
+   * Call seats kept after a connection dropped (not a clean close), by `user|client`: the
+   * same app window reconnecting within HOLD_MS gets its seat and peer id back, so nobody's
+   * call is torn down by a blip, like Google Meet. Saved, because hibernation drops memory.
+   */
+  private held = new Map<string, { peer: Peer; until: number }>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -83,6 +94,7 @@ export class ChannelHub extends DurableObject<Env> {
     ctx.blockConcurrencyWhile(async () => {
       this.mutedRooms = new Set((await ctx.storage.get<string[]>('mutedRooms')) ?? []);
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
+      this.held = new Map(Object.entries((await ctx.storage.get<Record<string, { peer: Peer; until: number }>>('held')) ?? {}));
       // Parties saved before lobbies and settings existed are already live, with the defaults.
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
       this.parties = new Map(
@@ -102,19 +114,42 @@ export class ChannelHub extends DurableObject<Env> {
     // The same app window reconnecting (after a network drop): its old socket may linger
     // unnoticed for a while, showing you twice. Replace that one only; your other windows and
     // devices keep their own connections.
-    if (clientId)
+    // It takes over that socket's call seat and peer id, so the people in the call keep their
+    // connection to it (the voice itself flows directly between apps and often survived).
+    // Only apps that keep their connections through it ask to resume (0.8.3 on); older ones
+    // rejoin as a new peer, as before.
+    const canResume = url.searchParams.get('resume') === '1';
+    let resumed: Peer | null = null;
+    if (clientId) {
       for (const old of this.sockets()) {
         const p = this.peer(old);
         if (p.userId !== info.userId || p.client !== clientId) continue;
+        if (canResume && p.voice && !resumed) resumed = p;
         // Out of the call first: a socket that is closing can linger in the list for a moment.
         if (p.voice) this.save(old, { ...p, voice: null });
         old.close(4005, 'Replaced by a newer connection');
-        this.dropped(old);
+        this.dropped(old, canResume);
       }
+      const key = `${info.userId}|${clientId}`;
+      const hold = this.held.get(key);
+      if (hold) {
+        if (canResume && !resumed && hold.until > Date.now()) resumed = hold.peer;
+        this.held.delete(key);
+        void this.saveHeld();
+      }
+    }
 
     const [client, server] = Object.values(new WebSocketPair());
     this.sweep();
-    const peer: Peer = { ...info, peerId: newId().slice(-12), voice: null, client: clientId, version, at: Date.now() };
+    const peer: Peer = {
+      ...info,
+      peerId: resumed?.peerId ?? newId().slice(-12),
+      voice: resumed?.voice ?? null,
+      client: clientId,
+      resume: canResume || undefined,
+      version,
+      at: Date.now(),
+    };
     const wasOnline = this.sockets().some((s) => this.peer(s).userId === peer.userId);
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
@@ -217,6 +252,7 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   async alarm() {
+    await this.expireHeld();
     const m = this.meeting;
     if (!m) return;
     const now = Date.now();
@@ -283,6 +319,7 @@ export class ChannelHub extends DurableObject<Env> {
     if (!msg || typeof msg !== 'object') return;
     if (!this.rates.take(me.peerId, rateOf(msg.t))) {
       if (msg.t === 'chat.send') this.send(ws, { t: 'error', message: 'You’re sending messages too fast. Wait a moment.' });
+      if (msg.t === 'sound.play') this.send(ws, { t: 'sound.blocked', reason: 'slow' });
       return;
     }
 
@@ -315,6 +352,8 @@ export class ChannelHub extends DurableObject<Env> {
           this.save(other, { ...p, voice: null });
           this.send(other, { t: 'voice.kicked', reason: 'elsewhere' });
         }
+        // A seat held from a dropped connection is replaced by this one.
+        this.dropHeld(me.userId);
         const s = msg.state ?? {};
         const mutedUntil = (await this.penaltiesOf(me.userId)).voice;
         this.save(ws, {
@@ -341,6 +380,7 @@ export class ChannelHub extends DurableObject<Env> {
       case 'voice.leave':
         if (!me.voice) return;
         this.save(ws, { ...me, voice: null });
+        this.dropHeld(me.userId);
         return this.broadcastVoice();
       case 'voice.update': {
         if (!me.voice) return;
@@ -519,6 +559,8 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
+    // 1000/1001: the app closed it on purpose. Anything else is the network.
+    if (code !== 1000 && code !== 1001) await this.hold(ws);
     this.dropped(ws);
     try {
       ws.close(code, reason);
@@ -528,6 +570,7 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   async webSocketError(ws: WebSocket) {
+    await this.hold(ws);
     this.dropped(ws);
   }
 
@@ -1081,8 +1124,9 @@ export class ChannelHub extends DurableObject<Env> {
   private voiceSnapshot(exceptUser?: string, exceptSocket?: WebSocket): VoiceSnapshot {
     const participants: VoiceParticipant[] = [];
     const seen = new Map<string, number>();
-    for (const s of this.sockets(exceptSocket)) {
-      const p = this.peer(s);
+    const now = Date.now();
+    const heldPeers = [...this.held.values()].filter((h) => h.until > now).map((h) => h.peer);
+    for (const p of [...this.sockets(exceptSocket).map((s) => this.peer(s)), ...heldPeers]) {
       if (!p.voice || p.userId === exceptUser) continue;
       const { forceMuted, ...v } = p.voice;
       const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
@@ -1114,7 +1158,44 @@ export class ChannelHub extends DurableObject<Env> {
     if (this.meeting) this.meetingCallChanged(exceptSocket).catch((err) => console.error('meeting check failed', err));
   }
 
-  private dropped(ws: WebSocket) {
+  /** Keeps a dropped connection's call seat for HOLD_MS, in case its window reconnects. */
+  private async hold(ws: WebSocket) {
+    const me = this.peer(ws);
+    if (!me.voice || !me.client || !me.resume) return;
+    // Already taken over by a newer socket of the same window: nothing to hold.
+    if (this.sockets(ws).some((s) => this.peer(s).userId === me.userId && this.peer(s).client === me.client)) return;
+    const until = Date.now() + HOLD_MS;
+    this.held.set(`${me.userId}|${me.client}`, { peer: me, until });
+    this.save(ws, { ...me, voice: null });
+    await this.saveHeld();
+    const alarm = await this.ctx.storage.getAlarm();
+    if (!alarm || alarm > until) await this.ctx.storage.setAlarm(until + 50);
+  }
+
+  private async expireHeld() {
+    const now = Date.now();
+    let gone = false;
+    for (const [key, h] of this.held) if (h.until <= now) (this.held.delete(key), (gone = true));
+    if (gone) {
+      await this.saveHeld();
+      this.broadcastVoice();
+    }
+    const next = Math.min(...[...this.held.values()].map((h) => h.until));
+    if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next + 50);
+    else if (this.meeting) await this.scheduleCheck();
+  }
+
+  private dropHeld(userId: string) {
+    let changed = false;
+    for (const [key, h] of this.held) if (h.peer.userId === userId) (this.held.delete(key), (changed = true));
+    if (changed) void this.saveHeld();
+  }
+
+  private saveHeld() {
+    return this.ctx.storage.put('held', Object.fromEntries(this.held));
+  }
+
+  private dropped(ws: WebSocket, replaced = false) {
     const me = this.peer(ws);
     this.rates.forget(me.peerId);
     const stillOnline = this.sockets(ws).some((s) => this.peer(s).userId === me.userId);
@@ -1122,7 +1203,8 @@ export class ChannelHub extends DurableObject<Env> {
     // Gone from here: so is what they were playing (another of their apps may still say).
     else if (me.activity) this.broadcast({ t: 'activity', userId: me.userId, activity: this.activityOf(me.userId, ws) }, ws);
     if (!stillOnline && me.activity) this.broadcast({ t: 'activity', userId: me.userId, activity: null }, ws);
-    if (me.voice) this.broadcastVoice(ws);
+    // A replaced socket's seat moves to its successor: nobody needs to hear about it.
+    if (me.voice && !replaced) this.broadcastVoice(ws);
   }
 
   private send(ws: WebSocket, msg: ServerMsg) {

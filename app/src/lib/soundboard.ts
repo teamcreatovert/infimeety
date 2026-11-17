@@ -31,12 +31,12 @@ function burst(name: string, who: string) {
   setTimeout(() => useSoundBursts.setState((s) => ({ bursts: s.bursts.filter((b) => b.id !== id) })), 2200);
 }
 
-/** Same allowance as the server (4 at once, then one every 2 s), so you never hear a sound nobody else did. */
-let tokens = 4;
+/** A few at once, then one a second. The server allows more, so a sound you hear always reaches everyone. */
+let tokens = 5;
 let refilled = Date.now();
 function takeToken() {
   const now = Date.now();
-  tokens = Math.min(4, tokens + ((now - refilled) / 1000) * 0.5);
+  tokens = Math.min(5, tokens + (now - refilled) / 1000);
   refilled = now;
   if (tokens < 1) return false;
   tokens -= 1;
@@ -134,7 +134,7 @@ export function playSound(id: string) {
   if (!featureOn('soundboard')) return toast({ kind: 'info', title: 'The soundboard is paused', body: 'It’s back soon.' });
   if (vs.serverMuted) return toast({ kind: 'info', title: 'An admin muted you', body: 'Your sounds don’t play while you’re muted.' });
   if ((usePenalties.getState()[vs.channelId]?.voiceUntil ?? 0) > Date.now()) return toast({ kind: 'info', title: 'A fun rule muted you', body: 'Your sounds play again once it’s over.' });
-  if (!takeToken()) return toast({ kind: 'info', title: 'Easy there', body: 'A few sounds at a time, then one every couple of seconds.' });
+  if (!takeToken()) return toast({ kind: 'info', title: 'Easy there', body: 'A few sounds at a time, then one a second.' });
   const sound: SoundRef = { kind: 'pack', id };
   getHub(vs.channelId)?.send({ t: 'sound.play', sound });
   void render(id, useAuth.getState().me?.id ?? '', true);
@@ -149,10 +149,14 @@ export function stopMySound() {
 }
 
 /** The server didn't play your sound for anyone: don't let you think it did. */
-export function onSoundBlocked() {
+export function onSoundBlocked(reason?: 'slow') {
   stopOf(useAuth.getState().me?.id ?? '');
   useMySound.setState({ id: null, name: '', emoji: undefined });
-  toast({ kind: 'info', title: 'Your sound didn’t play', body: 'You’re muted right now, so nobody hears your sounds.' });
+  toast(
+    reason === 'slow'
+      ? { kind: 'info', title: 'Easy there', body: 'That sound didn’t play for anyone. A few at a time, then one a second.' }
+      : { kind: 'info', title: 'Your sound didn’t play', body: 'You’re muted right now, so nobody hears your sounds.' },
+  );
 }
 
 /** Someone stopped their sound. */

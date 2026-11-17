@@ -50,8 +50,8 @@ export function tuneSdp(sdp: string, remoteSdp: string | undefined, isStereoStre
       out = out.replace(new RegExp(`a=fmtp:${pt} ([^\\r\\n]*)`), (_line, params: string) =>
         `a=fmtp:${pt} ${
           stereo
-            ? setFmtp(params, { stereo: '1', 'sprop-stereo': '1', maxaveragebitrate: '192000' }, ['usedtx'])
-            : setFmtp(params, { usedtx: '1', maxaveragebitrate: String(VOICE_BITRATE) }, ['stereo', 'sprop-stereo'])
+            ? setFmtp(params, { stereo: '1', 'sprop-stereo': '1', maxaveragebitrate: '192000', useinbandfec: '1' }, ['usedtx'])
+            : setFmtp(params, { usedtx: '1', useinbandfec: '1', maxaveragebitrate: String(VOICE_BITRATE) }, ['stereo', 'sprop-stereo'])
         }`,
       );
     }

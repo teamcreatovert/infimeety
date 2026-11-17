@@ -169,7 +169,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
     case 'sound.stop':
       return onSoundStop(msg.userId);
     case 'sound.blocked':
-      return onSoundBlocked();
+      return onSoundBlocked(msg.reason);
     case 'activity':
       return setActivity(msg.userId, msg.activity);
     case 'music.denied':

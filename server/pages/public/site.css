@@ -108,3 +108,15 @@ h2.section-title { margin: 14px 0 12px; font-size: clamp(30px, 4vw, 48px); line-
 .footer a:hover { color: var(--fg); }
 .footer .spacer { flex: 1; }
 .footer .by { margin-left: -4px; font-weight: 500; font-size: 13.5px; letter-spacing: 0; color: var(--fg3); }
+
+/* The one-line Mac install command: one click selects all of it. */
+.cmd {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.14);
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  user-select: all;
+  word-break: break-all;
+}

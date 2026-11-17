@@ -49,7 +49,7 @@ export class HubClient {
   private connect() {
     const token = getToken();
     if (!token || this.closed) return;
-    const ws = new WebSocket(`${WS_URL}/channels/${this.channelId}/ws?v=${APP_VERSION}&client=${clientId}`, ['infimeety', token]);
+    const ws = new WebSocket(`${WS_URL}/channels/${this.channelId}/ws?v=${APP_VERSION}&client=${clientId}&resume=1`, ['infimeety', token]);
     this.ws = ws;
     this.setStatus('connecting');
 

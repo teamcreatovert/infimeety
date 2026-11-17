@@ -120,6 +120,8 @@ class VoiceEngine {
   private unsubSettings: (() => void) | null = null;
   private unsubUI: (() => void) | null = null;
   private myJoinedAt = 0;
+  /** Our peer id when we joined: the same one after a reconnect means the server kept our seat. */
+  private lastPeerId: string | null = null;
   /**
    * Set once the mic is open. Until then the hub's snapshots and offers are ignored: a peer
    * made before the mic exists would never carry it, and that person would talk to nobody.
@@ -156,6 +158,7 @@ class VoiceEngine {
     this.live = true;
     // Dropped while the hub is still connecting; onWelcome sends it once it's up.
     hub.send({ t: 'voice.join', roomId, state: this.localState() });
+    this.lastPeerId = hub.peerId;
     useVoice.setState({ status: 'connected' });
     sounds.join();
     this.startMeter();
@@ -231,9 +234,20 @@ class VoiceEngine {
     if (!vs.roomId || vs.channelId !== hub.channelId) return;
     this.hub = hub;
     if (!this.live) return; // join() announces us once the mic is open
+    // The server kept our seat through a network blip (same peer id): keep every connection,
+    // re-send our state, and nudge the links that stalled while we were away. Like Google Meet.
+    if (hub.peerId && hub.peerId === this.lastPeerId) {
+      hub.send({ t: 'voice.update', state: this.localState() });
+      for (const peer of this.peers.values()) {
+        const ice = peer.pc.iceConnectionState;
+        if (ice === 'disconnected' || ice === 'failed') peer.pc.restartIce();
+      }
+      return;
+    }
     for (const id of [...this.peers.keys()]) this.closePeer(id);
     this.participants.clear();
     hub.send({ t: 'voice.join', roomId: vs.roomId, state: this.localState() });
+    this.lastPeerId = hub.peerId;
   }
 
   onSnapshot(channelId: string, snap: VoiceSnapshot) {

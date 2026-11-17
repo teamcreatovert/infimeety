@@ -427,7 +427,7 @@ export type ServerMsg =
   /** Your music share was turned down (not an admin or moderator, or someone else is sharing). */
   | { t: 'music.denied'; message: string }
   /** Your sound didn't play for anyone (you're muted): stop it on your side too. */
-  | { t: 'sound.blocked' }
+  | { t: 'sound.blocked'; reason?: 'slow' }
   | { t: 'media.request'; from: string; fromUser: string; attachmentId: string; reqId: string; lanes?: number }
   | { t: 'media.offline'; reqId: string }
   | { t: 'media.revoked'; ownerId: string; attachmentIds: string[] }

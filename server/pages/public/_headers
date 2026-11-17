@@ -31,3 +31,16 @@
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 /privacy.html
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+# One-line installers: plain text, so PowerShell's irm and curl read them as scripts.
+/install.ps1
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/install-mac.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/install-linux.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300

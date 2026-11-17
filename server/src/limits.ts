@@ -34,7 +34,9 @@ export const SOCKET_RATES = {
   media: [60, 5],
   party: [30, 6],
   voice: [40, 8],
-  sound: [4, 0.5],
+  // Looser than the app's own limit (lib/soundboard.ts), so network delay never drops a sound
+  // the app let through: the sender would hear it and nobody else.
+  sound: [10, 2],
   other: [60, 10],
 } as const satisfies Record<string, readonly [number, number]>;
 

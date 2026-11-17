@@ -300,6 +300,14 @@
             </div>
             <p>The full experience: fastest copies, your computer’s sound in screen shares, and a small overlay showing who’s talking. Updates itself.</p>
             <div class="row"><a class="btn primary" id="dl-windows" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety-Setup.exe">Download for Windows</a></div>
+            <details id="win-install">
+              <summary>Or install with one line</summary>
+              <ol>
+                <li>Open <b>PowerShell</b> (Start menu, type PowerShell, press Enter).</li>
+                <li>Paste this and press Enter:<br /><code class="cmd">irm https://infimeety.pages.dev/install.ps1 | iex</code></li>
+                <li>Infimeety installs and opens. It’s in your Start menu and updates itself.</li>
+              </ol>
+            </details>
           </div>
           <!-- Shown by download.js once the latest release has the Mac app. -->
           <div class="plat reveal" id="p-mac" hidden>
@@ -309,8 +317,16 @@
             </div>
             <p>One download for every Mac. Watch parties, fast copies and screen sharing, and it updates itself.</p>
             <div class="row"><a class="btn primary" id="dl-mac" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.dmg">Download for Mac</a></div>
+            <details id="mac-install" open>
+              <summary>Easiest: install with one line</summary>
+              <ol>
+                <li>Open <b>Terminal</b> (press Command-Space, type Terminal, press Return).</li>
+                <li>Paste this and press Return:<br /><code class="cmd">curl -fsSL https://infimeety.pages.dev/install-mac.sh | bash</code></li>
+                <li>Infimeety opens by itself. It’s in your Applications folder, stays installed and updates itself.</li>
+              </ol>
+            </details>
             <details id="mac-help">
-              <summary>Opening it for the first time</summary>
+              <summary>Or install the download yourself</summary>
               <ol>
                 <li>Open the downloaded file and drag Infimeety into Applications.</li>
                 <li>Open Infimeety from Applications. If macOS says it can’t check the app, open <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. (On older macOS, Control-click the app and choose <b>Open</b>.)</li>
@@ -326,8 +342,15 @@
             </div>
             <p>An AppImage that runs on most distributions and updates itself, or a .deb for Ubuntu and Debian.</p>
             <div class="row"><a class="btn primary" id="dl-linux" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.AppImage">Download AppImage</a><a class="btn" href="https://github.com/teamcreatovert/infimeety/releases/latest/download/Infimeety.deb">.deb</a></div>
+            <details id="linux-install" open>
+              <summary>Easiest: install with one line</summary>
+              <ol>
+                <li>Open a terminal and paste this:<br /><code class="cmd">curl -fsSL https://infimeety.pages.dev/install-linux.sh | bash</code></li>
+                <li>Infimeety opens and appears in your app menu. It stays installed and updates itself.</li>
+              </ol>
+            </details>
             <details id="linux-help">
-              <summary>Opening the AppImage</summary>
+              <summary>Or open the AppImage yourself</summary>
               <ol><li>Right-click the downloaded file, choose <b>Properties → Permissions</b> and allow it to run as a program (or run <code>chmod +x Infimeety.AppImage</code>).</li><li>Double-click it to open Infimeety. It keeps itself up to date.</li></ol>
             </details>
           </div>
