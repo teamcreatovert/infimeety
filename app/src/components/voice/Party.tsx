@@ -1000,7 +1000,7 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const asks = control ? '' : ' (asks the host)';
 
   return (
-    <div className="absolute inset-x-0 bottom-[var(--dock-space)] z-20 bg-gradient-to-t transition-[bottom] duration-200 from-black/80 via-black/45 to-transparent px-5 pb-3 pt-10 text-white compact:px-3 compact:pb-2 compact:pt-8">
+    <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-5 pb-[calc(var(--dock-space)+12px)] pt-10 text-white compact:px-3 compact:pb-[calc(var(--dock-space)+8px)] compact:pt-8">
       <SeekBar position={position} duration={length} onSeek={seek} />
       <div className="mt-1.5 flex items-center gap-1 compact:gap-0.5">
         <Control label={`Start over${asks}`} onClick={() => seek(0)} className="compact:hidden">
