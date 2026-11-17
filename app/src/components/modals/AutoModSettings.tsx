@@ -2,7 +2,7 @@ import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DEFAULT_AUTOMOD, type AutoModRules, type AutoModTrigger, type Room, type TriggerAction } from '../../../../shared/protocol';
 import { Button, Group, Row, Select, Switch } from '../ui/primitives';
-import { api } from '@/lib/api';
+import { api, randomId } from '@/lib/api';
 import { toast } from '@/stores/ui';
 
 const MENTION_LIMITS = ['0', '3', '5', '10', '20'] as const;
@@ -145,7 +145,7 @@ function NewTrigger({ disabled, voiceRooms, onAdd }: { disabled: boolean; voiceR
   const ready = list(words).length > 0 && (action !== 'move' || !!roomId);
 
   const add = () => {
-    onAdd({ id: crypto.randomUUID().slice(0, 8), words: list(words).map((w) => w.toLowerCase()), action, seconds: Number(seconds), ...(action === 'move' ? { roomId } : {}), ...(everyone ? { everyone } : {}) });
+    onAdd({ id: randomId(6).slice(0, 8), words: list(words).map((w) => w.toLowerCase()), action, seconds: Number(seconds), ...(action === 'move' ? { roomId } : {}), ...(everyone ? { everyone } : {}) });
     setWords('');
   };
 

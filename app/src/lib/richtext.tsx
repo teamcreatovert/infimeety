@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 import { openExternal } from './platform';
 
+// No lookbehind ("not after a letter") in here: Safari before 16.4 can't even load a script that
+// has one, which left the Mac app blank. renderRich checks the character before instead.
 const TOKEN =
-  /(```[\s\S]+?```|`[^`\n]+`|\*\*[^*\n]+\*\*|~~[^~\n]+~~|(?<![\w*])\*[^*\n]+\*(?![\w*])|(?<![\w])_[^_\n]+_(?![\w])|https?:\/\/[^\s<]+[^\s<.,:;"')\]!?]|(?<![\w])@[a-z0-9_.]{3,24})/gi;
+  /(```[\s\S]+?```|`[^`\n]+`|\*\*[^*\n]+\*\*|~~[^~\n]+~~|\*[^*\n]+\*(?![\w*])|_[^_\n]+_(?![\w])|https?:\/\/[^\s<]+[^\s<.,:;"')\]!?]|@[a-z0-9_.]{3,24})/gi;
 
 /** Safe, tiny markdown subset: code, bold, italic, strike, links and @mentions. No HTML injection. */
 export function renderRich(text: string, myUsername?: string | null): ReactNode[] {
@@ -12,6 +14,10 @@ export function renderRich(text: string, myUsername?: string | null): ReactNode[
   for (const m of text.matchAll(TOKEN)) {
     const t = m[0];
     const at = m.index ?? 0;
+    // Italics and @mentions only start a word: "snake_case_name" and "me@mail" stay plain text.
+    const before = text[at - 1] ?? '';
+    const single = /^[*_@]/.test(t) && !t.startsWith('**');
+    if (single && (/\w/.test(before) || (t[0] === '*' && before === '*'))) continue;
     if (at > last) out.push(text.slice(last, at));
     last = at + t.length;
     const k = key++;

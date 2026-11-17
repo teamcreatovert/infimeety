@@ -43,7 +43,8 @@ export default defineConfig({
   },
   envPrefix: ['VITE_', 'TAURI_ENV_'],
   build: {
-    target: 'chrome110',
+    // Windows runs a Chromium engine; Macs run WebKit (Safari 14 on macOS 10.15 and up): code for both.
+    target: ['chrome110', 'safari14'],
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     chunkSizeWarningLimit: 1200,
     rollupOptions: {

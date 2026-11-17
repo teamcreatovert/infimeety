@@ -71,6 +71,8 @@ export function isJumboEmoji(text: string) {
   if (!t || t.length > 24) return false;
   const stripped = t.replace(/\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️|\s/gu, '');
   if (stripped.length) return false;
-  const count = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].filter((s) => s.segment.trim()).length;
+  // Safari before 14.1 has no Segmenter: count code points there (close enough for a few emoji).
+  const parts = typeof Intl.Segmenter === 'function' ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(t)].map((s) => s.segment) : [...t];
+  const count = parts.filter((s) => s.trim()).length;
   return count > 0 && count <= 3;
 }

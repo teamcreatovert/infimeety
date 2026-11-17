@@ -1,5 +1,5 @@
 import type { ClientMsg, ServerMsg } from '../../../shared/protocol';
-import { getToken } from './api';
+import { getToken, randomId } from './api';
 import { APP_VERSION, WS_URL } from '@/config';
 
 export type HubStatus = 'connecting' | 'open' | 'closed';
@@ -13,11 +13,11 @@ const clientId = (() => {
   try {
     const saved = sessionStorage.getItem(key);
     if (saved) return saved;
-    const id = crypto.randomUUID();
+    const id = randomId();
     sessionStorage.setItem(key, id);
     return id;
   } catch {
-    return crypto.randomUUID();
+    return randomId();
   }
 })();
 
