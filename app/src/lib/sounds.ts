@@ -60,6 +60,8 @@ export const sounds = {
   shareStart: () => play([{ freq: C5, dur: 0.12, gain: 0.5 }, { freq: E5, at: 0.06, dur: 0.14, gain: 0.5 }, { freq: G5, at: 0.12, dur: 0.24, gain: 0.5 }]),
   shareStop: () => play([{ freq: G5, dur: 0.1, gain: 0.45 }, { freq: E5, at: 0.06, dur: 0.12, gain: 0.45 }, { freq: C5, at: 0.12, dur: 0.22, gain: 0.45 }]),
   error: () => play([{ freq: E4, dur: 0.14, type: 'triangle', gain: 0.5 }, { freq: G4 * 0.75, at: 0.1, dur: 0.2, type: 'triangle', gain: 0.45 }]),
+  /** Someone in the call raised their hand. */
+  hand: () => play([{ freq: C6, dur: 0.09, type: 'triangle', gain: 0.32 }, { freq: G5, at: 0.08, dur: 0.09, type: 'triangle', gain: 0.28 }, { freq: C6, at: 0.16, dur: 0.16, type: 'triangle', gain: 0.3 }]),
   pop: () => play([{ freq: 880, dur: 0.06, glide: 1320, gain: 0.25 }]),
   /** What the caller hears while it rings on the other end; repeat it every ~3 s. */
   ringback: () => play([{ freq: G4, dur: 0.38, gain: 0.22 }, { freq: G4, at: 0.5, dur: 0.38, gain: 0.22 }]),

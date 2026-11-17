@@ -8,6 +8,7 @@ import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
 import { SCREEN_PRESETS, useSettings } from '@/stores/settings';
 import { toast, useUI } from '@/stores/ui';
+import { useChannels } from '@/stores/channels';
 import { useVoice } from '@/stores/voice';
 import { confirmCallSwitch } from './callSwitch';
 import { denoise, resumeDenoise, voiceFilter, type Denoised } from './denoise';
@@ -273,6 +274,11 @@ class VoiceEngine {
     const present = new Set(others.map((p) => p.peerId));
     for (const p of others) {
       const isNew = !this.participants.has(p.peerId);
+      // A hand going up gets a soft chime and a note, like a meeting.
+      if (p.hand && !isNew && !this.participants.get(p.peerId)?.hand) {
+        sounds.hand();
+        toast({ kind: 'info', title: `${useChannels.getState().users[p.userId]?.name ?? 'Someone'} raised their hand` });
+      }
       this.participants.set(p.peerId, p);
       if (!this.peers.has(p.peerId)) this.createPeer(p.peerId);
       if (isNew && p.joinedAt > this.myJoinedAt) sounds.peerJoin();
