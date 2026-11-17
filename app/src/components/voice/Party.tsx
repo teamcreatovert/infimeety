@@ -206,7 +206,7 @@ function Countdown({ party }: { party: PartyState }) {
     const t = setInterval(tick, 100);
     return () => clearInterval(t);
   }, [party.playing, party.at]);
-  // Ordinary plays are scheduled ~0.4 s ahead; only a real start counts down.
+  // A start, and every play after a pause, is 3 s ahead: count it down. Seeks while playing (0.4 s) don't.
   if (left < 700) return null;
   return (
     <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-black/35">

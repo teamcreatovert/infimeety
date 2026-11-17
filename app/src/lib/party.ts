@@ -34,6 +34,8 @@ import { useVoice } from '@/stores/voice';
 export const OPEN_LIMIT = 3;
 /** How far ahead a play is scheduled, so it reaches everyone before it starts. */
 const LEAD_MS = 400;
+/** Play after a pause: 3, 2, 1 (the player's countdown), while every copy lines up on the same frame. */
+const PLAY_LEAD_MS = 3000;
 
 export interface PartyRequest {
   id: string;
@@ -201,7 +203,7 @@ function holdForLoading(roomId: string) {
   } else if (since !== undefined && !party.playing && (!loading || Date.now() - since > HOLD_MAX)) {
     holds.delete(roomId);
     // A moment ahead, so every copy is on the frame when it starts.
-    set(roomId, { playing: true, position: party.position, at: serverNow() + 1000 });
+    set(roomId, { playing: true, position: party.position, at: serverNow() + PLAY_LEAD_MS });
   }
 }
 setInterval(() => holds.forEach((_, roomId) => holdForLoading(roomId)), 1000);
@@ -591,7 +593,7 @@ export function apply(roomId: string, action: PartyAction, resolves?: string) {
   if (!party) return;
   const now = serverNow();
   if (action.kind === 'pause') return set(roomId, { playing: false, position: currentPosition(party), at: now }, resolves);
-  if (action.kind === 'play') return set(roomId, { playing: true, position: action.position ?? currentPosition(party), at: now + LEAD_MS }, resolves);
+  if (action.kind === 'play') return set(roomId, { playing: true, position: action.position ?? currentPosition(party), at: now + (party.playing ? LEAD_MS : PLAY_LEAD_MS) }, resolves);
   const position = Math.max(0, action.position);
   set(roomId, { position, at: party.playing ? now + LEAD_MS : now }, resolves);
 }
