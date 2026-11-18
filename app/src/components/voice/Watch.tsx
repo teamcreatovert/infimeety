@@ -108,7 +108,7 @@ export function WatchStage(props: Props) {
     >
       {solid && <Header {...props} effective={effective} solid />}
       <div className="relative min-h-0 flex-1">
-        {effective === 'cinema' ? <Cinema media={media} controls={controls} seats={props.seats} idle={idle} /> : media}
+        {effective === 'cinema' ? <Cinema media={media} controls={controls} seats={props.seats} idle={idle} rows={props.people.length > 1 ? 2 : 1} /> : media}
         {!solid && <Header {...props} effective={effective} />}
         {overlay}
         {effective !== 'cinema' && controls && <Chrome idle={idle}>{controls}</Chrome>}
@@ -517,7 +517,7 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
  * Cinema: the picture on a big flat screen in a dark room, a soft glow spilling from it, and
  * everyone in their seats below.
  */
-function Cinema({ media, controls, seats, idle }: { media: ReactNode; controls?: ReactNode; seats?: ReactNode; idle: boolean }) {
+function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; controls?: ReactNode; seats?: ReactNode; idle: boolean; rows: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -528,7 +528,8 @@ function Cinema({ media, controls, seats, idle }: { media: ReactNode; controls?:
     return () => ro.disconnect();
   }, []);
   const top = 20;
-  const seatsHeight = 132;
+  // Room for the seats: one row, or two staggered (the website's own view can't sit under them).
+  const seatsHeight = rows > 1 ? 178 : 112;
   const dock = 88;
   const room = Math.max(120, box.h - top - seatsHeight - dock - 8);
   let w = box.w * 0.88;
