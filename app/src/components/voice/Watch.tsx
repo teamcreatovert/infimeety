@@ -509,6 +509,7 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
   return (
     <>
       <motion.button
+        data-avoid-web
         aria-label={open ? 'Close chat' : 'Open chat'}
         onClick={() => setOpen(!open)}
         animate={{ opacity: idle && !open && !unread ? 0 : 1 }}
@@ -526,6 +527,7 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
       <AnimatePresence>
         {open && (
           <motion.div
+            data-avoid-web
             initial={{ opacity: 0, y: 12, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98, transition: { duration: 0.14 } }}

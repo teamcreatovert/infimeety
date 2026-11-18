@@ -162,6 +162,8 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
       const r = el.getBoundingClientRect();
       let top = r.top;
       let bottom = r.bottom;
+      let left = r.left;
+      let right = r.right;
       // The app's bars (the call bar, the header in full screen) and open panels: the movie makes
       // room for them, since nothing of the app can draw over a website.
       // Where each bar rests, not where it is mid-slide (they glide in and out on hover): the room
@@ -174,15 +176,23 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
         })
         .filter((b) => b.width > 0 && b.height > 0);
       for (const p of [...Object.values(usePopoverRects.getState().rects), ...bars]) {
-        if (p.right <= r.left || p.left >= r.right || p.bottom <= top || p.top >= bottom) continue;
-        if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
+        if (p.right <= left || p.left >= right || p.bottom <= top || p.top >= bottom) continue;
+        // A tall panel (the chat beside a full screen movie) takes a side; a wide bar, the top or bottom.
+        if (p.bottom - p.top > p.right - p.left) {
+          if (p.left > (r.left + r.right) / 2) right = Math.min(right, p.left - 6);
+          else left = Math.max(left, p.right + 6);
+        } else if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
         else top = Math.max(top, p.bottom + 6);
       }
       // Smaller, the screen keeps its shape and stays centred (it steps back while a panel is open).
-      const height = Math.max(1, bottom - top);
-      const width = height < r.height ? (r.width * height) / r.height : r.width;
+      // Smaller, it keeps the screen's shape, centred in the room left for it.
+      const scale = Math.min(1, Math.max(1, bottom - top) / r.height, Math.max(1, right - left) / r.width);
+      const width = r.width * scale;
+      const height = r.height * scale;
+      const x = left + (right - left - width) / 2;
+      const y = top + (bottom - top - height) / 2;
       // Whole pixels, and only when something really changed: no resizing from tiny wobbles.
-      const next = { x: Math.round(r.left + (r.width - width) / 2), y: Math.round(top), width: Math.round(width), height: Math.round(height) };
+      const next = { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
       const key = `${next.x},${next.y},${next.width},${next.height}`;
       if (key === sent) return;
       sent = key;
@@ -226,18 +236,22 @@ export function CinemaSeats({ people, speakingOf, myPeer, vertical }: { people: 
     const mine = reactions.filter((r) => r.userId === p.userId);
     return (
       <div key={p.peerId} className={clsx('relative flex flex-col items-center', far ? 'w-[64px]' : 'w-[76px]')}>
-        {/* Their reactions rise from the seat. */}
-        <div className="pointer-events-none absolute bottom-full left-1/2 h-0 w-0">
+        {/* Their reactions pop up beside the seat: up into the screen they'd vanish behind a website. */}
+        <div className={clsx('pointer-events-none absolute z-10', vertical ? 'bottom-[calc(100%-6px)] left-1/2' : 'left-[calc(50%+18px)] top-[-6px]')}>
           <AnimatePresence>
             {mine.map((r) => (
               <motion.div
                 key={r.id}
-                initial={{ opacity: 0, y: 0, scale: 0.6 }}
-                animate={{ opacity: [0, 1, 1, 0], y: -160, scale: [0.6, 1.1, 1, 1] }}
-                transition={{ duration: 2.8, ease: 'easeOut', times: [0, 0.12, 0.75, 1] }}
-                className="absolute -translate-x-1/2"
+                initial={{ opacity: 0, y: 6, scale: 0.4 }}
+                animate={{ opacity: [0, 1, 1, 0], y: [6, -8, -12, -18], scale: [0.4, 1.15, 1, 0.95] }}
+                transition={{ duration: 2.6, ease: 'easeOut', times: [0, 0.15, 0.8, 1] }}
+                className={clsx('absolute', vertical && '-translate-x-1/2')}
               >
-                {r.gif ? <img src={`https://media.giphy.com/media/${r.gif}/200.webp`} alt="" className="h-[90px] max-w-[160px] rounded-[12px] object-cover shadow-lg" /> : <span className="emoji text-[34px]">{r.emoji}</span>}
+                {r.gif ? (
+                  <img src={`https://media.giphy.com/media/${r.gif}/200.webp`} alt="" className={clsx('rounded-[10px] object-cover shadow-lg', vertical ? 'h-[56px] max-w-[96px]' : 'h-[64px] max-w-[110px]')} />
+                ) : (
+                  <span className="emoji text-[30px] drop-shadow-[0_3px_8px_rgba(0,0,0,0.5)]">{r.emoji}</span>
+                )}
               </motion.div>
             ))}
           </AnimatePresence>
