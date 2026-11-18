@@ -41,7 +41,10 @@ interface UIState {
   /** Watch mode's layout when not full screen. */
   watchLayout: 'theater' | 'mini';
   /** Showing the room's watch party (rather than the call grid) while one runs. */
-  partyView: boolean;
+  /** The voice room whose activity lobby fills the window (a watch party), if any. */
+  lobby: string | null;
+  /** How the lobby shows the movie: a cinema with seats, a theater with the side panel, or mini. */
+  lobbyLayout: 'cinema' | 'theater' | 'mini';
   /** Watch mode folds the channel list away (desktop); a button brings it back. */
   navCollapsed: boolean;
   /** The call's side panel tab. */
@@ -82,7 +85,8 @@ export const useUI = create<UIState>()((set) => ({
   tab: 'home',
   browserOpen: false,
   watchLayout: 'theater',
-  partyView: true,
+  lobby: null,
+  lobbyLayout: 'cinema',
   navCollapsed: false,
   sideTab: 'chat',
   partyPlanner: null,

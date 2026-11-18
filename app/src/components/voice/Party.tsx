@@ -34,7 +34,8 @@ import { create } from 'zustand';
 import { partyRules, type Channel, type PartyAction, type PartyState, type Room, type VoiceParticipant } from '../../../../shared/protocol';
 import { pace } from '../chat/AttachmentView';
 import { Avatar } from '../ui/Avatar';
-import { WebCard, WebStart } from './WebWatch';
+import { LobbyCard } from './Lobby';
+import { WebCard } from './WebWatch';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Slider, Spinner } from '../ui/primitives';
 import { DOWNLOAD_PAGE } from '@/config';
@@ -704,28 +705,14 @@ function StartButton({ roomId, party, people, size, onStage, className }: { room
 /** The Watch party tab: plan one, or everything about getting ready for the one that's on. */
 export function PartyPanel({ channel, room }: { channel: Channel; room: Room }) {
   const party = useParty((s) => s.parties[room.id]);
-  // A website watched together shows first (a movie party can still be planned after it ends).
   const web = useWeb((s) => !!s.webs[room.id]);
+  const inLobby = useUI((s) => s.lobby === room.id);
+  // Outside the lobby: start or join it. Inside: what's playing, and who's along.
+  if (!inLobby) return <LobbyCard channel={channel} room={room} />;
   if (web) return <WebCard channel={channel} roomId={room.id} />;
-  return party ? <PartyDetails channel={channel} room={room} party={party} /> : <PartyEmpty channel={channel} room={room} />;
+  return party ? <PartyDetails channel={channel} room={room} party={party} /> : <LobbyCard channel={channel} room={room} />;
 }
 
-/** No party yet. (Rooms with watch parties turned off don't show the tab at all.) */
-function PartyEmpty({ channel, room }: { channel: Channel; room: Room }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <span className="grid h-14 w-14 place-items-center rounded-[18px] bg-accent text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35)]">
-        <Popcorn size={26} />
-      </span>
-      <h3 className="mt-4 font-display text-[17px] font-bold tracking-[-0.02em]">Watch together</h3>
-      <p className="mt-1.5 text-[12.5px] leading-snug text-fg-2">Pick a movie from your computer. Everyone gets their own copy, says they’re ready, and you press play together, in sync.</p>
-      <Button variant="primary" className="mt-5" icon={<Popcorn size={15} />} onClick={() => useUI.getState().set({ partyPlanner: { channelId: channel.id, roomId: room.id } })}>
-        Plan a watch party
-      </Button>
-      <WebStart roomId={room.id} />
-    </div>
-  );
-}
 
 function PartyDetails({ channel, room, party }: { channel: Channel; room: Room; party: PartyState }) {
   const roomId = room.id;

@@ -25,7 +25,11 @@ export function Shell() {
   const room = useActiveRoom();
   const space = channel?.kind === 'space' ? channel : null;
   // Phones show the channel list or what's open, never both. Both stay mounted so scroll and drafts survive.
-  const navHidden = immersive || (navCollapsed && !compact) || (compact && !mobileNav);
+  // The activity lobby has the whole window, like a game's lobby screen.
+  const lobbyRoom = useUI((s) => s.lobby);
+  const callRoom = useVoice((s) => s.roomId);
+  const inLobby = !!lobbyRoom && lobbyRoom === callRoom;
+  const navHidden = immersive || inLobby || (navCollapsed && !compact) || (compact && !mobileNav);
   const mainHidden = compact && mobileNav && !immersive;
 
   // Phones: opening a conversation or joining a call from anywhere (Friends, a link, a ringing call) shows it.

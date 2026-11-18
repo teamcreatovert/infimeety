@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
 import { DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
-import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch } from '../../shared/protocol';
+import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch, Lobby } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -79,6 +79,8 @@ export class ChannelHub extends DurableObject<Env> {
   private parties = new Map<string, PartyState>();
   /** Websites watched together, by voice room. */
   private webs = new Map<string, WebWatch>();
+  /** Activity lobbies (watch parties), by voice room. */
+  private lobbies = new Map<string, Lobby>();
   private lastRequest = new Map<string, number>();
   private rates = new Buckets();
   /** This channel's AI bots (Nova and the admins' own), loaded when first called on. */
@@ -99,6 +101,7 @@ export class ChannelHub extends DurableObject<Env> {
       this.held = new Map(Object.entries((await ctx.storage.get<Record<string, { peer: Peer; until: number }>>('held')) ?? {}));
       // Parties saved before lobbies and settings existed are already live, with the defaults.
       this.webs = new Map(Object.entries((await ctx.storage.get<Record<string, WebWatch>>('webs')) ?? {}));
+      this.lobbies = new Map(Object.entries((await ctx.storage.get<Record<string, Lobby>>('lobbies')) ?? {}));
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
       this.parties = new Map(
         Object.entries(saved).map(([roomId, p]) => [roomId, { ...p, phase: p.phase ?? 'live', settings: p.settings ?? DEFAULT_PARTY_SETTINGS, ready: p.ready ?? [] }]),
@@ -157,7 +160,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), webs: Object.fromEntries(this.webs), config: remoteConfig(this.env), activities: this.activities() });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), webs: Object.fromEntries(this.webs), lobbies: Object.fromEntries(this.lobbies), config: remoteConfig(this.env), activities: this.activities() });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
     const pen = await this.penaltiesOf(peer.userId);
     if (pen.chat || pen.voice) this.send(server, { t: 'penalty', chatUntil: pen.chat, voiceUntil: pen.voice });
@@ -529,10 +532,29 @@ export class ChannelHub extends DurableObject<Env> {
         await this.savePartyState(msg.roomId, { ...party, settings: cleanSettings(msg.settings), by: me.userId, seq: party.seq + 1 });
         return this.maybeAutoStart(msg.roomId);
       }
+      case 'lobby.open': {
+        const roomId = String(msg.roomId);
+        if (me.voice?.roomId !== roomId || this.lobbies.has(roomId)) return;
+        const room = await this.env.DB.prepare('SELECT allow_party FROM rooms WHERE id = ? AND channel_id = ?').bind(roomId, me.channelId).first<{ allow_party: number }>();
+        if (room?.allow_party === 0) return this.send(ws, { t: 'error', message: 'Watch parties are turned off in this room' });
+        return this.saveLobby(roomId, { id: newId(), kind: 'watch', hostId: me.userId, openedAt: Date.now() });
+      }
+      case 'lobby.close': {
+        const roomId = String(msg.roomId);
+        const lobby = this.lobbies.get(roomId);
+        const party = this.parties.get(roomId);
+        if (!lobby || me.voice?.roomId !== roomId) return;
+        if (lobby.hostId !== me.userId && !(party && this.isHost(party, me.userId)) && !canModerateRole(me.role)) return;
+        // Closing the lobby ends what's playing in it.
+        if (party) await this.savePartyState(roomId, null);
+        if (this.webs.has(roomId)) await this.saveWeb(roomId, null);
+        return this.saveLobby(roomId, null);
+      }
       case 'web.set': {
         const roomId = String(msg.roomId);
         if (me.voice?.roomId !== roomId) return;
         if (!msg.web) return this.saveWeb(roomId, null);
+        await this.ensureLobby(roomId, me.userId);
         const url = cleanWebUrl(msg.web.url);
         if (!url) return this.send(ws, { t: 'error', message: 'That link can’t be watched together' });
         const current = this.webs.get(roomId);
@@ -983,6 +1005,7 @@ export class ChannelHub extends DurableObject<Env> {
     const resolves = typeof msg.resolves === 'string' ? msg.resolves.slice(0, 32) : undefined;
     // A new party, or a new movie, opens as a lobby: everyone gets the movie and says they're ready.
     if (!current || current.file.id !== file.id) {
+      await this.ensureLobby(roomId, me.userId);
       const next: PartyState = {
         id: newId(),
         hostId: current?.hostId ?? me.userId,
@@ -1018,6 +1041,18 @@ export class ChannelHub extends DurableObject<Env> {
     await this.savePartyState(roomId, next, resolves);
   }
 
+  private async saveLobby(roomId: string, lobby: Lobby | null) {
+    if (lobby) this.lobbies.set(roomId, lobby);
+    else this.lobbies.delete(roomId);
+    await this.ctx.storage.put('lobbies', Object.fromEntries(this.lobbies));
+    this.broadcast({ t: 'lobby', roomId, lobby });
+  }
+
+  /** Something started playing in a room without a lobby (an older app's party): give it one. */
+  private async ensureLobby(roomId: string, userId: string) {
+    if (!this.lobbies.has(roomId)) await this.saveLobby(roomId, { id: newId(), kind: 'watch', hostId: userId, openedAt: Date.now() });
+  }
+
   private async saveWeb(roomId: string, web: WebWatch | null) {
     if (web) this.webs.set(roomId, web);
     else this.webs.delete(roomId);
@@ -1027,6 +1062,12 @@ export class ChannelHub extends DurableObject<Env> {
 
   /** After the room changes: an empty room ends its party; a host who left hands it on. */
   private async tendParties(except?: WebSocket) {
+    // Lobbies close with an empty room, and pass to someone still there.
+    for (const [roomId, lobby] of [...this.lobbies]) {
+      const present = this.inRoom(roomId, except);
+      if (!present.length) await this.saveLobby(roomId, null);
+      else if (!present.includes(lobby.hostId)) await this.saveLobby(roomId, { ...lobby, hostId: present[0] });
+    }
     // Websites watched together end with an empty room, and pass to someone still there.
     for (const [roomId, web] of [...this.webs]) {
       const present = this.inRoom(roomId, except);
@@ -1328,6 +1369,8 @@ function rateOf(t: unknown): SocketRate {
     case 'party.look':
     case 'web.set':
     case 'web.status':
+    case 'lobby.open':
+    case 'lobby.close':
     case 'clock':
       return 'party';
     case 'sound.play':

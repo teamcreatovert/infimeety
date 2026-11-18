@@ -23,7 +23,7 @@ export function PartyBanner({ channel }: { channel: Channel }) {
     }
     if (channel.kind === 'space') useChannels.getState().selectRoom(channel.id, roomId);
     else useChannels.getState().select(channel.id);
-    useUI.getState().set({ partyView: true, focusedPeer: null });
+    useUI.getState().set({ lobby: roomId, focusedPeer: null, tab: 'home' });
   };
 
   return (

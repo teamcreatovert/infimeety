@@ -2,12 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import type { WebStatus, WebWatch } from '../../../shared/protocol';
 import { expectedPosition, serverNow, syncClock } from './party';
-import { activeTab, isStartPage, navigateTab, newTab, onTabClosed, selectTab } from './browser';
+import { LOBBY_TAB, navigateTab } from './browser';
 import { isTauri } from './platform';
 import { getHub } from './realtime';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
-import { toast, useUI } from '@/stores/ui';
+import { toast } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 /**
@@ -76,30 +76,14 @@ export function onWebStatus(roomId: string, userId: string, status: WebStatus) {
 
 // ─── Starting, joining, leaving ──────────────────────────────────────────────
 
-/** The browser tab watching together (the others are just browsing). */
+/** The view watching together: the lobby's website (set while watching along). */
 let watchTab: string | null = null;
 
-/** Takes the watching tab to `url`: a fresh tab, or the one you're on if it's empty. */
-async function openWatchTab(url: string, reuse?: string) {
-  if (reuse) {
-    watchTab = reuse;
-    await navigateTab(reuse, url);
-    selectTab(reuse);
-    return;
-  }
-  const here = activeTab();
-  if (here && isStartPage(here.url)) {
-    watchTab = here.id;
-    await navigateTab(here.id, url);
-    selectTab(here.id);
-  } else watchTab = await newTab(url);
+/** Opens `url` in the lobby's website view. */
+async function openWatchTab(url: string, _tab?: string) {
+  watchTab = LOBBY_TAB;
+  await navigateTab(LOBBY_TAB, url);
 }
-
-/** Shows the watching tab. */
-export const showBrowser = () => (watchTab ? selectTab(watchTab) : useUI.getState().set({ tab: 'browser' }));
-
-// Closing the watching tab stops watching along.
-onTabClosed((id) => id === watchTab && leaveWeb());
 
 /** Opens a site in the Infimeety browser for the room (in `tab`, or a new one): whatever you open there, the room follows. */
 export async function startWeb(roomId: string, url: string, tab?: string) {
@@ -132,6 +116,8 @@ export async function joinWeb(roomId: string) {
 /** Stops watching along (the others keep going). */
 export function leaveWeb(ended = false) {
   const roomId = useWeb.getState().joined;
+  // Out of the lobby, the page goes quiet (it carries on for the others).
+  if (watchTab) void invoke('browser_apply', { tab: watchTab, command: { p: false } }).catch(() => {});
   stopLoop();
   watchTab = null;
   useWeb.setState({ joined: null });

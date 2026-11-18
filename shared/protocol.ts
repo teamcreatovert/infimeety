@@ -403,6 +403,17 @@ export interface WebWatch {
   seq: number;
 }
 
+/**
+ * An activity lobby in a voice room (today: a watch party; games later). It opens before anything
+ * is picked: the host chooses a movie or a website inside it, and everyone in the room can join.
+ */
+export interface Lobby {
+  id: string;
+  kind: 'watch';
+  hostId: string;
+  openedAt: number;
+}
+
 /** Where each person stands: opening the page, signing in, ready, watching an ad, or not along. */
 export interface WebStatus {
   state: 'opening' | 'signin' | 'ready' | 'ad' | 'away';
@@ -489,6 +500,9 @@ export type ClientMsg =
   | { t: 'party.ready'; roomId: string; ready: boolean }
   /** The host changes how the party runs. */
   | { t: 'party.settings'; roomId: string; settings: PartySettings }
+  /** Opens a watch party lobby in your voice room (or closes it: the host, co-hosts or an admin). */
+  | { t: 'lobby.open'; roomId: string; kind: 'watch' }
+  | { t: 'lobby.close'; roomId: string }
   /** Watch a website together: the link and the shared timeline (null ends it). */
   | { t: 'web.set'; roomId: string; web: Pick<WebWatch, 'url' | 'title' | 'playing' | 'position' | 'at'> | null }
   | { t: 'web.status'; roomId: string; status: WebStatus }
@@ -507,7 +521,7 @@ export type ClientMsg =
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; webs?: Record<string, WebWatch>; config?: RemoteConfig; activities?: Record<string, Activity> }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; webs?: Record<string, WebWatch>; lobbies?: Record<string, Lobby>; config?: RemoteConfig; activities?: Record<string, Activity> }
   | { t: 'activity'; userId: string; activity: Activity | null }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
@@ -545,6 +559,7 @@ export type ServerMsg =
   | { t: 'meeting.ended' }
   | { t: 'party'; roomId: string; party: PartyState | null; resolved?: string }
   | { t: 'web'; roomId: string; web: WebWatch | null }
+  | { t: 'lobby'; roomId: string; lobby: Lobby | null }
   | { t: 'web.status'; roomId: string; userId: string; status: WebStatus }
   | { t: 'party.request'; roomId: string; id: string; from: string; action: PartyAction }
   | { t: 'party.status'; roomId: string; peerId: string; userId: string; status: PartyMemberStatus }

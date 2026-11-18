@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Armchair, ArrowLeft, AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
 import { PartyPanel } from './PartyLazy';
@@ -25,7 +25,7 @@ import { openUserMenu, useUI } from '@/stores/ui';
  * Phones stack the picture over the panel (or go full screen when held sideways).
  */
 
-export type WatchLayout = 'theater' | 'mini' | 'full';
+export type WatchLayout = 'cinema' | 'theater' | 'mini' | 'full';
 
 export interface WatchPeople {
   people: VoiceParticipant[];
@@ -58,6 +58,9 @@ interface Props extends WatchPeople {
   onExit: () => void;
   /** Phones: the stage holds more than a picture (a watch party's lobby), so give it more room. */
   tallStage?: boolean;
+  /** A lobby: its Leave button sits at the top left, and Cinema is offered with its seats. */
+  leave?: { label: string; onClick: () => void };
+  seats?: ReactNode;
 }
 
 export function WatchStage(props: Props) {
@@ -105,10 +108,10 @@ export function WatchStage(props: Props) {
     >
       {solid && <Header {...props} effective={effective} solid />}
       <div className="relative min-h-0 flex-1">
-        {media}
+        {effective === 'cinema' ? <Cinema media={media} controls={controls} seats={props.seats} idle={idle} /> : media}
         {!solid && <Header {...props} effective={effective} />}
         {overlay}
-        {controls && <Chrome idle={idle}>{controls}</Chrome>}
+        {effective !== 'cinema' && controls && <Chrome idle={idle}>{controls}</Chrome>}
         {effective === 'full' && <Talking {...props} />}
         {effective === 'full' && <ChatBubble channel={props.channel} room={props.chatRoom} idle={idle} lifted={!!controls && dockHidden} />}
         {floatingDock && dock(dockHidden)}
@@ -128,7 +131,7 @@ export function WatchStage(props: Props) {
       {phone && <Panel {...props} tabs className="min-h-0 flex-1 hairline-t" />}
       {!phone && effective === 'mini' && <Panel {...props} tabs={false} className="w-[340px] shrink-0 hairline-l" />}
       <AnimatePresence initial={false}>
-        {!phone && effective === 'theater' && panel && (
+        {!phone && (effective === 'theater' || effective === 'cinema') && panel && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 340, opacity: 1 }}
@@ -153,7 +156,7 @@ function Chrome({ idle, children }: { idle: boolean; children: ReactNode }) {
   );
 }
 
-function Header({ badge, title, headerExtras, layout, effective, onLayout, idle, exitLabel, onExit, channel, room, solid }: Props & { effective: WatchLayout; solid?: boolean }) {
+function Header({ badge, title, headerExtras, layout, effective, onLayout, idle, exitLabel, onExit, channel, room, solid, leave, seats }: Props & { effective: WatchLayout; solid?: boolean }) {
   const compact = useCompact();
   const panel = useUI((s) => s.voiceChat);
   const navCollapsed = useUI((s) => s.navCollapsed);
@@ -171,7 +174,15 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       )}
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}
     >
-      {!compact && effective !== 'full' && (
+      {leave && (
+        <button
+          onClick={leave.onClick}
+          className={clsx('flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] pl-2 pr-3 text-[12.5px] font-semibold transition-colors', solid ? 'bg-white/[0.08] text-white hover:bg-white/[0.14]' : 'glass-ink hover:bg-white/15!')}
+        >
+          <ArrowLeft size={15} /> {leave.label}
+        </button>
+      )}
+      {!leave && !compact && effective !== 'full' && (
         <HeadButton flat={solid} label={navCollapsed ? 'Show channels' : 'Hide channels'} active={!navCollapsed} onClick={() => useUI.getState().set({ navCollapsed: !navCollapsed })}>
           <PanelLeft size={16} />
         </HeadButton>
@@ -192,6 +203,11 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       <div data-tauri-drag-region className="flex-1 self-stretch" />
       {!compact && (
         <div className={clsx('flex items-center gap-0.5 p-0.5', solid ? 'rounded-[10px] bg-white/[0.06]' : 'rounded-full glass-ink')}>
+          {seats !== undefined && (
+            <LayoutButton flat={solid} label="Cinema: a big screen and everyone in their seats" active={layout === 'cinema'} onClick={() => onLayout('cinema')}>
+              <Armchair size={15} />
+            </LayoutButton>
+          )}
           <LayoutButton flat={solid} label="Theater: picture and side panel" active={layout === 'theater'} onClick={() => onLayout('theater')}>
             <RectangleHorizontal size={15} />
           </LayoutButton>
@@ -208,14 +224,16 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
           {layout === 'full' ? <Shrink size={16} /> : <Expand size={16} />}
         </HeadButton>
       )}
-      {effective === 'theater' && !compact && (
+      {(effective === 'theater' || effective === 'cinema') && !compact && (
         <HeadButton flat={solid} label={panel ? 'Hide side panel' : 'Show chat and people'} active={panel} onClick={() => useUI.getState().set({ voiceChat: !panel })}>
           <PanelRight size={16} />
         </HeadButton>
       )}
+      {!leave && (
       <HeadButton flat={solid} label={exitLabel} onClick={onExit}>
         <Minimize2 size={16} />
       </HeadButton>
+      )}
     </motion.header>
   );
 }
@@ -492,5 +510,51 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+/**
+ * Cinema: the picture on a big flat screen in a dark room, a soft glow spilling from it, and
+ * everyone in their seats below.
+ */
+function Cinema({ media, controls, seats, idle }: { media: ReactNode; controls?: ReactNode; seats?: ReactNode; idle: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBox({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const top = 20;
+  const seatsHeight = 132;
+  const dock = 88;
+  const room = Math.max(120, box.h - top - seatsHeight - dock - 8);
+  let w = box.w * 0.88;
+  let h = (w * 9) / 16;
+  if (h > room) {
+    h = room;
+    w = (h * 16) / 9;
+  }
+  const left = (box.w - w) / 2;
+  return (
+    <div ref={ref} className="absolute inset-0 overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,#12131a_0%,#060608_70%)]">
+      {/* The light from the screen, falling on the room in front of it. */}
+      <div
+        className="pointer-events-none absolute"
+        style={{ left: left - w * 0.2, top: top + h * 0.55, width: w * 1.4, height: h * 1.1, background: 'radial-gradient(ellipse at 50% 0%, rgba(175,195,255,0.16), transparent 68%)' }}
+      />
+      <div
+        className="absolute overflow-hidden rounded-[6px] bg-black"
+        style={{ left, top, width: w, height: h, boxShadow: '0 0 70px 8px rgba(190,205,255,0.16), 0 0 200px 50px rgba(120,140,255,0.08)', ['--dock-space' as string]: '0px' }}
+      >
+        {media}
+        {controls && <Chrome idle={idle}>{controls}</Chrome>}
+      </div>
+      <div className="absolute inset-x-0 flex justify-center" style={{ bottom: dock + 4 }}>
+        {seats}
+      </div>
+    </div>
   );
 }

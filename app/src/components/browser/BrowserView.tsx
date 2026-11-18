@@ -5,8 +5,8 @@ import { ArrowLeft, ArrowRight, Globe, Home, Lock, MonitorPlay, RotateCw, X } fr
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { closeTab, isStartPage, newTab, useBrowser } from '@/lib/browser';
-import { joinWeb, startWeb, useBarWatch, type BarWatch } from '@/lib/watchWeb';
-import { useUI } from '@/stores/ui';
+import { joinLobby } from '@/lib/activityLobby';
+import { startWeb, useBarWatch, type BarWatch } from '@/lib/watchWeb';
 import { useVoice } from '@/stores/voice';
 
 const isStart = isStartPage;
@@ -53,9 +53,15 @@ export function BrowserView({ visible }: { visible: boolean }) {
       void offFull.then((f) => f());
     };
   }, []);
+  // Showing again (after the lobby used the website view): this tab's page, where it belongs.
   useEffect(() => {
+    if (visible && active) void invoke('browser_select', { tab: active }).catch(() => {});
     void invoke('browser_visible', { visible }).catch(() => {});
-  }, [visible]);
+    if (visible && area.current) {
+      const r = area.current.getBoundingClientRect();
+      void invoke('browser_bounds', { x: r.left, y: r.top, width: r.width, height: r.height }).catch(() => {});
+    }
+  }, [visible, active]);
   useEffect(() => () => void invoke('browser_visible', { visible: false }).catch(() => {}), []);
   // Ctrl+T, Ctrl+W and Ctrl+L while the toolbar has the keys.
   useEffect(() => {
@@ -163,11 +169,15 @@ export function BrowserView({ visible }: { visible: boolean }) {
 /** Who you're watching with, and whether everyone's in step; or the button to start. */
 function WatchPill({ watch, url, tab }: { watch: BarWatch; url: string; tab: string | null }) {
   const roomId = useVoice((s) => s.roomId);
+  const channelId = useVoice((s) => s.channelId);
   if (!watch.inCall || !roomId) return null;
+  void tab;
   if (!watch.active)
     return isStart(url) ? null : (
       <button
-        onClick={() => void startWeb(roomId, url, tab ?? undefined)}
+        onClick={() => void startWeb(roomId, url).then(() => {
+          if (channelId) void joinLobby(channelId, roomId);
+        })}
         className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] bg-[var(--accent)] px-3 text-[12.5px] font-semibold text-white transition-[filter] hover:brightness-110"
       >
         <MonitorPlay size={14} /> Watch together
@@ -175,14 +185,14 @@ function WatchPill({ watch, url, tab }: { watch: BarWatch; url: string; tab: str
     );
   if (!watch.joined)
     return (
-      <button onClick={() => void joinWeb(roomId)} className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] bg-[var(--accent)] px-3 text-[12.5px] font-semibold text-white hover:brightness-110">
+      <button onClick={() => channelId && void joinLobby(channelId, roomId)} className="flex h-[30px] shrink-0 items-center gap-1.5 rounded-[10px] bg-[var(--accent)] px-3 text-[12.5px] font-semibold text-white hover:brightness-110">
         <MonitorPlay size={14} /> Join {watch.roomName}
       </button>
     );
   return (
     <button
-      onClick={() => useUI.getState().set({ tab: 'home' })}
-      title="Back to the call"
+      onClick={() => channelId && void joinLobby(channelId, roomId)}
+      title="Back to the lobby"
       className="flex h-[30px] max-w-[300px] shrink-0 items-center gap-2 rounded-[10px] bg-white/[0.06] pl-2.5 pr-1.5 text-[12.5px] transition-colors hover:bg-white/[0.1]"
     >
       <span className={clsx('h-2 w-2 shrink-0 rounded-full', watch.status === 'sync' ? 'bg-success shadow-[0_0_0_3px_rgba(35,165,90,0.25)]' : 'bg-warning')} />

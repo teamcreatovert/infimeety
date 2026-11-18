@@ -11,6 +11,7 @@ import { myActivity, onMyActivity, setActivities, setActivity } from './activity
 import { onCallDeclined } from './calls';
 import { onReaction } from './reactions';
 import { onWeb, onWebStatus, onWebs } from './watchWeb';
+import { onLobbies, onLobby } from './activityLobby';
 import { onSound, onSoundBlocked, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
@@ -113,6 +114,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       voice.onWelcome(hub);
       onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       onWebs(msg.webs, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
+      onLobbies(msg.lobbies, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
@@ -210,6 +212,8 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return useMeetings.getState().onCohost(cid, msg.userId);
     case 'meeting.ended':
       return useMeetings.getState().onEnded(cid);
+    case 'lobby':
+      return onLobby(msg.roomId, msg.lobby);
     case 'web':
       return onWeb(msg.roomId, msg.web);
     case 'web.status':

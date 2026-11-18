@@ -18,6 +18,9 @@ export interface BrowserTab {
 
 export const useBrowser = create<{ tabs: BrowserTab[]; active: string | null }>()(() => ({ tabs: [], active: null }));
 
+/** The watch party lobby's website: a view of its own, not one of the browser's tabs. */
+export const LOBBY_TAB = 'lobbyview';
+
 // Letters and digits only (the Rust side checks).
 const newId = () => Math.random().toString(36).slice(2, 10);
 

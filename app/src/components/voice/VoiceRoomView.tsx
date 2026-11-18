@@ -40,13 +40,15 @@ import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtr
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { FloatingReactions, FunPanel } from './Fun';
+import { CinemaSeats, LobbyChooser, WebStage } from './Lobby';
 import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty, useWatchingAlong } from '@/lib/party';
-import { useWeb } from '@/lib/watchWeb';
+import { joinWeb, useWeb } from '@/lib/watchWeb';
+import { joinLobby, leaveLobby, startLobby, useHasLobby } from '@/lib/activityLobby';
 import { useFeatureOn } from '@/lib/remote';
 import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
 import { getHub } from '@/lib/realtime';
@@ -269,8 +271,11 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const voiceChat = useUI((s) => s.voiceChat);
   const immersive = useUI((s) => s.immersive);
   const watchLayout = useUI((s) => s.watchLayout);
-  const partyView = useUI((s) => s.partyView);
+  const lobby = useUI((s) => s.lobby);
+  const lobbyLayout = useUI((s) => s.lobbyLayout);
   const party = useParty((s) => s.parties[room.id]);
+  const web = useWeb((s) => s.webs[room.id]);
+  const webJoined = useWeb((s) => s.joined === room.id);
   const myPeer = voice.peerId;
 
   const camOf = (p: VoiceParticipant) => (p.peerId === myPeer ? localCam : remote[p.peerId]?.cam) ?? undefined;
@@ -284,11 +289,17 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     ...participants.map((p) => ({ key: p.peerId, kind: 'user' as const, p })),
   ];
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
-  const watchingParty = !!party && partyView && !focused;
-  const watching = !!focused || watchingParty;
+  // The activity lobby fills the window (a watch party: the chooser, the movie, or a website).
+  const lobbyOn = lobby === room.id && !focused;
+  const watchingParty = !!party && lobbyOn;
+  const watching = !!focused || lobbyOn;
   // The movie (and its controls) once it's on and this device watches along; the lobby before.
   const watchingAlong = useWatchingAlong(party);
-  const webOn = useWeb((s) => !!s.webs[room.id]);
+  const webOn = !!web;
+  // In the lobby, a website being watched together: watch along (it plays in the lobby's screen).
+  useEffect(() => {
+    if (lobbyOn && web && !webJoined) void joinWeb(room.id);
+  }, [lobbyOn, web?.id, webJoined]); // eslint-disable-line react-hooks/exhaustive-deps
   // The player's code loads as soon as this room has a party, so it is ready before anyone opens it.
   useEffect(() => {
     if (party) void preloadParty();
@@ -311,12 +322,6 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     prevSharers.current = sharers;
   }, [sharers.join()]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A watch party starting (or running when we arrive) takes everyone to it.
-  useEffect(() => {
-    // The side panel opens on its Watch party tab, where everyone gets ready.
-    if (party?.id) useUI.getState().set({ partyView: true, focusedPeer: null, sideTab: 'party' });
-  }, [party?.id]);
-
   // Drop watch mode only when the focused sharer actually stopped (not on a stale render).
   useEffect(() => {
     const fp = useUI.getState().focusedPeer;
@@ -327,7 +332,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     if (!watching && useUI.getState().immersive) void setImmersive(false);
     // Watching opens the side panel (chat and people) next to the picture and folds the
     // channel list away; a button in the header brings it back.
-    if (watching && !isCompactNow()) useUI.getState().set({ voiceChat: true, navCollapsed: true });
+    if (watching && !isCompactNow()) useUI.getState().set({ voiceChat: !lobbyOn || useUI.getState().lobbyLayout === 'theater', navCollapsed: true, sideTab: lobbyOn ? 'party' : useUI.getState().sideTab });
     if (!watching) useUI.getState().set({ navCollapsed: false });
   }, [watching]);
   useEffect(() => () => useUI.getState().set({ navCollapsed: false }), []);
@@ -389,13 +394,16 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     const sharerUser = focused ? users[focused.userId] : undefined;
     const setLayout = (layout: WatchLayout) => {
       if (layout === 'full') return void setImmersive(true);
-      useUI.getState().set({ watchLayout: layout });
+      if (lobbyOn) useUI.getState().set({ lobbyLayout: layout as 'cinema' | 'theater' | 'mini' });
+      else useUI.getState().set({ watchLayout: layout === 'mini' ? 'mini' : 'theater' });
       if (useUI.getState().immersive) void setImmersive(false);
     };
     const exit = () => {
-      useUI.getState().set(focused ? { focusedPeer: null } : { partyView: false });
+      if (focused) useUI.getState().set({ focusedPeer: null });
+      else leaveLobby();
       if (useUI.getState().immersive) void setImmersive(false);
     };
+    const layout: WatchLayout = immersive ? 'full' : lobbyOn ? lobbyLayout : watchLayout;
     return (
       // Touch has no hover: a tap brings the controls back.
       <div className="relative h-full min-h-0" onMouseMove={wake} onPointerDown={wake}>
@@ -403,7 +411,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           channel={channel}
           chatRoom={chatRoom}
           room={room}
-          layout={immersive ? 'full' : watchLayout}
+          layout={layout}
           onLayout={setLayout}
           idle={hideChrome}
           badge={
@@ -416,13 +424,17 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               <PartyBadge />
             )
           }
-          title={focused ? (focused.peerId === myPeer ? 'You’re sharing your screen' : `${sharerUser?.name ?? 'Someone'}’s screen`) : party!.file.name}
-          headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : <PartyHeaderInfo roomId={room.id} party={party!} />}
+          title={focused ? (focused.peerId === myPeer ? 'You’re sharing your screen' : `${sharerUser?.name ?? 'Someone'}’s screen`) : party ? party.file.name : web ? web.title : 'Watch party'}
+          headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : party ? <PartyHeaderInfo roomId={room.id} party={party} /> : undefined}
           media={
             focused ? (
               <ScreenMedia stream={screenOf(focused)} />
+            ) : party ? (
+              <PartyMedia roomId={room.id} party={party} chromeHidden={hideChrome} />
+            ) : web ? (
+              <WebStage roomId={room.id} visible />
             ) : (
-              <PartyMedia roomId={room.id} party={party!} chromeHidden={hideChrome} />
+              <LobbyChooser channel={channel} room={room} />
             )
           }
           controls={watchingParty && watchingAlong ? <PartyControls roomId={room.id} party={party} /> : undefined}
@@ -431,12 +443,14 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               {soundPrompt}
               {watchingParty && <PartyRequests roomId={room.id} />}
               {watchingParty && <PartyVotes roomId={room.id} />}
-              <FloatingReactions />
+              {layout !== 'cinema' && <FloatingReactions />}
             </>
           }
           dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}
+          leave={lobbyOn ? { label: 'Leave lobby', onClick: leaveLobby } : undefined}
+          seats={lobbyOn ? <CinemaSeats people={participants} speakingOf={speakingOf} myPeer={myPeer} /> : undefined}
           tallStage={watchingParty && !watchingAlong}
-          exitLabel="Exit watch mode"
+          exitLabel={lobbyOn ? 'Leave lobby' : 'Exit watch mode'}
           onExit={exit}
           people={participants}
           users={users}
@@ -748,8 +762,8 @@ function Dock({
   const roomMuted = useChannels((s) => s.voice[channel.id]?.mutedRooms.includes(room.id) ?? false);
   const focusedPeer = useUI((s) => s.focusedPeer);
   const voiceChat = useUI((s) => s.voiceChat);
-  const partyView = useUI((s) => s.partyView);
-  const party = useParty((s) => s.parties[room.id]);
+  const inLobby = useUI((s) => s.lobby === room.id);
+  const lobbyHere = useHasLobby(room.id);
   const me = useAuth((s) => s.me);
   const compact = useCompact();
   const [shareMenu, setShareMenu] = useState<Anchor | null>(null);
@@ -770,9 +784,9 @@ function Dock({
   const toggleRoomMute = () => getHub(channel.id)?.send({ t: 'voice.roomMute', roomId: room.id, muted: !roomMuted });
   const toggleWatch = () => sharer && useUI.getState().set({ focusedPeer: focusedPeer ? null : sharer.peerId });
   // A watch party is planned from the chat; here you only go back to (or away from) one that's on.
-  const onParty = !!party && partyView && !focusedPeer;
-  const partyLabel = onParty ? 'Back to the call' : 'Back to the watch party';
-  const togglePartyView = () => useUI.getState().set(onParty ? { partyView: false } : { partyView: true, focusedPeer: null });
+  const showPopcorn = channel.kind === 'space' && (room.allowParty !== false || lobbyHere);
+  const partyLabel = inLobby ? 'Leave the lobby' : lobbyHere ? 'Join the watch party lobby' : 'Start a watch party';
+  const togglePartyView = () => (inLobby ? leaveLobby() : lobbyHere ? void joinLobby(channel.id, room.id) : startLobby(room.id));
 
   if (compact)
     return (
@@ -835,7 +849,7 @@ function Dock({
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
             </MenuItem>
           )}
-          {party && (
+          {showPopcorn && (
             <MenuItem icon={<Popcorn size={15} />} onClick={() => (setMoreMenu(null), togglePartyView())}>
               {partyLabel}
             </MenuItem>
@@ -892,11 +906,11 @@ function Dock({
           <Clapperboard size={19} />
         </DockButton>
       )}
-      {party && (
-        <DockButton label={partyLabel} state={onParty ? 'on' : 'normal'} onClick={togglePartyView}>
+      {showPopcorn && (
+        <DockButton label={partyLabel} state={inLobby ? 'on' : 'normal'} onClick={togglePartyView}>
           <span className="relative">
             <Popcorn size={19} />
-            {!onParty && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
+            {lobbyHere && !inLobby && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
           </span>
         </DockButton>
       )}
