@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
 import { atLeast, canModerateRole, outranks } from '../../shared/protocol';
+import { validGifId } from '../../shared/protocol';
 import type { AuditEntry, Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
 import {
   authorizeUrl,
@@ -435,6 +436,36 @@ app.get('/avatars/:key', async (c) => {
 
 /** ICE servers for WebRTC: public STUN, plus the TURN relay when one is configured. */
 app.get('/ice', guestOk, async (c) => c.json({ iceServers: await iceServers(c.env) }));
+
+// GIF reactions: searched through us so the GIPHY key stays secret. Only ids go back; apps build
+// the picture's address from the id. Results are kept a few minutes (GIPHY's free key allows
+// 100 searches an hour).
+type Gif = { id: string; title: string; w: number; h: number };
+const gifCache = new Map<string, { at: number; gifs: Gif[] }>();
+app.get('/gifs', limit('gifs', 30), auth, async (c) => {
+  const key = c.env.GIPHY_API_KEY;
+  if (!key) return c.json({ error: 'not_configured' }, 503);
+  const q = (c.req.query('q') ?? '').trim().slice(0, 50).toLowerCase();
+  const cached = gifCache.get(q);
+  if (cached && Date.now() - cached.at < 10 * 60_000) return c.json({ gifs: cached.gifs });
+  const url = new URL(`https://api.giphy.com/v1/gifs/${q ? 'search' : 'trending'}`);
+  url.searchParams.set('api_key', key);
+  if (q) url.searchParams.set('q', q);
+  url.searchParams.set('limit', '24');
+  url.searchParams.set('rating', 'pg-13');
+  const res = await fetch(url);
+  if (!res.ok) return c.json({ error: res.status === 429 ? 'rate_limited' : 'gif_error' }, res.status === 429 ? 429 : 502);
+  const body = await res.json<{ data?: { id?: string; title?: string; images?: Record<string, { width?: string; height?: string }> }[] }>();
+  const gifs: Gif[] = (body.data ?? [])
+    .filter((g): g is { id: string; title?: string; images?: Record<string, { width?: string; height?: string }> } => validGifId(g.id))
+    .map((g) => {
+      const im = g.images?.fixed_width ?? g.images?.fixed_height;
+      return { id: g.id, title: (g.title ?? '').slice(0, 80), w: Number(im?.width) || 200, h: Number(im?.height) || 150 };
+    });
+  if (gifCache.size > 200) gifCache.clear();
+  gifCache.set(q, { at: Date.now(), gifs });
+  return c.json({ gifs });
+});
 
 /** Public health check: is the TURN relay configured and accepting our login? */
 app.get('/ice/status', async (c) => c.json(await turnStatus(c.env)));

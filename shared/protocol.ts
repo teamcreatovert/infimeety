@@ -248,6 +248,10 @@ export interface VoiceLocalState {
 
 /** The reactions that float up over a call. */
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
+/** A GIPHY GIF's id; apps build its picture's address from it, so a reaction can't carry any other image. */
+export const validGifId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9]{5,40}$/.test(v);
+export const gifUrl = (id: string, size: '200' | '200w' = '200') => `https://media.giphy.com/media/${id}/${size}.webp`;
+
 /** Meetings get polite ones. */
 export const MEETING_REACTIONS = ['👍', '👏', '❤️', '🎉', '🙌', '💯', '💡', '✅'] as const;
 export const ALL_REACTIONS: readonly string[] = [...new Set<string>([...REACTIONS, ...MEETING_REACTIONS])];
@@ -318,9 +322,31 @@ export interface PartySettings {
   requests: boolean;
   /** Start by itself once everyone in the room is ready. */
   autoStart: boolean;
+  /** A 3, 2, 1 countdown before the movie starts or plays again after a pause. */
+  countdown?: boolean;
+  /** What each person may pick just for themselves; the rest plays the same for everyone. */
+  personal?: PartyRules;
+  /** Changes for everyone: only the host and co-hosts, by everyone's vote, or anyone directly. */
+  changes?: 'hosts' | 'vote' | 'anyone';
 }
 
-export const DEFAULT_PARTY_SETTINGS: PartySettings = { control: 'auto', requests: true, autoStart: false };
+export interface PartyRules {
+  audio: boolean;
+  brightness: boolean;
+  subtitles: boolean;
+  saturation: boolean;
+}
+
+export const DEFAULT_PARTY_RULES: PartyRules = { audio: true, brightness: true, subtitles: false, saturation: false };
+
+export const DEFAULT_PARTY_SETTINGS: PartySettings = { control: 'auto', requests: true, autoStart: false, countdown: true, personal: DEFAULT_PARTY_RULES, changes: 'vote' };
+
+/** A party's rules with every gap filled (older apps send settings without them). */
+export const partyRules = (s?: PartySettings | null) => ({
+  countdown: s?.countdown ?? true,
+  personal: { ...DEFAULT_PARTY_RULES, ...s?.personal },
+  changes: s?.changes ?? 'vote',
+});
 
 /**
  * A watch party in a voice room: everyone plays their own copy of one file, in sync.
@@ -344,16 +370,18 @@ export interface PartyState {
   /** Who made the last change. */
   by: string;
   seq: number;
-  /** Agreed by vote for everyone (each person can still pick their own): sound track, brightness. */
+  /** Agreed for everyone (each person may still pick their own, if the rules allow): sound track, brightness, color. */
   audio?: number;
   brightness?: number;
+  saturation?: number;
 }
 
 /** A change for everyone that the whole room votes on (it passes only if everyone says yes). */
 export type PartyProposal =
   | { kind: 'subtitle'; file: PartyFile | null; label: string }
   | { kind: 'audio'; index: number; label: string }
-  | { kind: 'brightness'; value: number };
+  | { kind: 'brightness'; value: number }
+  | { kind: 'saturation'; value: number };
 
 /** What a viewer can ask the host for. */
 export type PartyAction = { kind: 'play'; position?: number } | { kind: 'pause' } | { kind: 'seek'; position: number };
@@ -406,7 +434,7 @@ export type ClientMsg =
   /** Stops the sound you're playing, for everyone. */
   | { t: 'sound.stop' }
   /** A reaction that floats up over the call for everyone in your voice room. */
-  | { t: 'reaction'; emoji: string }
+  | { t: 'reaction'; emoji: string; gif?: string }
   /** You declined a call ringing in this room: the caller is told. */
   | { t: 'call.decline'; roomId: string }
   /** Your app heard you say a fun-rule word in the call (Windows app, on-device speech). */
@@ -420,7 +448,7 @@ export type ClientMsg =
   | {
       t: 'party.set';
       roomId: string;
-      party: (Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness'> & { settings?: PartySettings }) | null;
+      party: (Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness' | 'saturation'> & { settings?: PartySettings }) | null;
       resolves?: string;
     }
   /** The lobby goes live: everyone starts together after a short countdown. */
@@ -429,6 +457,8 @@ export type ClientMsg =
   | { t: 'party.ready'; roomId: string; ready: boolean }
   /** The host changes how the party runs. */
   | { t: 'party.settings'; roomId: string; settings: PartySettings }
+  /** With changes set to "anyone": a change for everyone, applied directly. */
+  | { t: 'party.look'; roomId: string; proposal: PartyProposal }
   | { t: 'party.request'; roomId: string; action: PartyAction }
   /** The host makes someone a co-host (or not). */
   | { t: 'party.cohost'; roomId: string; userId: string; on: boolean }
@@ -461,7 +491,7 @@ export type ServerMsg =
   | { t: 'sound'; peerId: string; userId: string; sound: SoundRef }
   | { t: 'sound.stop'; peerId: string; userId: string }
   | { t: 'call.declined'; roomId: string; userId: string }
-  | { t: 'reaction'; peerId: string; userId: string; emoji: string }
+  | { t: 'reaction'; peerId: string; userId: string; emoji: string; gif?: string }
   /** Your music share was turned down (not an admin or moderator, or someone else is sharing). */
   | { t: 'music.denied'; message: string }
   /** Your sound didn't play for anyone (you're muted): stop it on your side too. */

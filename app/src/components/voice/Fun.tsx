@@ -1,14 +1,15 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeft, Music2, Plus, SmilePlus, Speaker } from 'lucide-react';
-import { useState } from 'react';
-import { MEETING_REACTIONS, REACTIONS, validReaction } from '../../../../shared/protocol';
+import { ChevronLeft, ImagePlay, Music2, Plus, Search, SmilePlus, Speaker } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { MEETING_REACTIONS, REACTIONS, gifUrl, validReaction } from '../../../../shared/protocol';
 import { EmojiPicker } from '../chat/EmojiPicker';
 import { MusicPicker } from './Music';
 import { SoundboardPanel, politeSound } from './Soundboard';
-import { sendReaction, useReactions } from '@/lib/reactions';
+import { api, ApiError } from '@/lib/api';
+import { sendGif, sendReaction, useReactions } from '@/lib/reactions';
 
-type Tab = 'react' | 'sounds' | 'music';
+type Tab = 'react' | 'gif' | 'sounds' | 'music';
 
 const RECENT_KEY = 'infimeety.reactRecent';
 const readRecent = (): string[] => {
@@ -39,6 +40,7 @@ export function FunPanel({ meeting, sounds, music, busy, onDone }: { meeting?: b
   const [recent, setRecent] = useState(readRecent);
   const tabs: { id: Tab; label: string; icon: typeof Speaker }[] = [
     { id: 'react', label: 'React', icon: SmilePlus },
+    ...(!meeting ? [{ id: 'gif' as const, label: 'GIF', icon: ImagePlay }] : []),
     ...(sounds ? [{ id: 'sounds' as const, label: meeting ? 'Applause' : 'Sounds', icon: Speaker }] : []),
     ...(music && !meeting ? [{ id: 'music' as const, label: 'Music', icon: Music2 }] : []),
   ];
@@ -94,6 +96,7 @@ export function FunPanel({ meeting, sounds, music, busy, onDone }: { meeting?: b
             </div>
           </div>
         )}
+        {tab === 'gif' && <GifPanel />}
         {tab === 'sounds' && <SoundboardPanel only={meeting ? politeSound : undefined} />}
         {tab === 'music' && <MusicPicker busy={busy} onDone={onDone} />}
       </div>
@@ -116,11 +119,72 @@ export function FloatingReactions() {
             className="absolute bottom-[110px] flex flex-col items-center"
             style={{ left: `${r.x}%` }}
           >
-            <span className="emoji text-[40px] drop-shadow-[0_4px_10px_rgba(0,0,0,0.35)]">{r.emoji}</span>
+            {r.gif ? (
+              <img src={gifUrl(r.gif)} alt="" className="h-[120px] max-w-[220px] rounded-[14px] object-cover shadow-[0_8px_24px_rgba(0,0,0,0.35)]" />
+            ) : (
+              <span className="emoji text-[40px] drop-shadow-[0_4px_10px_rgba(0,0,0,0.35)]">{r.emoji}</span>
+            )}
             <span className="mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-medium text-white glass-ink">{r.name}</span>
           </motion.div>
         ))}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** GIF reactions from GIPHY: trending first, or search. Tap one and it pops up for everyone. */
+function GifPanel() {
+  const [query, setQuery] = useState('');
+  const [gifs, setGifs] = useState<{ id: string; title: string; w: number; h: number }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setError(null);
+    // A moment after typing stops, so each word isn't a search of its own.
+    const t = setTimeout(() => {
+      api<{ gifs: { id: string; title: string; w: number; h: number }[] }>(`/gifs?q=${encodeURIComponent(query.trim())}`)
+        .then((r) => live && setGifs(r.gifs))
+        .catch((e: unknown) => {
+          if (!live) return;
+          setGifs([]);
+          const status = e instanceof ApiError ? e.status : 0;
+          setError(status === 503 ? 'GIFs aren\u2019t set up on this server yet.' : status === 429 ? 'Lots of GIF searches right now. Try again in a minute.' : 'Couldn\u2019t load GIFs. Check your connection.');
+        });
+    }, query ? 350 : 0);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [query]);
+  return (
+    <div className="flex flex-col p-2.5 pb-1.5">
+      <label className="field flex h-8 items-center gap-2 px-2.5">
+        <Search size={14} className="text-fg-3" />
+        <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search GIPHY" className="h-full w-full bg-transparent text-[13px] outline-none placeholder:text-fg-3" />
+      </label>
+      <div className="mt-2 h-[min(300px,45vh)] overflow-y-auto">
+        {error ? (
+          <p className="px-4 py-10 text-center text-[12.5px] leading-relaxed text-fg-3">{error}</p>
+        ) : !gifs ? (
+          <div className="grid grid-cols-3 gap-1.5">
+            {Array.from({ length: 9 }, (_, i) => (
+              <div key={i} className="h-[84px] animate-pulse rounded-[10px] bg-fill-2" />
+            ))}
+          </div>
+        ) : gifs.length === 0 ? (
+          <p className="px-4 py-10 text-center text-[12.5px] text-fg-3">No GIFs for \u201c{query}\u201d</p>
+        ) : (
+          <div className="columns-3 gap-1.5">
+            {gifs.map((g) => (
+              <button key={g.id} title={g.title} onClick={() => sendGif(g.id)} className="mb-1.5 block w-full overflow-hidden rounded-[10px] bg-fill-2 transition-transform active:scale-95">
+                <img src={gifUrl(g.id, '200w')} alt={g.title} loading="lazy" className="block w-full" style={{ aspectRatio: `${g.w} / ${g.h}` }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* GIPHY asks for this credit wherever its GIFs show. */}
+      <p className="pt-1.5 text-center text-[10.5px] font-semibold tracking-wide text-fg-3">Powered by GIPHY</p>
     </div>
   );
 }

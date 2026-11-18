@@ -177,7 +177,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       voice.stopMusic(true);
       return toast({ kind: 'info', title: 'Music isn’t shared', body: msg.message });
     case 'reaction':
-      return onReaction(msg.userId, msg.emoji);
+      return onReaction(msg.userId, msg.emoji, msg.gif);
     case 'call.declined':
       return onCallDeclined(msg.roomId);
     case 'media.request':

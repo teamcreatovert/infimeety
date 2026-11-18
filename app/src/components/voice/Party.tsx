@@ -1,9 +1,15 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AudioLines,
   Captions,
   CaptionsOff,
   Check,
+  ChevronDown,
+  List as ListIcon,
+  Lock,
+  Search,
+  SunMedium,
   Crown,
   Ellipsis,
   Film,
@@ -25,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
-import type { Channel, PartyAction, PartyState, Room, VoiceParticipant } from '../../../../shared/protocol';
+import { partyRules, type Channel, type PartyAction, type PartyState, type Room, type VoiceParticipant } from '../../../../shared/protocol';
 import { pace } from '../chat/AttachmentView';
 import { Avatar } from '../ui/Avatar';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
@@ -120,6 +126,17 @@ function setBrightness(brightness: number | null) {
   }
 }
 
+/** Your own color; `null`: back to the room's. */
+function setSaturation(saturation: number | null) {
+  usePlayer.setState({ saturation: saturation ?? 1, saturationMine: saturation !== null });
+  try {
+    if (saturation === null) localStorage.removeItem('infimeety.partySaturation');
+    else localStorage.setItem('infimeety.partySaturation', String(saturation));
+  } catch {
+    /* private mode */
+  }
+}
+
 function setSubSize(subSize: 'small' | 'medium' | 'large') {
   usePlayer.setState({ subSize });
   try {
@@ -153,6 +170,11 @@ const usePlayer = create<{
   /** Picked here (not the room's agreed one): the sound track and brightness. */
   audioMine: boolean;
   brightnessMine: boolean;
+  /** Color (0 grey to 2 vivid), just for you when the rules allow. */
+  saturation: number;
+  saturationMine: boolean;
+  /** The last skip, for the "+10s" bubble. */
+  skip: { by: number; at: number } | null;
   /** The menu changes things just for you, or for everyone (the host directly, anyone else by vote). */
   scope: 'me' | 'all';
 }>()(() => ({
@@ -171,6 +193,9 @@ const usePlayer = create<{
   mySub: null,
   audioMine: false,
   brightnessMine: localStorage.getItem('infimeety.partyBrightness') !== null,
+  saturation: Math.min(2, Math.max(0, Number(localStorage.getItem('infimeety.partySaturation') ?? 1))),
+  saturationMine: localStorage.getItem('infimeety.partySaturation') !== null,
+  skip: null,
   scope: 'me',
   brightness: Math.min(1.5, Math.max(0.5, Number(localStorage.getItem('infimeety.partyBrightness') ?? 1) || 1)),
   subSize: (localStorage.getItem('infimeety.subSize') as 'small' | 'medium' | 'large' | null) ?? 'medium',
@@ -202,6 +227,7 @@ export function PartyMedia({ roomId, party, chromeHidden }: { roomId: string; pa
       <>
         <PartyPlayer key={copy.url} roomId={roomId} fileId={party.file.id} url={copy.url} subtitleId={party.subtitle?.id} chromeHidden={chromeHidden} />
         <Countdown party={party} />
+        <SkipBubble />
       </>
     );
   return <PartyLobby roomId={roomId} party={party} checking={!copy || copy.state === 'checking'} />;
@@ -219,7 +245,7 @@ function Countdown({ party }: { party: PartyState }) {
     return () => clearInterval(t);
   }, [party.playing, party.at]);
   // A start, and every play after a pause, is 3 s ahead: count it down. Seeks while playing (0.4 s) don't.
-  if (left < 700) return null;
+  if (left < 700 || !partyRules(party.settings).countdown) return null;
   return (
     <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-black/35">
       <AnimatePresence mode="popLayout">
@@ -241,24 +267,37 @@ function Countdown({ party }: { party: PartyState }) {
 function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId: string; fileId: string; url: string; subtitleId?: string; chromeHidden: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
+  const settings = useParty((s) => s.parties[roomId]?.settings);
+  const rules = partyRules(settings).personal;
   const partySubtitle = useParty((s) => (subtitleId ? s.subtitles[subtitleId] : undefined));
   const mySub = usePlayer((s) => s.mySub);
-  const subtitleUrl = mySub === 'off' ? undefined : (mySub ?? partySubtitle);
+  const subtitleUrl = !rules.subtitles ? partySubtitle : mySub === 'off' ? undefined : (mySub ?? partySubtitle);
   const partyBrightness = useParty((s) => s.parties[roomId]?.brightness);
+  const partySaturation = useParty((s) => s.parties[roomId]?.saturation);
   const partyAudio = useParty((s) => s.parties[roomId]?.audio);
   const brightnessMine = usePlayer((s) => s.brightnessMine);
   const myBrightness = usePlayer((s) => s.brightness);
-  const shownBrightness = brightnessMine ? myBrightness : (partyBrightness ?? 1);
+  const saturationMine = usePlayer((s) => s.saturationMine);
+  const mySaturation = usePlayer((s) => s.saturation);
+  const shownBrightness = rules.brightness && brightnessMine ? myBrightness : (partyBrightness ?? 1);
+  const shownSaturation = rules.saturation && saturationMine ? mySaturation : (partySaturation ?? 1);
+  const look = [shownBrightness !== 1 && `brightness(${shownBrightness})`, shownSaturation !== 1 && `saturate(${shownSaturation})`].filter(Boolean).join(' ');
+  const audioMine = usePlayer((s) => s.audioMine);
   const trackCount = usePlayer((s) => s.audios.length);
   useEffect(() => {
-    if (partyAudio !== undefined && !usePlayer.getState().audioMine && partyAudio < trackCount) pickAudio(partyAudio);
-  }, [partyAudio, trackCount]);
+    // The host locked the sound: back to the room's track.
+    if (!rules.audio && audioMine) usePlayer.setState({ audioMine: false });
+    const mine = rules.audio && audioMine;
+    if (!mine && trackCount > 0) pickAudio(partyAudio !== undefined && partyAudio < trackCount ? partyAudio : 0);
+  }, [partyAudio, trackCount, rules.audio, audioMine]);
   const volume = usePlayer((s) => s.volume);
   const muted = usePlayer((s) => s.muted);
   const blocked = usePlayer((s) => s.blocked);
   const buffering = usePlayer((s) => s.buffering);
   const error = usePlayer((s) => s.error);
-  const captions = usePlayer((s) => s.captions);
+  const captionsPref = usePlayer((s) => s.captions);
+  // Locked subtitles show for everyone.
+  const captions = rules.subtitles ? captionsPref : true;
   const cue = usePlayer((s) => s.cue);
   const subSize = usePlayer((s) => s.subSize);
 
@@ -431,7 +470,8 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
     track.mode = 'hidden';
     const onCue = () => {
       // The lines on screen at this moment, moved by the subtitle timing.
-      const t = video.currentTime - usePlayer.getState().subDelay;
+      const own = partyRules(useParty.getState().parties[roomId]?.settings).personal.subtitles;
+      const t = video.currentTime - (own ? usePlayer.getState().subDelay : 0);
       const active = [...(track.cues ?? [])].filter((c) => c.startTime <= t && c.endTime > t);
       const lines = active.map((c) =>
         (c as VTTCue).text
@@ -443,12 +483,12 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
     };
     const timer = setInterval(onCue, 100);
     return () => clearInterval(timer);
-  }, [subtitleUrl]);
+  }, [subtitleUrl, roomId]);
 
   return (
     <div className="absolute inset-0 bg-black">
       {/* crossOrigin: the 200% boost reads the sound through Web Audio, which gets silence from a file it may not read. */}
-      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={shownBrightness === 1 ? undefined : { filter: `brightness(${shownBrightness})` }} onDoubleClick={(e) => e.preventDefault()}>
+      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={look ? { filter: look } : undefined} onDoubleClick={(e) => e.preventDefault()}>
         {subtitleUrl && <track key={subtitleUrl} ref={trackRef} kind="subtitles" src={subtitleUrl} default />}
       </video>
       {captions && cue && (
@@ -788,7 +828,7 @@ function PartyDetails({ channel, room, party }: { channel: Channel; room: Room; 
           <Button size="sm" className="flex-1" icon={<Settings2 size={13} />} onClick={() => openSettings(roomId)}>
             Settings
           </Button>
-          <Button size="sm" variant="ghost" className="flex-1 !text-danger" icon={<X size={13} />} onClick={() => endParty(roomId)}>
+          <Button size="sm" variant="soft-danger" className="flex-1" icon={<X size={13} />} onClick={() => endParty(roomId)}>
             End the party
           </Button>
         </div>
@@ -938,6 +978,8 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   const mySub = usePlayer((s) => s.mySub);
   const myTracks = useLocalTracks((s) => s[party.file.id] ?? NO_TRACKS);
   const scope = usePlayer((s) => s.scope);
+  const saturation = usePlayer((s) => s.saturation);
+  const rules = partyRules(party.settings);
   const ready = useParty((s) => s.copies[party.file.id]?.state === 'ready');
   // This device's own MKV copy: its subtitle tracks, for the "just for you" menu.
   useEffect(() => {
@@ -962,7 +1004,10 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
     act(roomId, action);
   };
   const toggle = () => act(roomId, party.playing ? { kind: 'pause' } : { kind: 'play' });
-  const skip = (by: number) => seek(position + by);
+  const skip = (by: number) => {
+    showSkip(by);
+    seek(position + by);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -972,12 +1017,12 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
       if (e.key === ' ' || e.key === 'k') (e.preventDefault(), toggle());
       else if (e.key === 'ArrowLeft' || e.key === 'j') (e.preventDefault(), skip(-10));
       else if (e.key === 'ArrowRight' || e.key === 'l') (e.preventDefault(), skip(10));
-      else if (e.key === 'c') usePlayer.setState((s) => ({ captions: !s.captions }));
+      else if (e.key === 'c' && rules.personal.subtitles) usePlayer.setState((s) => ({ captions: !s.captions }));
       else if (e.key === 'm') usePlayer.setState((s) => ({ muted: !s.muted }));
       else if (e.key === 'ArrowUp') (e.preventDefault(), setVolume(Math.min(2, Math.round((volume + 0.05) * 100) / 100)));
       else if (e.key === 'ArrowDown') (e.preventDefault(), setVolume(Math.max(0, Math.round((volume - 0.05) * 100) / 100)));
       // VLC: G earlier, H later. Shown for a moment.
-      else if (e.key === 'g' || e.key === 'h') nudgeSubtitles(e.key === 'g' ? -0.05 : 0.05);
+      else if ((e.key === 'g' || e.key === 'h') && rules.personal.subtitles) nudgeSubtitles(e.key === 'g' ? -0.05 : 0.05);
       // 0 to 9 jump to that tenth of the movie.
       else if (/^[0-9]$/.test(e.key) && length) seek((Number(e.key) / 10) * length);
     };
@@ -995,6 +1040,71 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
   };
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
   const asks = control ? '' : ' (asks the host)';
+  const admin = useIsPartyAdmin(party);
+  const [subsMenu, setSubsMenu] = useState<Anchor | null>(null);
+  const [sub, setSub] = useState<{ kind: SubMenu; anchor: Anchor } | null>(null);
+  const closeAll = () => (setMenu(null), setSubsMenu(null), setSub(null));
+  const openSub = (kind: SubMenu) => (el: HTMLElement) => setSub((s) => (s?.kind === kind ? null : { kind, anchor: el.getBoundingClientRect() }));
+
+  // "Everyone" is offered to whoever may change things for everyone (directly or by vote).
+  const canEveryone = control || rules.changes !== 'hosts';
+  const forAll = canEveryone && scope === 'all';
+  const everyoneLabel = control || rules.changes === 'anyone' ? 'Everyone' : 'Everyone (vote)';
+  const scopeSwitch = canEveryone && (
+    <div className="mb-1 flex gap-1 rounded-[9px] bg-fill-1 p-0.5">
+      {(['me', 'all'] as const).map((s) => (
+        <button
+          key={s}
+          onClick={() => (usePlayer.setState({ scope: s }), setSub(null))}
+          className={clsx('flex-1 rounded-[7px] py-1 text-[12px] font-medium', scope === s ? 'bg-accent text-white' : 'text-fg-2 hover:bg-fill-2')}
+        >
+          {s === 'me' ? 'Just me' : everyoneLabel}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Subtitles: yours, or everyone's.
+  const subItems: Choice[] = forAll
+    ? [
+        ...(party.subtitle ? [{ key: 'off', label: 'Off for everyone' }] : []),
+        ...(embedded.length === 0 ? myTracks.map((t) => ({ key: `url:${t.url}`, label: t.label })) : []),
+        ...embedded.map((s) => ({ key: `file:${s.file.id}`, label: s.label })),
+      ]
+    : [
+        { key: 'party', label: party.subtitle ? 'Same as everyone' : 'None' },
+        ...myTracks.map((t) => ({ key: `url:${t.url}`, label: t.label })),
+        ...(party.subtitle || myTracks.length ? [{ key: 'off', label: 'Off' }] : []),
+      ];
+  const subNow = forAll ? (party.subtitle ? `file:${party.subtitle.id}` : 'off') : mySub === null ? 'party' : mySub === 'off' ? 'off' : `url:${mySub}`;
+  const subLocked = !forAll && !rules.personal.subtitles;
+  const pickSub = (key: string) => {
+    closeAll();
+    const label = subItems.find((i) => i.key === key)?.label ?? 'Subtitles';
+    if (forAll) {
+      if (key === 'off') return void proposeSubtitle(roomId, 'Off', null);
+      if (key.startsWith('url:')) return void proposeSubtitle(roomId, label, key.slice(4));
+      const file = embedded.find((s) => `file:${s.file.id}` === key)?.file;
+      if (file) chooseEmbeddedSubtitle(roomId, file);
+      return;
+    }
+    if (key === 'party') usePlayer.setState({ mySub: null, captions: true });
+    else if (key === 'off') usePlayer.setState({ mySub: 'off' });
+    else usePlayer.setState({ mySub: key.slice(4), captions: true });
+  };
+  const subLabel = subItems.find((i) => i.key === subNow)?.label ?? 'None';
+
+  // Sound tracks (dual audio and more).
+  const audioItems: Choice[] = audios.map((label, i) => ({ key: String(i), label }));
+  const audioLocked = !forAll && !rules.personal.audio;
+  const pickAudioTrack = (key: string) => {
+    closeAll();
+    const i = Number(key);
+    if (forAll) return proposeForEveryone(roomId, { kind: 'audio', index: i, label: audios[i] ?? `Track ${i + 1}` });
+    usePlayer.setState({ audioMine: true });
+    pickAudio(i);
+  };
+  const hasSubtitles = !!party.subtitle || myTracks.length > 0 || embedded.length > 0;
 
   return (
     <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-5 pb-[calc(var(--dock-space)+12px)] pt-10 text-white compact:px-3 compact:pb-[calc(var(--dock-space)+8px)] compact:pt-8">
@@ -1030,9 +1140,9 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
             <VolumeIcon size={18} />
           </Control>
         </div>
-        {party.subtitle && (
-          <Control label={captions ? 'Hide subtitles' : 'Show subtitles'} onClick={() => usePlayer.setState({ captions: !captions })}>
-            {captions ? <Captions size={18} /> : <CaptionsOff size={18} />}
+        {hasSubtitles && (
+          <Control label={`Subtitles: ${subLabel}`} onClick={(el) => setSubsMenu(el.getBoundingClientRect())}>
+            {captions && subNow !== 'off' ? <Captions size={18} /> : <CaptionsOff size={18} />}
           </Control>
         )}
         <Control label="More" onClick={(el) => setMenu(el.getBoundingClientRect())}>
@@ -1040,163 +1150,296 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
         </Control>
       </div>
 
-      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="end" offset={10} className="w-[260px] p-1.5">
-        <div className="mb-1 flex gap-1 rounded-[9px] bg-fill-1 p-0.5">
-          {(['me', 'all'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => usePlayer.setState({ scope: s })}
-              className={clsx('flex-1 rounded-[7px] py-1 text-[12px] font-medium', scope === s ? 'bg-accent text-white' : 'text-fg-2 hover:bg-fill-2')}
-            >
-              {s === 'me' ? 'Just me' : control ? 'Everyone' : 'Everyone (vote)'}
-            </button>
+      {/* Subtitles: the current one and a few others; the full list opens beside it. */}
+      <Popover open={!!subsMenu} anchor={subsMenu} onClose={closeAll} side="top" align="end" offset={10} className="w-[250px] p-1.5">
+        {scopeSwitch}
+        <div className="px-2 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">{forAll ? 'Subtitles for everyone' : 'Subtitles'}</div>
+        {subLocked ? (
+          <Locked>The host picked the subtitles for everyone: {subLabel}</Locked>
+        ) : (
+          <QuickChoices items={subItems} current={subNow} onPick={pickSub} limit={4} more={`All subtitles (${subItems.length})`} onMore={openSub('subsAll')} moreOpen={sub?.kind === 'subsAll'} />
+        )}
+        {!subLocked && !forAll && subNow !== 'off' && (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={captions ? <CaptionsOff size={15} /> : <Captions size={15} />} onClick={() => usePlayer.setState({ captions: !captions })}>
+              {captions ? 'Hide subtitles for now' : 'Show subtitles'}
+            </MenuItem>
+          </>
+        )}
+      </Popover>
+
+      {/* More: one short row per thing, each opening its own little window. */}
+      <Popover open={!!menu} anchor={menu} onClose={closeAll} side="top" align="end" offset={10} className="w-[250px] p-1.5">
+        {scopeSwitch}
+        {forAll && rules.changes === 'vote' && !control && <p className="px-2 pb-1.5 text-[11.5px] leading-snug text-fg-3">Changes for everyone need everyone in the room to say yes.</p>}
+        {audios.length > 1 && <MenuRow icon={<AudioLines size={15} />} label="Audio" value={audios[audio] ?? ''} onClick={openSub('audio')} open={sub?.kind === 'audio'} />}
+        <MenuRow icon={<SunMedium size={15} />} label="Picture" value={forAll ? 'For everyone' : `${Math.round(brightness * 100)}%`} onClick={openSub('picture')} open={sub?.kind === 'picture'} />
+        {(party.subtitle || mySub) && (
+          <MenuRow icon={<Subtitles size={15} />} label="Subtitle timing and size" value={subDelay === 0 ? '' : `${subDelay > 0 ? '+' : ''}${subDelay.toFixed(2)} s`} onClick={openSub('subtitleLook')} open={sub?.kind === 'subtitleLook'} />
+        )}
+        <MenuRow icon={<Popcorn size={15} />} label="Watch party" onClick={openSub('party')} open={sub?.kind === 'party'} />
+      </Popover>
+
+      <Popover open={!!sub} anchor={sub?.anchor ?? null} onClose={() => setSub(null)} side="left" align="end" offset={8} layer className="w-[260px] p-1.5">
+        {sub?.kind === 'subsAll' && <AllChoices items={subItems} current={subNow} onPick={pickSub} noun="subtitles" />}
+        {sub?.kind === 'audio' &&
+          (audioLocked ? (
+            <Locked>The host picked the sound for everyone: {audios[audio] ?? 'track 1'}</Locked>
+          ) : (
+            <>
+              <div className="px-2 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">{forAll ? 'Sound for everyone' : 'Sound (just for you)'}</div>
+              <AllChoices items={audioItems} current={String(audio)} onPick={pickAudioTrack} noun="sound tracks" />
+            </>
           ))}
-        </div>
-        {scope === 'all' && !control && <p className="px-2 pb-1.5 text-[11.5px] leading-snug text-fg-3">Changes for everyone need everyone in the room to say yes.</p>}
-        {audios.length > 1 && (
-          <>
-            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">{scope === 'me' ? 'Sound (just for you)' : 'Sound for everyone'}</div>
-            {audios.map((label, i) => (
-              <MenuItem key={i} icon={audio === i ? <Check size={15} /> : <Volume2 size={15} />} onClick={() => {
-                  setMenu(null);
-                  if (scope === 'all') return proposeForEveryone(roomId, { kind: 'audio', index: i, label });
-                  usePlayer.setState({ audioMine: true });
-                  pickAudio(i);
-                }}>
-                {label}
-              </MenuItem>
-            ))}
-            <MenuSeparator />
-          </>
-        )}
-        {scope === 'me' && myTracks.length > 0 && (
-          <>
-            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles (just for you)</div>
-            <MenuItem icon={mySub === null ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: null, captions: true }))}>
-              Same as everyone
-            </MenuItem>
-            {myTracks.map((t) => (
-              <MenuItem key={t.url} icon={mySub === t.url ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: t.url, captions: true }))}>
-                {t.label}
-              </MenuItem>
-            ))}
-            <MenuItem icon={mySub === 'off' ? <Check size={15} /> : <CaptionsOff size={15} />} onClick={() => (setMenu(null), usePlayer.setState({ mySub: 'off' }))}>
-              Off
-            </MenuItem>
-            <MenuSeparator />
-          </>
-        )}
-        {scope === 'all' && (embedded.length > 0 || myTracks.length > 0 || !!party.subtitle) && (
-          <>
-            <div className="px-2 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-fg-3">Subtitles for everyone</div>
-            {embedded.length === 0 &&
-              myTracks.map((t) => (
-                <MenuItem key={t.url} icon={<Subtitles size={15} />} onClick={() => (setMenu(null), void proposeSubtitle(roomId, t.label, t.url))}>
-                  {t.label}
-                </MenuItem>
-              ))}
-            {party.subtitle && (
-              <MenuItem icon={<CaptionsOff size={15} />} onClick={() => (setMenu(null), void proposeSubtitle(roomId, 'Off', null))}>
-                Off for everyone
-              </MenuItem>
-            )}
-            {embedded.map((s) => (
-              <MenuItem key={s.file.id} icon={party.subtitle?.id === s.file.id ? <Check size={15} /> : <Subtitles size={15} />} onClick={() => (setMenu(null), chooseEmbeddedSubtitle(roomId, s.file))}>
-                {s.label}
-              </MenuItem>
-            ))}
-            <MenuSeparator />
-          </>
-        )}
-        {scope === 'all' ? (
-          <div className="px-2 py-1.5">
-            <div className="mb-1.5 text-[12.5px]">Brightness for everyone</div>
-            <div className="flex gap-1">
-              {(
-                [
+        {sub?.kind === 'picture' &&
+          (forAll ? (
+            <div className="px-2 py-1.5">
+              <Presets
+                title="Brightness for everyone"
+                options={[
                   ['Darker', 0.8],
                   ['Normal', 1],
                   ['Brighter', 1.2],
-                ] as const
-              ).map(([label, value]) => (
-                <button key={label} onClick={() => (setMenu(null), proposeForEveryone(roomId, { kind: 'brightness', value }))} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
-                  {label}
-                </button>
-              ))}
+                ]}
+                onPick={(value) => (closeAll(), proposeForEveryone(roomId, { kind: 'brightness', value }))}
+              />
+              <div className="h-2.5" />
+              <Presets
+                title="Color for everyone"
+                options={[
+                  ['Less', 0.6],
+                  ['Normal', 1],
+                  ['More', 1.4],
+                ]}
+                onPick={(value) => (closeAll(), proposeForEveryone(roomId, { kind: 'saturation', value }))}
+              />
             </div>
-          </div>
-        ) : (
-        <div className="px-2 py-1.5">
-          <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
-            <span>Brightness (just for you)</span>
-            <button onClick={() => setBrightness(null)} className="tabular-nums text-fg-3 hover:text-fg">
-              {Math.round(brightness * 100)}%
-            </button>
-          </div>
-          <Slider value={brightness - 0.5} onChange={(v) => setBrightness(Math.round((v + 0.5) * 100) / 100)} className="w-full" />
-        </div>
-        )}
-        <MenuSeparator />
-        {party.subtitle && (
+          ) : (
+            <div className="px-2 py-1.5">
+              {rules.personal.brightness ? (
+                <SliderRow label="Brightness" value={brightness} min={0.5} max={1.5} onChange={setBrightness} onReset={() => setBrightness(null)} />
+              ) : (
+                <Locked>Brightness is the same for everyone</Locked>
+              )}
+              <div className="h-2.5" />
+              {rules.personal.saturation ? (
+                <SliderRow label="Color" value={saturation} min={0} max={2} onChange={setSaturation} onReset={() => setSaturation(null)} />
+              ) : (
+                <Locked>Color is the same for everyone</Locked>
+              )}
+            </div>
+          ))}
+        {sub?.kind === 'subtitleLook' && (
           <div className="px-2 py-1.5">
-            <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
-              <span>Subtitle timing</span>
-              <span className="tabular-nums text-fg-3">{subDelay === 0 ? 'on time' : `${subDelay > 0 ? '+' : ''}${subDelay.toFixed(2)} s`}</span>
-            </div>
-            <div className="flex gap-1">
-              {[
-                ['Earlier', -0.25],
-                ['Reset', 0],
-                ['Later', 0.25],
-              ].map(([label, by]) => (
-                <button key={label} onClick={() => (by === 0 ? usePlayer.setState({ subDelay: 0 }) : nudgeSubtitles(by as number))} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="mb-1.5 mt-2.5 text-[12.5px]">Subtitle size</div>
+            {rules.personal.subtitles ? (
+              <>
+                <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
+                  <span>Timing</span>
+                  <span className="tabular-nums text-fg-3">{subDelay === 0 ? 'on time' : `${subDelay > 0 ? '+' : ''}${subDelay.toFixed(2)} s`}</span>
+                </div>
+                <div className="flex gap-1">
+                  {(
+                    [
+                      ['Earlier', -0.25],
+                      ['Reset', 0],
+                      ['Later', 0.25],
+                    ] as const
+                  ).map(([label, by]) => (
+                    <button key={label} onClick={() => (by === 0 ? usePlayer.setState({ subDelay: 0 }) : nudgeSubtitles(by))} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <Locked>Subtitle timing is the same for everyone</Locked>
+            )}
+            <div className="mb-1.5 mt-2.5 text-[12.5px]">Size</div>
             <div className="flex gap-1">
               {(['small', 'medium', 'large'] as const).map((size) => (
-                <button
-                  key={size}
-                  onClick={() => setSubSize(size)}
-                  className={clsx('flex-1 rounded-[7px] py-1 text-[12px] capitalize', subSize === size ? 'bg-accent text-white' : 'bg-fill-2 hover:bg-fill-3')}
-                >
+                <button key={size} onClick={() => setSubSize(size)} className={clsx('flex-1 rounded-[7px] py-1 text-[12px] capitalize', subSize === size ? 'bg-accent text-white' : 'bg-fill-2 hover:bg-fill-3')}>
                   {size}
                 </button>
               ))}
             </div>
           </div>
         )}
-        {party.subtitle && <MenuSeparator />}
-        {control && (
-          <MenuItem icon={<Subtitles size={15} />} onClick={() => (setMenu(null), void addSubtitles(roomId))}>
-            {party.subtitle ? 'Change subtitles…' : 'Add subtitles…'}
-          </MenuItem>
-        )}
-        {control && party.subtitle && (
-          <MenuItem icon={<CaptionsOff size={15} />} onClick={() => (setMenu(null), removeSubtitles(roomId))}>
-            Remove subtitles for everyone
-          </MenuItem>
-        )}
-        <MenuItem icon={<FolderOpen size={15} />} onClick={() => (setMenu(null), void pickOwnCopy(roomId))}>
-          Play a different copy of this movie…
-        </MenuItem>
-        {isHost(party, me) && (
-          <MenuItem icon={<Settings2 size={15} />} onClick={() => (setMenu(null), openSettings(roomId))}>
-            Watch party settings…
-          </MenuItem>
-        )}
-        {control && (
+        {sub?.kind === 'party' && (
           <>
-            <MenuSeparator />
-            <MenuItem danger icon={<X size={15} />} onClick={() => (setMenu(null), endParty(roomId))}>
-              End the watch party
+            {control && (
+              <MenuItem icon={<Subtitles size={15} />} onClick={() => (closeAll(), void addSubtitles(roomId))}>
+                {party.subtitle ? 'Change subtitles…' : 'Add subtitles…'}
+              </MenuItem>
+            )}
+            {control && party.subtitle && (
+              <MenuItem icon={<CaptionsOff size={15} />} onClick={() => (closeAll(), removeSubtitles(roomId))}>
+                Remove subtitles for everyone
+              </MenuItem>
+            )}
+            <MenuItem icon={<FolderOpen size={15} />} onClick={() => (closeAll(), void pickOwnCopy(roomId))}>
+              Play a different copy of this movie…
             </MenuItem>
+            {(isHost(party, me) || admin) && (
+              <MenuItem icon={<Settings2 size={15} />} onClick={() => (closeAll(), openSettings(roomId))}>
+                Watch party settings and rules…
+              </MenuItem>
+            )}
+            {control && (
+              <>
+                <MenuSeparator />
+                <MenuItem danger icon={<X size={15} />} onClick={() => (closeAll(), endParty(roomId))}>
+                  End the watch party
+                </MenuItem>
+              </>
+            )}
           </>
         )}
       </Popover>
     </div>
+  );
+}
+
+type SubMenu = 'subsAll' | 'audio' | 'picture' | 'subtitleLook' | 'party';
+type Choice = { key: string; label: string };
+
+/** A row in the ⋯ menu: what it is, what it's set to, and a little window of its own. */
+function MenuRow({ icon, label, value, onClick, open }: { icon: ReactNode; label: string; value?: string; onClick: (el: HTMLElement) => void; open?: boolean }) {
+  return (
+    <button onClick={(e) => onClick(e.currentTarget)} className={clsx('flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-fill-2', open && 'bg-fill-2')}>
+      <span className="shrink-0 text-fg-2">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {value && <span className="max-w-[96px] shrink-0 truncate text-[12px] text-fg-3">{value}</span>}
+      <ChevronDown size={14} className={clsx('shrink-0 text-fg-3 transition-transform', open && 'rotate-180')} />
+    </button>
+  );
+}
+
+const Locked = ({ children }: { children: ReactNode }) => (
+  <p className="flex items-start gap-1.5 px-2 py-1.5 text-[12px] leading-snug text-fg-3">
+    <Lock size={12} className="mt-0.5 shrink-0" /> <span>{children}</span>
+  </p>
+);
+
+const ChoiceItem = ({ c, current, onPick }: { c: Choice; current: string; onPick: (key: string) => void }) => (
+  <MenuItem icon={c.key === current ? <Check size={15} /> : <span className="inline-block w-[15px]" />} onClick={() => onPick(c.key)}>
+    {c.label}
+  </MenuItem>
+);
+
+/** The current choice and a few others; "All …" opens the whole list beside it. */
+function QuickChoices({ items, current, onPick, limit, more, onMore, moreOpen }: { items: Choice[]; current: string; onPick: (key: string) => void; limit: number; more: string; onMore: (el: HTMLElement) => void; moreOpen: boolean }) {
+  let shown = items.slice(0, limit);
+  const now = items.find((c) => c.key === current);
+  if (now && !shown.includes(now)) shown = [...shown.slice(0, limit - 1), now];
+  return (
+    <>
+      {shown.map((c) => (
+        <ChoiceItem key={c.key} c={c} current={current} onPick={onPick} />
+      ))}
+      {items.length > limit && <MenuRow icon={<ListIcon size={15} />} label={more} onClick={onMore} open={moreOpen} />}
+    </>
+  );
+}
+
+/** Every choice: scrolls, and gets a search box once the list is long (some movies have dozens). */
+function AllChoices({ items, current, onPick, noun }: { items: Choice[]; current: string; onPick: (key: string) => void; noun: string }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const shown = q ? items.filter((c) => c.label.toLowerCase().includes(q)) : items;
+  return (
+    <div className="flex flex-col">
+      {items.length > 8 && (
+        <label className="field mb-1 flex h-8 shrink-0 items-center gap-2 px-2.5">
+          <Search size={13} className="text-fg-3" />
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${noun}`} className="h-full w-full bg-transparent text-[12.5px] outline-none placeholder:text-fg-3" />
+        </label>
+      )}
+      <div className="max-h-[min(320px,50vh)] overflow-y-auto">
+        {shown.map((c) => (
+          <ChoiceItem key={c.key} c={c} current={current} onPick={onPick} />
+        ))}
+        {shown.length === 0 && <p className="px-2 py-3 text-center text-[12px] text-fg-3">No {noun} match “{query}”</p>}
+      </div>
+    </div>
+  );
+}
+
+function Presets({ title, options, onPick }: { title: string; options: [string, number][]; onPick: (value: number) => void }) {
+  return (
+    <>
+      <div className="mb-1.5 text-[12.5px]">{title}</div>
+      <div className="flex gap-1">
+        {options.map(([label, value]) => (
+          <button key={label} onClick={() => onPick(value)} className="flex-1 rounded-[7px] bg-fill-2 py-1 text-[12px] hover:bg-fill-3">
+            {label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function SliderRow({ label, value, min, max, onChange, onReset }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void; onReset: () => void }) {
+  return (
+    <>
+      <div className="mb-1.5 flex items-center justify-between text-[12.5px]">
+        <span>{label}</span>
+        <button onClick={onReset} title="Back to the room’s" className="tabular-nums text-fg-3 hover:text-fg">
+          {Math.round(value * 100)}%
+        </button>
+      </div>
+      <Slider value={(value - min) / (max - min)} onChange={(v) => onChange(Math.round((min + v * (max - min)) * 100) / 100)} className="w-full" />
+    </>
+  );
+}
+
+/** Whether you may open the party's settings and rules: the host, co-hosts, and channel admins and moderators. */
+function useIsPartyAdmin(party: PartyState) {
+  const me = useMe();
+  const channelId = useVoice((s) => s.channelId);
+  const role = useChannels((s) => s.channels.find((c) => c.id === channelId)?.role);
+  return isHost(party, me) || (!!role && role !== 'member');
+}
+
+/** "+10s", "−20s": how far a skip went, adding up while you keep pressing. */
+function showSkip(by: number) {
+  const prev = usePlayer.getState().skip;
+  const keep = !!prev && Date.now() - prev.at < 1000 && Math.sign(prev.by) === Math.sign(by);
+  usePlayer.setState({ skip: { by: keep ? prev!.by + by : by, at: Date.now() } });
+}
+
+function SkipBubble() {
+  const skip = usePlayer((s) => s.skip);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!skip) return;
+    setShown(true);
+    const t = setTimeout(() => setShown(false), 850);
+    return () => clearTimeout(t);
+  }, [skip]);
+  const forward = (skip?.by ?? 0) > 0;
+  return (
+    <AnimatePresence>
+      {shown && skip && (
+        <motion.div
+          key={forward ? 'forward' : 'back'}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          transition={spring}
+          className={clsx('pointer-events-none absolute top-1/2 z-10 -translate-y-1/2', forward ? 'right-[12%]' : 'left-[12%]')}
+        >
+          <div className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-full bg-black/50 text-white">
+            {forward ? <RotateCw size={24} /> : <RotateCcw size={24} />}
+            <span className="text-[15px] font-semibold tabular-nums">
+              {forward ? '+' : '−'}
+              {Math.abs(skip.by)}s
+            </span>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

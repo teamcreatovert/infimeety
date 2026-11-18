@@ -4,7 +4,7 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode } from 'react';
 import { snappy, spring } from '@/lib/motion';
 import { Tooltip } from './overlay';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'plain';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'plain' | 'soft-danger';
 
 export const Button = forwardRef<
   HTMLButtonElement,
@@ -24,6 +24,7 @@ export const Button = forwardRef<
         variant === 'primary' && 'bg-accent text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.35),0_1px_2px_rgba(0,0,0,0.2)] hover:brightness-110',
         variant === 'secondary' && 'bg-fill-2 text-fg shadow-[inset_0_0_0_0.5px_var(--hairline-strong)] hover:bg-fill-3',
         variant === 'ghost' && 'text-fg-2 hover:bg-fill-2 hover:text-fg',
+        variant === 'soft-danger' && 'bg-danger/10 text-danger shadow-[inset_0_0_0_0.5px_color-mix(in_srgb,var(--danger)_30%,transparent)] hover:bg-danger/18',
         variant === 'danger' && 'bg-danger text-white shadow-[inset_0_0.5px_0_rgba(255,255,255,0.3)] hover:brightness-110',
         className,
       )}

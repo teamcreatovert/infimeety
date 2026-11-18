@@ -23,6 +23,8 @@ export interface Env {
   DEV_LOGIN?: string;
   /** Apps older than this ask to update (RemoteConfig.minVersion). Empty: no minimum. */
   MIN_APP_VERSION?: string;
+  /** GIF reactions in calls: a GIPHY API key (a secret). */
+  GIPHY_API_KEY?: string;
   /** Comma-separated RemoteFeature names to switch off everywhere. */
   FEATURES_OFF?: string;
 }

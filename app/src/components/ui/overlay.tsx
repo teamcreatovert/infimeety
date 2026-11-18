@@ -95,6 +95,7 @@ export function Popover({
   className,
   offset = 8,
   material = 'pop',
+  layer,
 }: {
   open: boolean;
   anchor: Anchor | null;
@@ -106,6 +107,8 @@ export function Popover({
   /** "float": the clearer glass of the call's controls, for panels that open from them. */
   material?: 'pop' | 'float';
   offset?: number;
+  /** A submenu: clicks in it don't close the popover it opened from. */
+  layer?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; origin: string } | null>(null);
@@ -169,6 +172,7 @@ export function Popover({
       {open && anchor && (
         <motion.div
           ref={ref}
+          data-menu-layer={layer ? '' : undefined}
           className={clsx('fixed z-[90]', material === 'float' ? 'rounded-[20px] glass-float' : 'rounded-[14px] glass-pop', className)}
           style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, transformOrigin: pos?.origin }}
           initial={{ opacity: 0, scale: 0.95 }}

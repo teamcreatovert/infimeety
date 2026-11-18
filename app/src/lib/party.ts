@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_PARTY_SETTINGS } from '../../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS, partyRules } from '../../../shared/protocol';
 import type { Attachment, PartyAction, PartyFile, PartyMemberStatus, PartyProposal, PartySettings, PartyState } from '../../../shared/protocol';
 import { randomId } from './api';
 import { rememberCopy, savedCopies } from './copies';
@@ -37,6 +37,8 @@ export const OPEN_LIMIT = 3;
 const LEAD_MS = 400;
 /** Play after a pause: 3, 2, 1 (the player's countdown), while every copy lines up on the same frame. */
 const PLAY_LEAD_MS = 3000;
+/** Play after a pause: the 3 s countdown, or (countdown off) just long enough for everyone to start together. */
+const playLead = (party: PartyState) => (partyRules(party.settings).countdown ? PLAY_LEAD_MS : 900);
 
 export interface PartyRequest {
   id: string;
@@ -204,7 +206,7 @@ function holdForLoading(roomId: string) {
   } else if (since !== undefined && !party.playing && (!loading || Date.now() - since > HOLD_MAX)) {
     holds.delete(roomId);
     // A moment ahead, so every copy is on the frame when it starts.
-    set(roomId, { playing: true, position: party.position, at: serverNow() + PLAY_LEAD_MS });
+    set(roomId, { playing: true, position: party.position, at: serverNow() + playLead(party) });
   }
 }
 setInterval(() => holds.forEach((_, roomId) => holdForLoading(roomId)), 1000);
@@ -357,13 +359,13 @@ function currentPosition(party: PartyState) {
   return player && !Number.isNaN(player.currentTime) && player.readyState > 0 ? player.currentTime : expectedPosition(party);
 }
 
-function set(roomId: string, patch: Partial<Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness'>> | null, resolves?: string) {
+function set(roomId: string, patch: Partial<Pick<PartyState, 'file' | 'subtitle' | 'playing' | 'position' | 'at' | 'audio' | 'brightness' | 'saturation'>> | null, resolves?: string) {
   const hub = hubFor();
   const party = useParty.getState().parties[roomId];
   if (!hub) return;
   if (patch === null) return hub.send({ t: 'party.set', roomId, party: null });
   if (!party) return;
-  const next = { file: party.file, subtitle: party.subtitle, playing: party.playing, position: party.position, at: party.at, audio: party.audio, brightness: party.brightness, ...patch };
+  const next = { file: party.file, subtitle: party.subtitle, playing: party.playing, position: party.position, at: party.at, audio: party.audio, brightness: party.brightness, saturation: party.saturation, ...patch };
   hub.send({ t: 'party.set', roomId, party: next, resolves });
   // Show it here at once; the hub's copy follows.
   useParty.setState((s) => ({ parties: { ...s.parties, [roomId]: { ...party, ...next } } }));
@@ -384,7 +386,15 @@ export const useVotes = create<Record<string, PartyVote>>()(() => ({}));
 const VOTE_MS = 30_000;
 
 export const describeProposal = (p: PartyProposal) =>
-  p.kind === 'audio' ? `${p.label} sound` : p.kind === 'brightness' ? `brightness ${Math.round(p.value * 100)}%` : p.file ? `${p.label} subtitles` : 'no subtitles';
+  p.kind === 'audio'
+    ? `${p.label} sound`
+    : p.kind === 'brightness'
+      ? `brightness ${Math.round(p.value * 100)}%`
+      : p.kind === 'saturation'
+        ? `color ${Math.round(p.value * 100)}%`
+        : p.file
+          ? `${p.label} subtitles`
+          : 'no subtitles';
 
 function endVote(id: string) {
   useVotes.setState((s) => {
@@ -399,9 +409,17 @@ export function proposeForEveryone(roomId: string, proposal: PartyProposal) {
   const me = useAuth.getState().me?.id;
   const hub = hubFor();
   if (!me || !hub) return;
-  // The host and co-hosts change it for everyone at once; anyone else asks the room.
+  // The host and co-hosts change it for everyone at once; anyone else asks the room, or (with
+  // the rules set to "anyone") changes it directly, or (set to "host only") can't.
   if (canControl(roomId, me)) {
     applyProposal(roomId, proposal);
+    toast({ kind: 'success', title: `Changed for everyone: ${describeProposal(proposal)}` });
+    return;
+  }
+  const { changes } = partyRules(useParty.getState().parties[roomId]?.settings);
+  if (changes === 'hosts') return toast({ kind: 'info', title: 'Only the host can change that for everyone' });
+  if (changes === 'anyone') {
+    hub.send({ t: 'party.look', roomId, proposal });
     toast({ kind: 'success', title: `Changed for everyone: ${describeProposal(proposal)}` });
     return;
   }
@@ -453,6 +471,7 @@ function countVote(id: string) {
 function applyProposal(roomId: string, p: PartyProposal) {
   if (p.kind === 'audio') set(roomId, { audio: p.index });
   else if (p.kind === 'brightness') set(roomId, { brightness: p.value });
+  else if (p.kind === 'saturation') set(roomId, { saturation: p.value });
   else set(roomId, { subtitle: p.file });
 }
 
@@ -700,7 +719,7 @@ export function apply(roomId: string, action: PartyAction, resolves?: string) {
   if (!party) return;
   const now = serverNow();
   if (action.kind === 'pause') return set(roomId, { playing: false, position: currentPosition(party), at: now }, resolves);
-  if (action.kind === 'play') return set(roomId, { playing: true, position: action.position ?? currentPosition(party), at: now + (party.playing ? LEAD_MS : PLAY_LEAD_MS) }, resolves);
+  if (action.kind === 'play') return set(roomId, { playing: true, position: action.position ?? currentPosition(party), at: now + (party.playing ? LEAD_MS : playLead(party)) }, resolves);
   const position = Math.max(0, action.position);
   set(roomId, { position, at: party.playing ? now + LEAD_MS : now }, resolves);
 }

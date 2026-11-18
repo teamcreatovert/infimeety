@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
-import { DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, validReaction } from '../../shared/protocol';
+import { DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
 import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
@@ -474,7 +474,9 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'reaction': {
         // Floats up for everyone in your voice room; only the known ones, at the reactions' rate.
-        if (!me.voice || !validReaction(msg.emoji)) return;
+        if (!me.voice) return;
+        if (validGifId(msg.gif)) return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: '', gif: msg.gif }, ws);
+        if (!validReaction(msg.emoji)) return;
         return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: msg.emoji }, ws);
       }
 
@@ -519,9 +521,19 @@ export class ChannelHub extends DurableObject<Env> {
       }
       case 'party.settings': {
         const party = this.parties.get(String(msg.roomId));
-        if (!party || !this.isHost(party, me.userId)) return;
+        // The host, co-hosts and the channel's admins and moderators set the rules, even mid-movie.
+        if (!party || !(this.isHost(party, me.userId) || canModerateRole(me.role))) return;
         await this.savePartyState(msg.roomId, { ...party, settings: cleanSettings(msg.settings), by: me.userId, seq: party.seq + 1 });
         return this.maybeAutoStart(msg.roomId);
+      }
+      case 'party.look': {
+        const party = this.parties.get(String(msg.roomId));
+        if (!party || me.voice?.roomId !== msg.roomId) return;
+        if (!this.canControl(party, me.userId) && partyRules(party.settings).changes !== 'anyone') return this.send(ws, { t: 'error', message: 'Only the host can change that for everyone' });
+        const p = cleanProposal(msg.proposal);
+        if (!p) return;
+        const look = p.kind === 'audio' ? { audio: p.index } : p.kind === 'brightness' ? { brightness: p.value } : p.kind === 'saturation' ? { saturation: p.value } : { subtitle: p.file };
+        return this.savePartyState(msg.roomId, { ...party, ...look, by: me.userId, seq: party.seq + 1 });
       }
       case 'party.request': {
         const party = this.parties.get(String(msg.roomId));
@@ -895,7 +907,7 @@ export class ChannelHub extends DurableObject<Env> {
 
   /** The lobby goes live: playing from where it is, after the countdown. */
   private async startParty(roomId: string, party: PartyState, by: string) {
-    const at = Date.now() + PARTY_COUNTDOWN;
+    const at = Date.now() + (partyRules(party.settings).countdown ? PARTY_COUNTDOWN : 1200);
     await this.savePartyState(roomId, { ...party, phase: 'live', playing: true, at, by, seq: party.seq + 1 });
   }
 
@@ -965,8 +977,9 @@ export class ChannelHub extends DurableObject<Env> {
       position: Math.max(0, Number(p.position) || 0),
       // A play is scheduled a little ahead; never trust a time far from ours.
       at: Math.min(now + 5000, Math.max(now - 60_000, Number(p.at) || now)),
-      ...(p.audio !== undefined ? { audio: Math.max(0, Math.min(15, Math.floor(Number(p.audio)) || 0)) } : {}),
+      ...(p.audio !== undefined ? { audio: Math.max(0, Math.min(255, Math.floor(Number(p.audio)) || 0)) } : {}),
       ...(p.brightness !== undefined ? { brightness: Math.max(0.5, Math.min(1.5, Number(p.brightness) || 1)) } : {}),
+      ...(p.saturation !== undefined ? { saturation: Math.max(0, Math.min(2, Number.isFinite(Number(p.saturation)) ? Number(p.saturation) : 1)) } : {}),
       by: me.userId,
       seq: current.seq + 1,
     };
@@ -1290,8 +1303,9 @@ function cleanProposal(v: unknown): PartyProposal | null {
   const p = v as Record<string, unknown> | null;
   if (!p || typeof p !== 'object') return null;
   const label = typeof p.label === 'string' ? p.label.slice(0, 60) : '';
-  if (p.kind === 'audio') return { kind: 'audio', index: Math.max(0, Math.min(15, Math.floor(Number(p.index)) || 0)), label };
+  if (p.kind === 'audio') return { kind: 'audio', index: Math.max(0, Math.min(255, Math.floor(Number(p.index)) || 0)), label };
   if (p.kind === 'brightness') return { kind: 'brightness', value: Math.max(0.5, Math.min(1.5, Number(p.value) || 1)) };
+  if (p.kind === 'saturation') return { kind: 'saturation', value: Math.max(0, Math.min(2, Number.isFinite(Number(p.value)) ? Number(p.value) : 1)) };
   if (p.kind === 'subtitle') return { kind: 'subtitle', file: p.file ? cleanFile(p.file) : null, label };
   return null;
 }
@@ -1303,6 +1317,14 @@ function cleanSettings(input: unknown): PartySettings {
     control: s.control === 'everyone' || s.control === 'hosts' ? s.control : 'auto',
     requests: s.requests === undefined ? DEFAULT_PARTY_SETTINGS.requests : !!s.requests,
     autoStart: !!s.autoStart,
+    countdown: s.countdown === undefined ? true : !!s.countdown,
+    personal: {
+      audio: s.personal?.audio === undefined ? DEFAULT_PARTY_RULES.audio : !!s.personal.audio,
+      brightness: s.personal?.brightness === undefined ? DEFAULT_PARTY_RULES.brightness : !!s.personal.brightness,
+      subtitles: !!s.personal?.subtitles,
+      saturation: !!s.personal?.saturation,
+    },
+    changes: s.changes === 'hosts' || s.changes === 'anyone' ? s.changes : 'vote',
   };
 }
 

@@ -1,6 +1,7 @@
-import { Captions, Film, FolderOpen, Plus, Popcorn, X } from 'lucide-react';
+import clsx from 'clsx';
+import { Captions, ChevronDown, Film, FolderOpen, Plus, Popcorn, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { DEFAULT_PARTY_SETTINGS, type PartySettings } from '../../../../shared/protocol';
+import { DEFAULT_PARTY_SETTINGS, partyRules, type PartyRules, type PartySettings } from '../../../../shared/protocol';
 import { Modal } from '../ui/overlay';
 import { Button, Group, Row, Segmented, Select, Switch } from '../ui/primitives';
 import { DOWNLOAD_PAGE } from '@/config';
@@ -43,6 +44,7 @@ export function PartyPlanner() {
   const [subtitle, setSubtitle] = useState<SharedFile | null>(null);
   const [settings, setSettings] = useState<PartySettings>(DEFAULT_PARTY_SETTINGS);
   const [busy, setBusy] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const close = () => useUI.getState().set({ partyPlanner: null });
 
   // Fresh each time it opens: the room you're in (or were pointed at), your usual settings.
@@ -59,6 +61,11 @@ export function PartyPlanner() {
   if (!target || !channel) return <Modal open={false} onClose={close}>{null}</Modal>;
   const editing = !!existing;
   const set = (patch: Partial<PartySettings>) => setSettings((s) => ({ ...s, ...patch }));
+  const rules = partyRules(settings);
+  const setPersonal = (patch: Partial<PartyRules>) => set({ personal: { ...rules.personal, ...patch } });
+  const allowed = Object.values(rules.personal).filter(Boolean).length;
+  const strict = allowed === 0 && rules.changes === 'hosts';
+  const relaxed = allowed === 4 && rules.changes === 'anyone';
 
   const chooseMovie = async () => {
     const picked = await pickMovie();
@@ -191,6 +198,55 @@ export function PartyPlanner() {
           </Row>
         </Group>
 
+        {/* The rules: a few short rows; what people may change for themselves opens below its row. */}
+        <Group title="Rules" footer={editing ? 'Rules change for everyone right away, even in the middle of the movie.' : undefined}>
+          <div className="flex gap-2 p-2.5">
+            <PresetButton active={strict} onClick={() => set({ personal: { audio: false, brightness: false, subtitles: false, saturation: false }, changes: 'hosts' })} title="Strict" detail="Nobody changes the movie but the host" />
+            <PresetButton active={relaxed} onClick={() => set({ personal: { audio: true, brightness: true, subtitles: true, saturation: true }, changes: 'anyone' })} title="Relaxed" detail="Everyone picks what they like" />
+          </div>
+          <Row label="3, 2, 1 countdown" detail="Before the movie starts, and every time it plays again after a pause.">
+            <Switch checked={rules.countdown} onChange={(countdown) => set({ countdown })} />
+          </Row>
+          <button onClick={() => setRulesOpen((o) => !o)} className="flex min-h-[44px] w-full items-center gap-4 px-3.5 py-2 text-left">
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px]">What people can change for themselves</div>
+              <div className="mt-0.5 text-[11.5px] leading-snug text-fg-3">{allowed === 0 ? 'Nothing: everyone watches it the same way' : allowed === 4 ? 'Everything' : `${allowed} of 4 allowed`}</div>
+            </div>
+            <ChevronDown size={16} className={clsx('shrink-0 text-fg-3 transition-transform', rulesOpen && 'rotate-180')} />
+          </button>
+          {rulesOpen && (
+            <div className="mx-3 mb-2.5 rounded-[12px] bg-fill-1">
+              <Row label="Sound track" detail="Dual audio: pick a language just for yourself.">
+                <Switch checked={rules.personal.audio} onChange={(audio) => setPersonal({ audio })} />
+              </Row>
+              <Row label="Brightness">
+                <Switch checked={rules.personal.brightness} onChange={(brightness) => setPersonal({ brightness })} />
+              </Row>
+              <Row label="Subtitles" detail="Which ones, their timing.">
+                <Switch checked={rules.personal.subtitles} onChange={(subtitles) => setPersonal({ subtitles })} />
+              </Row>
+              <Row label="Color">
+                <Switch checked={rules.personal.saturation} onChange={(saturation) => setPersonal({ saturation })} />
+              </Row>
+              <p className="px-3.5 pb-2.5 text-[11.5px] leading-snug text-fg-3">Volume and subtitle size are always each person’s own.</p>
+            </div>
+          )}
+          <Row
+            label="Changes for everyone"
+            detail={rules.changes === 'hosts' ? 'Only you and your co-hosts.' : rules.changes === 'anyone' ? 'Anyone can change it for everyone, right away.' : 'Anyone can ask; it happens only if everyone says yes.'}
+          >
+            <Select
+              value={rules.changes}
+              options={[
+                { value: 'hosts', label: 'Host only' },
+                { value: 'vote', label: 'Vote' },
+                { value: 'anyone', label: 'Anyone' },
+              ]}
+              onChange={(changes) => set({ changes })}
+            />
+          </Row>
+        </Group>
+
         {!editing && voiceRooms.length === 0 && (
           <p className="mb-1 rounded-[12px] bg-fill-1 px-3.5 py-3 text-[12.5px] leading-snug text-fg-2">
             Watch parties are turned off in this channel’s voice rooms. An admin can turn them on from a voice room’s menu.
@@ -218,5 +274,17 @@ export function PartyPlanner() {
         </div>
       </div>
     </Modal>
+  );
+}
+
+function PresetButton({ active, onClick, title, detail }: { active: boolean; onClick: () => void; title: string; detail: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx('flex-1 rounded-[12px] px-3 py-2 text-left transition-colors', active ? 'bg-accent text-white' : 'bg-fill-1 hover:bg-fill-2')}
+    >
+      <div className="text-[13px] font-semibold">{title}</div>
+      <div className={clsx('mt-0.5 text-[11.5px] leading-snug', active ? 'text-white/80' : 'text-fg-3')}>{detail}</div>
+    </button>
   );
 }
