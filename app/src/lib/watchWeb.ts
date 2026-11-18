@@ -21,9 +21,11 @@ interface WebStore {
   statuses: Record<string, Record<string, WebStatus>>;
   /** The room whose website this device is watching along with, if any. */
   joined: string | null;
+  /** You asked the room to wait (Not ready). */
+  notReady: boolean;
 }
 
-export const useWeb = create<WebStore>()(() => ({ webs: {}, statuses: {}, joined: null }));
+export const useWeb = create<WebStore>()(() => ({ webs: {}, statuses: {}, joined: null, notReady: false }));
 
 /** Websites watch together the best when they're big: shortcuts for the usual ones. */
 export const WEB_SITES = [
@@ -120,7 +122,7 @@ export function leaveWeb(ended = false) {
   if (watchTab) void invoke('browser_apply', { tab: watchTab, command: { p: false } }).catch(() => {});
   stopLoop();
   watchTab = null;
-  useWeb.setState({ joined: null });
+  useWeb.setState({ joined: null, notReady: false });
   if (roomId && !ended) hubFor()?.send({ t: 'web.status', roomId, status: { state: 'away' } });
 }
 
@@ -198,7 +200,7 @@ async function step(roomId: string) {
   const v = page.video;
 
   // Where I stand, for the others ("signing in", "watching an ad"...), sent when it changes.
-  const state: WebStatus['state'] = page.signin ? 'signin' : !v ? 'opening' : v.ad ? 'ad' : 'ready';
+  const state: WebStatus['state'] = page.signin ? 'signin' : !v ? 'opening' : v.ad ? 'ad' : useWeb.getState().notReady ? 'notready' : 'ready';
   if (state !== lastStatus) {
     lastStatus = state;
     hub.send({ t: 'web.status', roomId, status: { state } });
@@ -242,6 +244,14 @@ async function step(roomId: string) {
   if (page.userAt > lastUserAt) {
     const first = lastUserAt === 0;
     lastUserAt = page.userAt;
+    // Play waits while someone asked the room to wait (Not ready), themselves included.
+    const waitFor = Object.entries(useWeb.getState().statuses[roomId] ?? {}).find(([, s]) => s.state === 'notready')?.[0] ?? (useWeb.getState().notReady ? me : undefined);
+    if (!first && v.p && !web.playing && waitFor) {
+      void invoke('browser_apply', { tab, command: { p: false } });
+      const name = waitFor === me ? 'you (you’re not ready)' : (useChannels.getState().users[waitFor]?.name ?? 'someone');
+      toast({ kind: 'info', title: `Waiting for ${name}`, body: 'It plays for everyone once they’re ready.' });
+      return;
+    }
     if (!first) {
       hub.send({ t: 'web.set', roomId, web: { url: web.url, title: page.title || web.title, playing: v.p, position: v.t, at: v.p ? now + 1000 : now } });
       return;
@@ -287,7 +297,7 @@ function barWatch(): BarWatch {
   const ids = [...new Set((v.channelId ? (snapshots[v.channelId]?.participants ?? []) : []).filter((p) => p.roomId === roomId).map((p) => p.userId))];
   const along = ids.filter((id) => id === me || (statuses[id] && statuses[id].state !== 'away'));
   // Someone holding everyone up: an ad, or still signing in.
-  const holdUp = along.find((id) => id !== me && (statuses[id]?.state === 'ad' || statuses[id]?.state === 'signin' || statuses[id]?.state === 'opening'));
+  const holdUp = along.find((id) => id !== me && (statuses[id]?.state === 'ad' || statuses[id]?.state === 'signin' || statuses[id]?.state === 'opening' || statuses[id]?.state === 'notready'));
   const holdName = holdUp ? (users[holdUp]?.name ?? 'someone') : '';
   const holdState = holdUp ? statuses[holdUp]?.state : undefined;
   return {
@@ -296,7 +306,7 @@ function barWatch(): BarWatch {
     active: !!web,
     joined: !!web && st.joined === roomId,
     status: holdUp ? 'waiting' : 'sync',
-    label: holdUp ? (holdState === 'ad' ? `Waiting for ${holdName}’s ad` : holdState === 'signin' ? `${holdName} is signing in` : `Waiting for ${holdName}`) : along.length > 1 ? 'In sync' : `In ${room?.name ?? 'the call'}`,
+    label: holdUp ? (holdState === 'ad' ? `Waiting for ${holdName}’s ad` : holdState === 'signin' ? `${holdName} is signing in` : holdState === 'notready' ? `${holdName} isn’t ready` : `Waiting for ${holdName}`) : along.length > 1 ? 'In sync' : `In ${room?.name ?? 'the call'}`,
     people: along.map((id) => ({ id, name: users[id]?.name ?? 'Someone', avatarUrl: users[id]?.avatarUrl ?? null })),
   };
 }

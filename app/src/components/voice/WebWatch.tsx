@@ -14,12 +14,13 @@ function useRoomPeople(roomId: string) {
   return [...new Set((participants ?? []).filter((p) => p.roomId === roomId).sort((a, b) => a.joinedAt - b.joinedAt).map((p) => p.userId))];
 }
 
-const STATUS: Record<WebStatus['state'], string> = { opening: 'Opening it…', signin: 'Signing in', ready: 'Ready', ad: 'Watching an ad', away: 'Not watching' };
+const STATUS: Record<WebStatus['state'], string> = { opening: 'Opening it…', signin: 'Signing in', ready: 'Ready', notready: 'Not ready', ad: 'Watching an ad', away: 'Not watching' };
 
 /** A website the room is watching together, in the lobby: what it is, and where everyone stands. */
 export function WebCard({ channel, roomId }: { channel: Channel; roomId: string }) {
   const web = useWeb((s) => s.webs[roomId]);
   const statuses = useWeb((s) => s.statuses[roomId]);
+  const joined = useWeb((s) => s.joined === roomId);
   const people = useRoomPeople(roomId);
   const users = useChannels((s) => s.users);
   const me = useAuth((s) => s.me?.id);
@@ -51,7 +52,17 @@ export function WebCard({ channel, roomId }: { channel: Channel; roomId: string 
                 {users[id]?.name ?? 'Someone'}
                 {id === me && <span className="text-fg-3"> (you)</span>}
               </span>
-              <span className={clsx('shrink-0 text-[11.5px]', state === 'ready' ? 'text-success' : state === 'ad' ? 'text-warning' : 'text-fg-3')}>{STATUS[state]}</span>
+              {id === me && joined && (state === 'ready' || state === 'notready') ? (
+                <button
+                  onClick={() => useWeb.setState((s) => ({ notReady: !s.notReady }))}
+                  className={clsx('shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors', state === 'ready' ? 'bg-success/15 text-success hover:bg-success/25' : 'bg-warning/15 text-warning hover:bg-warning/25')}
+                  title={state === 'ready' ? 'Ask the room to wait for you' : 'Let the movie play'}
+                >
+                  {state === 'ready' ? 'Ready' : 'Not ready'}
+                </button>
+              ) : (
+                <span className={clsx('shrink-0 text-[11.5px]', state === 'ready' ? 'text-success' : state === 'ad' || state === 'notready' ? 'text-warning' : 'text-fg-3')}>{STATUS[state]}</span>
+              )}
             </div>
           );
         })}

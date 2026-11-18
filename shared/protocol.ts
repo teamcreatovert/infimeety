@@ -416,7 +416,8 @@ export interface Lobby {
 
 /** Where each person stands: opening the page, signing in, ready, watching an ad, or not along. */
 export interface WebStatus {
-  state: 'opening' | 'signin' | 'ready' | 'ad' | 'away';
+  /** notready: they asked the room to wait (a snack, a moment). */
+  state: 'opening' | 'signin' | 'ready' | 'notready' | 'ad' | 'away';
 }
 
 /** A change for everyone that the whole room votes on (it passes only if everyone says yes). */

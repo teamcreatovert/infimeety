@@ -575,7 +575,7 @@ export class ChannelHub extends DurableObject<Env> {
       }
       case 'web.status': {
         if (me.voice?.roomId !== msg.roomId || !this.webs.has(msg.roomId) || !msg.status) return;
-        const state = ['opening', 'signin', 'ready', 'ad', 'away'].includes(msg.status.state) ? msg.status.state : 'opening';
+        const state = ['opening', 'signin', 'ready', 'notready', 'ad', 'away'].includes(msg.status.state) ? msg.status.state : 'opening';
         return this.roomCast(msg.roomId, { t: 'web.status', roomId: msg.roomId, userId: me.userId, status: { state } });
       }
       case 'party.look': {
