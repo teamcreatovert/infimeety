@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
@@ -84,9 +84,16 @@ export function WatchStage(props: Props) {
   // and comes back (full screen shows it near the bottom): the controls never jump under the mouse.
   const dockSpace = !floatingDock ? '0px' : compact ? '72px' : '88px';
 
+  // A flat bar above the picture, like a desktop app's; full screen and phones keep it over the picture.
+  const solid = !compact && !full;
+  useEffect(() => {
+    useUI.getState().set({ darkChrome: true });
+    return () => useUI.getState().set({ darkChrome: false });
+  }, []);
+
   const stage = (
     <div
-      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--stage)]"
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--stage)]"
       style={{ cursor: idle && !nearBottom ? 'none' : undefined, ['--dock-space' as string]: dockSpace }}
       onPointerMove={(e) => {
         setTouched(e.pointerType === 'touch');
@@ -96,13 +103,16 @@ export function WatchStage(props: Props) {
       onPointerDown={(e) => setTouched(e.pointerType === 'touch')}
       onPointerLeave={() => setNearBottom(false)}
     >
-      {media}
-      <Header {...props} effective={effective} />
-      {overlay}
-      {controls && <Chrome idle={idle}>{controls}</Chrome>}
-      {effective === 'full' && <Talking {...props} />}
-      {effective === 'full' && <ChatBubble channel={props.channel} room={props.chatRoom} idle={idle} lifted={!!controls && dockHidden} />}
-      {floatingDock && dock(dockHidden)}
+      {solid && <Header {...props} effective={effective} solid />}
+      <div className="relative min-h-0 flex-1">
+        {media}
+        {!solid && <Header {...props} effective={effective} />}
+        {overlay}
+        {controls && <Chrome idle={idle}>{controls}</Chrome>}
+        {effective === 'full' && <Talking {...props} />}
+        {effective === 'full' && <ChatBubble channel={props.channel} room={props.chatRoom} idle={idle} lifted={!!controls && dockHidden} />}
+        {floatingDock && dock(dockHidden)}
+      </div>
     </div>
   );
 
@@ -143,22 +153,36 @@ function Chrome({ idle, children }: { idle: boolean; children: ReactNode }) {
   );
 }
 
-function Header({ badge, title, headerExtras, layout, effective, onLayout, idle, exitLabel, onExit }: Props & { effective: WatchLayout }) {
+function Header({ badge, title, headerExtras, layout, effective, onLayout, idle, exitLabel, onExit, channel, room, solid }: Props & { effective: WatchLayout; solid?: boolean }) {
   const compact = useCompact();
   const panel = useUI((s) => s.voiceChat);
   const navCollapsed = useUI((s) => s.navCollapsed);
+  const hidden = idle && !solid;
   return (
     <motion.header
       data-tauri-drag-region
-      animate={{ opacity: idle ? 0 : 1, y: idle ? -8 : 0 }}
+      animate={{ opacity: hidden ? 0 : 1, y: hidden ? -8 : 0 }}
       transition={spring}
-      className="absolute inset-x-0 top-0 z-30 flex h-[56px] items-center gap-2.5 bg-gradient-to-b from-black/75 to-transparent px-4 text-white compact:h-[48px] compact:gap-2 compact:px-2.5"
-      style={{ pointerEvents: idle ? 'none' : 'auto' }}
+      className={clsx(
+        'z-30 flex items-center text-white',
+        solid
+          ? 'relative h-[48px] shrink-0 gap-2 border-b border-white/[0.06] px-3'
+          : 'absolute inset-x-0 top-0 h-[56px] gap-2.5 bg-gradient-to-b from-black/75 to-transparent px-4 compact:h-[48px] compact:gap-2 compact:px-2.5',
+      )}
+      style={{ pointerEvents: hidden ? 'none' : 'auto' }}
     >
       {!compact && effective !== 'full' && (
-        <HeadButton label={navCollapsed ? 'Show channels' : 'Hide channels'} active={!navCollapsed} onClick={() => useUI.getState().set({ navCollapsed: !navCollapsed })}>
+        <HeadButton flat={solid} label={navCollapsed ? 'Show channels' : 'Hide channels'} active={!navCollapsed} onClick={() => useUI.getState().set({ navCollapsed: !navCollapsed })}>
           <PanelLeft size={16} />
         </HeadButton>
+      )}
+      {/* Where this is: the voice room, then what's on (like a desktop app's title). */}
+      {channel.kind === 'space' && room && !compact && (
+        <span data-tauri-drag-region className="flex shrink-0 items-center gap-1.5 text-[13.5px] font-semibold text-white/60">
+          <AudioLines size={15} className="text-success" />
+          {room.name}
+          <span className="text-white/25">·</span>
+        </span>
       )}
       {badge}
       <span data-tauri-drag-region className="min-w-0 truncate text-[13.5px] font-semibold">
@@ -167,14 +191,14 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       {headerExtras}
       <div data-tauri-drag-region className="flex-1 self-stretch" />
       {!compact && (
-        <div className="flex items-center gap-0.5 rounded-full p-0.5 glass-ink">
-          <LayoutButton label="Theater: picture and side panel" active={layout === 'theater'} onClick={() => onLayout('theater')}>
+        <div className={clsx('flex items-center gap-0.5 p-0.5', solid ? 'rounded-[10px] bg-white/[0.06]' : 'rounded-full glass-ink')}>
+          <LayoutButton flat={solid} label="Theater: picture and side panel" active={layout === 'theater'} onClick={() => onLayout('theater')}>
             <RectangleHorizontal size={15} />
           </LayoutButton>
-          <LayoutButton label="Mini: picture, faces and chat" active={layout === 'mini'} onClick={() => onLayout('mini')}>
+          <LayoutButton flat={solid} label="Mini: picture, faces and chat" active={layout === 'mini'} onClick={() => onLayout('mini')}>
             <PictureInPicture2 size={15} />
           </LayoutButton>
-          <LayoutButton label={layout === 'full' ? 'Exit full screen' : 'Full screen'} active={layout === 'full'} onClick={() => onLayout(layout === 'full' ? 'theater' : 'full')}>
+          <LayoutButton flat={solid} label={layout === 'full' ? 'Exit full screen' : 'Full screen'} active={layout === 'full'} onClick={() => onLayout(layout === 'full' ? 'theater' : 'full')}>
             {layout === 'full' ? <Shrink size={15} /> : <Expand size={15} />}
           </LayoutButton>
         </div>
@@ -185,34 +209,47 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
         </HeadButton>
       )}
       {effective === 'theater' && !compact && (
-        <HeadButton label={panel ? 'Hide side panel' : 'Show chat and people'} active={panel} onClick={() => useUI.getState().set({ voiceChat: !panel })}>
+        <HeadButton flat={solid} label={panel ? 'Hide side panel' : 'Show chat and people'} active={panel} onClick={() => useUI.getState().set({ voiceChat: !panel })}>
           <PanelRight size={16} />
         </HeadButton>
       )}
-      <HeadButton label={exitLabel} onClick={onExit}>
+      <HeadButton flat={solid} label={exitLabel} onClick={onExit}>
         <Minimize2 size={16} />
       </HeadButton>
     </motion.header>
   );
 }
 
-function LayoutButton({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: ReactNode }) {
+function LayoutButton({ label, active, onClick, flat, children }: { label: string; active: boolean; onClick: () => void; flat?: boolean; children: ReactNode }) {
   return (
     <Tooltip label={label} side="bottom">
-      <button aria-label={label} onClick={onClick} className={clsx('grid h-8 w-8 place-items-center rounded-full transition-colors', active ? 'bg-white text-black' : 'hover:bg-white/15')}>
+      <button
+        aria-label={label}
+        onClick={onClick}
+        className={clsx(
+          'grid place-items-center transition-colors',
+          flat ? 'h-7 w-8 rounded-[8px]' : 'h-8 w-8 rounded-full',
+          active ? (flat ? 'bg-white/[0.16] text-white' : 'bg-white text-black') : flat ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'hover:bg-white/15',
+        )}
+      >
         {children}
       </button>
     </Tooltip>
   );
 }
 
-export function HeadButton({ label, onClick, active, children }: { label: string; onClick: () => void; active?: boolean; children: ReactNode }) {
+export function HeadButton({ label, onClick, active, flat, children }: { label: string; onClick: () => void; active?: boolean; flat?: boolean; children: ReactNode }) {
   return (
     <Tooltip label={label} side="bottom">
       <button
         aria-label={label}
         onClick={onClick}
-        className={clsx('grid h-9 w-9 shrink-0 place-items-center rounded-full transition-colors glass-ink', active ? 'bg-white/25!' : 'hover:bg-white/15!')}
+        className={clsx(
+          'grid shrink-0 place-items-center transition-colors',
+          flat
+            ? clsx('h-8 w-8 rounded-[8px]', active ? 'bg-white/[0.12] text-white' : 'text-white/60 hover:bg-white/10 hover:text-white')
+            : clsx('h-9 w-9 rounded-full glass-ink', active ? 'bg-white/25!' : 'hover:bg-white/15!'),
+        )}
       >
         {children}
       </button>

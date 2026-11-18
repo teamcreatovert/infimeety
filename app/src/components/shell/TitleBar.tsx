@@ -9,6 +9,8 @@ const GLYPHS = { minimize: '', maximize: '', restore: '', close: '' 
 /** Title bar for the frameless window (Windows-style; a plain strip on Mac). `?titlebar` previews it in a dev browser. */
 export function TitleBar() {
   const immersive = useUI((s) => s.immersive);
+  // Watch mode: dark, like the picture under it, so the app doesn't look like a page in a browser.
+  const dark = useUI((s) => s.darkChrome);
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(() => document.hasFocus());
   const show = isTauri || (import.meta.env.DEV && location.search.includes('titlebar'));
@@ -39,20 +41,20 @@ export function TitleBar() {
   // Mac: the window keeps its own traffic lights (top left); this is just the strip to drag it by.
   if (isMac)
     return (
-      <div data-tauri-drag-region className="glass-rail hairline-b relative z-[60] flex h-[28px] shrink-0 items-center justify-center">
-        <span className="pointer-events-none text-[12px] font-medium text-fg-2" style={{ opacity: focused ? 1 : 0.55 }}>
+      <div data-tauri-drag-region className={clsx('relative z-[60] flex h-[28px] shrink-0 items-center justify-center transition-colors duration-300', dark ? 'bg-[var(--stage)]' : 'glass-rail hairline-b')}>
+        <span className={clsx('pointer-events-none text-[12px] font-medium', dark ? 'text-white/60' : 'text-fg-2')} style={{ opacity: focused ? 1 : 0.55 }}>
           Infimeety
         </span>
       </div>
     );
 
   return (
-    <div data-tauri-drag-region className="glass-rail hairline-b relative z-[60] flex h-[34px] shrink-0 items-center">
+    <div data-tauri-drag-region className={clsx('relative z-[60] flex h-[34px] shrink-0 items-center transition-colors duration-300', dark ? 'caption-dark bg-[var(--stage)]' : 'glass-rail hairline-b')}>
       <div className="pointer-events-none flex items-center gap-2 pl-3.5" style={{ opacity: focused ? 1 : 0.55 }}>
         <img src="/icon.png" alt="" className="h-4 w-4" draggable={false} />
-        <span className="text-[12px] font-medium text-fg-2">Infimeety</span>
+        <span className={clsx('text-[12px] font-medium', dark ? 'text-white/60' : 'text-fg-2')}>Infimeety</span>
       </div>
-      <div className="ml-auto flex h-full" style={{ color: focused ? 'var(--fg)' : 'var(--fg-3)' }}>
+      <div className="ml-auto flex h-full" style={{ color: dark ? (focused ? '#fff' : 'rgba(255,255,255,0.45)') : focused ? 'var(--fg)' : 'var(--fg-3)' }}>
         <CaptionButton label="Minimize" glyph={GLYPHS.minimize} onClick={appWindow.minimize} />
         <CaptionButton label={maximized ? 'Restore Down' : 'Maximize'} glyph={maximized ? GLYPHS.restore : GLYPHS.maximize} onClick={appWindow.toggleMaximize} />
         <CaptionButton label="Close" glyph={GLYPHS.close} onClick={appWindow.close} close />

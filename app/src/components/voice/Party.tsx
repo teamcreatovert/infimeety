@@ -1668,7 +1668,7 @@ export function PartyPersonExtra({ roomId, party, p }: { roomId: string; party: 
 
 export function PartyBadge() {
   return (
-    <span className="flex shrink-0 items-center gap-1 rounded-[6px] bg-accent px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
+    <span className="flex shrink-0 items-center gap-1 rounded-[6px] bg-white/[0.12] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white/85">
       <Popcorn size={11} /> WATCH PARTY
     </span>
   );

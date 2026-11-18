@@ -323,6 +323,13 @@ select:focus-visible {
 .caption-btn:active {
   background: var(--caption-press);
 }
+/* The dark title bar of watch mode: light hovers. */
+.caption-dark .caption-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.caption-dark .caption-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+}
 .caption-close:hover {
   background: #c42b1c;
   color: #fff;

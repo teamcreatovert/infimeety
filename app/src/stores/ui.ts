@@ -33,6 +33,8 @@ interface UIState {
   screenPicker: boolean;
   /** Full screen watching: hides the sidebars entirely. */
   immersive: boolean;
+  /** Watch mode is on screen: the title bar goes dark to match the picture. */
+  darkChrome: boolean;
   /** Watch mode's layout when not full screen. */
   watchLayout: 'theater' | 'mini';
   /** Showing the room's watch party (rather than the call grid) while one runs. */
@@ -73,6 +75,7 @@ export const useUI = create<UIState>()((set) => ({
   watching: [],
   screenPicker: false,
   immersive: false,
+  darkChrome: false,
   watchLayout: 'theater',
   partyView: true,
   navCollapsed: false,
