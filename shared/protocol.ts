@@ -252,6 +252,21 @@ export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '�
 export const MEETING_REACTIONS = ['👍', '👏', '❤️', '🎉', '🙌', '💯', '💡', '✅'] as const;
 export const ALL_REACTIONS: readonly string[] = [...new Set<string>([...REACTIONS, ...MEETING_REACTIONS])];
 
+// Built on first use, so an old WebKit without these regex features can't break the app at load.
+let emojiOnly: RegExp | null | undefined;
+/** One emoji (any, from the picker too): no text, no links, short. */
+export function validReaction(s: unknown): s is string {
+  if (typeof s !== 'string' || !s || s.length > 16 || /[\x00-\x7f]/.test(s)) return false;
+  if (emojiOnly === undefined) {
+    try {
+      emojiOnly = new RegExp('^(?=.*[\\p{Extended_Pictographic}\\p{Regional_Indicator}])[\\p{Extended_Pictographic}\\p{Emoji_Component}\\u200d\\ufe0f]+$', 'u');
+    } catch {
+      emojiOnly = null;
+    }
+  }
+  return emojiOnly ? emojiOnly.test(s) : true;
+}
+
 export interface VoiceParticipant extends VoiceLocalState {
   peerId: string;
   userId: string;

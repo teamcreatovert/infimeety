@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ALL_REACTIONS } from '../../../shared/protocol';
+import { validReaction } from '../../../shared/protocol';
 import { getHub } from './realtime';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
@@ -20,12 +20,12 @@ function float(emoji: string, name: string) {
 /** Sends a reaction to everyone in your voice room (and shows it here). */
 export function sendReaction(emoji: string) {
   const vs = useVoice.getState();
-  if (!vs.channelId || !ALL_REACTIONS.includes(emoji)) return;
+  if (!vs.channelId || !validReaction(emoji)) return;
   getHub(vs.channelId)?.send({ t: 'reaction', emoji });
   float(emoji, 'You');
 }
 
 export function onReaction(userId: string, emoji: string) {
-  if (userId === useAuth.getState().me?.id || !ALL_REACTIONS.includes(emoji)) return;
+  if (userId === useAuth.getState().me?.id || !validReaction(emoji)) return;
   float(emoji, useChannels.getState().users[userId]?.name ?? 'Someone');
 }

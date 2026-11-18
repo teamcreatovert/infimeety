@@ -186,7 +186,7 @@ export function ChatToggle() {
 }
 
 /** Discord-style icons at the top right of a call: each opens the side panel on its tab, or closes it. */
-function PanelToggle({ tab, label, children }: { tab: 'chat' | 'people'; label: string; children: ReactNode }) {
+function PanelToggle({ tab, label, dot, children }: { tab: 'chat' | 'people' | 'party'; label: string; dot?: boolean; children: ReactNode }) {
   const open = useUI((s) => s.voiceChat && s.sideTab === tab);
   return (
     <Tooltip label={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} side="bottom">
@@ -195,10 +195,12 @@ function PanelToggle({ tab, label, children }: { tab: 'chat' | 'people'; label: 
         onClick={() => useUI.getState().set(open ? { voiceChat: false } : { voiceChat: true, sideTab: tab })}
         className={clsx(
           'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] transition-colors compact:h-9 compact:w-9',
+          'relative',
           open ? 'bg-fill-3 text-fg' : 'text-fg-2 hover:bg-fill-2 hover:text-fg',
         )}
       >
         {children}
+        {dot && !open && <span className="absolute right-[5px] top-[5px] h-2 w-2 rounded-full bg-accent shadow-[0_0_0_2px_var(--bg)]" />}
       </button>
     </Tooltip>
   );
@@ -465,6 +467,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           <PanelToggle tab="chat" label="Chat">
             <MessageSquareText size={17} />
           </PanelToggle>
+          {/* Server voice rooms that allow watch parties; the dot says one is on. */}
+          {channel.kind === 'space' && (room.allowParty !== false || !!party) && (
+            <PanelToggle tab="party" label="Watch party" dot={!!party}>
+              <Popcorn size={17} />
+            </PanelToggle>
+          )}
         </header>
 
         {soundPrompt}
