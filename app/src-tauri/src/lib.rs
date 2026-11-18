@@ -17,6 +17,8 @@ mod names;
 mod phone;
 #[cfg(desktop)]
 mod ptt;
+#[cfg(desktop)]
+mod mac_privacy;
 #[cfg(windows)]
 mod screen_share;
 #[cfg(windows)]
@@ -150,6 +152,8 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             screen_share::screen_share_stop,
             voice_words::voice_words_start,
             voice_words::voice_words_stop,
+            mac_privacy::mac_screen_access,
+            mac_privacy::mac_privacy,
             desktop::set_close_to_tray,
             desktop::is_store_install,
             desktop::overlay_open,

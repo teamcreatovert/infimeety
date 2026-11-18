@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { RtcPayload, VoiceLocalState, VoiceParticipant, VoiceSnapshot } from '../../../../shared/protocol';
 import { api } from '@/lib/api';
 import type { HubClient } from '@/lib/hub';
-import { canShareScreen, isTauri, isWindows } from '@/lib/platform';
+import { canShareScreen, isMac, isTauri, isWindows } from '@/lib/platform';
 import { getHub } from '@/lib/realtime';
 import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
@@ -361,8 +361,12 @@ class VoiceEngine {
       for (const peer of this.peers.values()) peer.pc.addTrack(track, this.camOut);
       useVoice.setState({ camera: true, localCam: stream });
       this.pushState();
-    } catch {
-      toast({ kind: 'error', title: 'Camera unavailable', body: 'Check that no other app is using it.' });
+    } catch (err) {
+      // A Mac blocks the camera for the whole app until it's allowed in System Settings.
+      if (isTauri && isMac && (err as DOMException)?.name === 'NotAllowedError') {
+        void invoke('mac_privacy', { pane: 'camera' }).catch(() => {});
+        toast({ kind: 'error', title: 'Camera blocked', body: 'In System Settings, Privacy & Security, Camera: switch on Infimeety, then try again.' });
+      } else toast({ kind: 'error', title: 'Camera unavailable', body: 'Check that no other app is using it.' });
     }
   }
 
@@ -379,6 +383,19 @@ class VoiceEngine {
   async startScreen(source?: string) {
     if (!this.inCall || this.screen) return;
     if (!featureOn('screenShare')) return toast({ kind: 'info', title: 'Screen sharing is paused', body: 'We switched it off for a moment while we fix something. It’ll be back soon.' });
+    // A Mac shares only once Infimeety is allowed to record the screen: without that the
+    // webview's share just fails, so say where to switch it on (and open that list).
+    if (isTauri && isMac && !(await invoke<boolean>('mac_screen_access', { ask: false }).catch(() => true))) {
+      const asked = await invoke<boolean>('mac_screen_access', { ask: true }).catch(() => false);
+      if (!asked) {
+        void invoke('mac_privacy', { pane: 'screen' }).catch(() => {});
+        return toast({
+          kind: 'info',
+          title: 'Allow screen recording',
+          body: 'In System Settings, Privacy & Security, Screen & System Audio Recording: switch on Infimeety (already on after an update? Switch it off and on again), then quit and reopen Infimeety.',
+        });
+      }
+    }
     const s = useSettings.getState();
     const preset = SCREEN_PRESETS[s.screenQuality];
     // The Windows webview's picker has no system audio, so sound is captured natively instead.
@@ -416,6 +433,9 @@ class VoiceEngine {
     if (!stream)
     try {
       stream = await navigator.mediaDevices.getDisplayMedia(options(pickerAudio)).catch((err: DOMException) => {
+        // The Mac webview can fail the very first share with an error of its own (WebKit bug
+        // 259823): asking again works.
+        if (isTauri && isMac && err.name !== 'NotAllowedError' && err.name !== 'AbortError') return navigator.mediaDevices.getDisplayMedia(options(false));
         // Some browsers (Safari) refuse a request that includes sound instead of ignoring it.
         if (!pickerAudio || err.name === 'NotAllowedError' || err.name === 'AbortError') throw err;
         return navigator.mediaDevices.getDisplayMedia(options(false));
@@ -426,7 +446,12 @@ class VoiceEngine {
         toast({
           kind: 'error',
           title: "Couldn't start screen share",
-          body: canShareScreen ? String((err as Error).message ?? err) : 'This browser can’t share its screen. Try a computer.',
+          body:
+            isTauri && isMac
+              ? 'This Mac’s screen couldn’t be shared. Updating macOS usually fixes it (System Settings, General, Software Update).'
+              : canShareScreen
+                ? String((err as Error).message ?? err)
+                : 'This browser can’t share its screen. Try a computer.',
         });
       }
       return;
@@ -648,11 +673,15 @@ class VoiceEngine {
     } catch {
       try {
         raw = await navigator.mediaDevices.getUserMedia({ audio: base });
-      } catch {
+      } catch (err) {
         this.mic = this.micRaw = null;
         this.denoiser = null;
         useVoice.setState({ micAvailable: false, muted: true });
-        toast({ kind: 'error', title: 'Microphone unavailable', body: 'You joined muted. Check Settings → Voice & Video.' });
+        // A Mac blocks the mic for the whole app until it's allowed in System Settings.
+        if (isTauri && isMac && (err as DOMException)?.name === 'NotAllowedError') {
+          void invoke('mac_privacy', { pane: 'microphone' }).catch(() => {});
+          toast({ kind: 'error', title: 'Microphone blocked', body: 'You joined muted. In System Settings, Privacy & Security, Microphone: switch on Infimeety, then rejoin the call.' });
+        } else toast({ kind: 'error', title: 'Microphone unavailable', body: 'You joined muted. Check Settings → Voice & Video.' });
         return;
       }
     }

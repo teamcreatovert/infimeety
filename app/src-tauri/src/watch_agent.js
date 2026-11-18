@@ -77,6 +77,24 @@
   const tell = (kind) => (signal = { at: Date.now(), kind });
   document.addEventListener('dblclick', () => tell('full'), true);
 
+  // Mac: a site's own full-screen button would carry its video off into a separate full-screen
+  // space, away from the app (the lobby, the seats, the chat). It asks the app instead, which
+  // makes the whole window full screen around it, and leaving works the same way.
+  if (/^Mac/.test(navigator.platform)) {
+    const ask = (kind) =>
+      function () {
+        tell(kind);
+        return Promise.resolve();
+      };
+    const swap = (proto, names, kind) => {
+      for (const name of names) if (name in proto) Object.defineProperty(proto, name, { value: ask(kind), configurable: true, writable: true });
+    };
+    swap(Element.prototype, ['requestFullscreen', 'webkitRequestFullscreen', 'webkitRequestFullScreen'], 'full');
+    // Video elements have their own full-screen call on WebKit.
+    swap(HTMLVideoElement.prototype, ['webkitEnterFullscreen', 'webkitEnterFullScreen'], 'full');
+    swap(Document.prototype, ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen'], 'exit');
+  }
+
   // Video only (the watch party lobby's screen): the site's own player fills the page, its
   // controls included; everything else on the page steps aside.
   const FILL_CSS =

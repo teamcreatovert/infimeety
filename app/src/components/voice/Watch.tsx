@@ -179,6 +179,8 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
         solid
           ? 'relative h-[48px] shrink-0 gap-2 border-b border-white/[0.06] px-3'
           : 'absolute inset-x-0 top-0 h-[56px] gap-2.5 bg-gradient-to-b from-black/75 to-transparent px-4 compact:h-[48px] compact:gap-2 compact:px-2.5',
+        // The lobby hides the title bar, but a Mac keeps its window buttons at the top left.
+        leave && isTauri && isMac && 'pl-[84px]!',
       )}
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}
     >
