@@ -165,7 +165,11 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             watch_browser::browser_open,
             watch_browser::browser_state,
             watch_browser::browser_apply,
-            watch_browser::browser_show,
+            watch_browser::browser_nav,
+            watch_browser::browser_bounds,
+            watch_browser::browser_select,
+            watch_browser::browser_visible,
+            watch_browser::browser_go,
             watch_browser::browser_close,
         ])
 }

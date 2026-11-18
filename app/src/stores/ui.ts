@@ -35,6 +35,9 @@ interface UIState {
   immersive: boolean;
   /** Watch mode is on screen: the title bar goes dark to match the picture. */
   darkChrome: boolean;
+  /** The window's tabs: Home (the app) or the Infimeety browser, when it's open. */
+  tab: 'home' | 'browser';
+  browserOpen: boolean;
   /** Watch mode's layout when not full screen. */
   watchLayout: 'theater' | 'mini';
   /** Showing the room's watch party (rather than the call grid) while one runs. */
@@ -76,6 +79,8 @@ export const useUI = create<UIState>()((set) => ({
   screenPicker: false,
   immersive: false,
   darkChrome: false,
+  tab: 'home',
+  browserOpen: false,
   watchLayout: 'theater',
   partyView: true,
   navCollapsed: false,

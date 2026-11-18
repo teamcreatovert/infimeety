@@ -2,10 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { create } from 'zustand';
 import type { WebStatus, WebWatch } from '../../../shared/protocol';
 import { expectedPosition, serverNow, syncClock } from './party';
+import { activeTab, isStartPage, navigateTab, newTab, onTabClosed, selectTab } from './browser';
 import { isTauri } from './platform';
 import { getHub } from './realtime';
 import { useAuth } from '@/stores/auth';
-import { toast } from '@/stores/ui';
+import { useChannels } from '@/stores/channels';
+import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 /**
@@ -65,7 +67,7 @@ export function onWeb(roomId: string, web: WebWatch | null) {
   if (st.joined !== roomId) return;
   if (!web) return void leaveWeb(true);
   // Following along: the host opened another title, so this browser goes there too.
-  if (before && !sameVideo(before.url, web.url)) void openBrowser(web.url);
+  if (before && !sameVideo(before.url, web.url) && watchTab) void navigateTab(watchTab, web.url);
 }
 
 export function onWebStatus(roomId: string, userId: string, status: WebStatus) {
@@ -74,17 +76,39 @@ export function onWebStatus(roomId: string, userId: string, status: WebStatus) {
 
 // ─── Starting, joining, leaving ──────────────────────────────────────────────
 
-export const openBrowser = (url: string) => invoke('browser_open', { url });
-export const showBrowser = () => void invoke('browser_show').catch(() => {});
+/** The browser tab watching together (the others are just browsing). */
+let watchTab: string | null = null;
 
-/** Opens a site in the Infimeety browser for the room: whatever you open there, the room follows. */
-export async function startWeb(roomId: string, url: string) {
+/** Takes the watching tab to `url`: a fresh tab, or the one you're on if it's empty. */
+async function openWatchTab(url: string, reuse?: string) {
+  if (reuse) {
+    watchTab = reuse;
+    await navigateTab(reuse, url);
+    selectTab(reuse);
+    return;
+  }
+  const here = activeTab();
+  if (here && isStartPage(here.url)) {
+    watchTab = here.id;
+    await navigateTab(here.id, url);
+    selectTab(here.id);
+  } else watchTab = await newTab(url);
+}
+
+/** Shows the watching tab. */
+export const showBrowser = () => (watchTab ? selectTab(watchTab) : useUI.getState().set({ tab: 'browser' }));
+
+// Closing the watching tab stops watching along.
+onTabClosed((id) => id === watchTab && leaveWeb());
+
+/** Opens a site in the Infimeety browser for the room (in `tab`, or a new one): whatever you open there, the room follows. */
+export async function startWeb(roomId: string, url: string, tab?: string) {
   if (!canWatchWeb) return;
   const hub = hubFor();
   if (!hub) return;
   syncClock(hub);
   try {
-    await openBrowser(url);
+    await openWatchTab(url, tab);
   } catch (err) {
     return toast({ kind: 'error', title: 'Couldn’t open the browser', body: String(err) });
   }
@@ -98,7 +122,7 @@ export async function joinWeb(roomId: string) {
   if (!web || !canWatchWeb) return;
   syncClock();
   try {
-    await openBrowser(web.url);
+    await openWatchTab(web.url);
   } catch (err) {
     return toast({ kind: 'error', title: 'Couldn’t open the browser', body: String(err) });
   }
@@ -109,9 +133,9 @@ export async function joinWeb(roomId: string) {
 export function leaveWeb(ended = false) {
   const roomId = useWeb.getState().joined;
   stopLoop();
+  watchTab = null;
   useWeb.setState({ joined: null });
   if (roomId && !ended) hubFor()?.send({ t: 'web.status', roomId, status: { state: 'away' } });
-  void invoke('browser_close').catch(() => {});
 }
 
 /** Ends it for everyone. */
@@ -171,7 +195,9 @@ async function tick(roomId: string) {
 async function step(roomId: string) {
   const web = useWeb.getState().webs[roomId];
   if (!web) return leaveWeb(true);
-  const raw = await invoke<string>('browser_state').catch(() => 'null');
+  if (!watchTab) return leaveWeb();
+  const tab = watchTab;
+  const raw = await invoke<string>('browser_state', { tab }).catch(() => 'null');
   const page = JSON.parse(raw) as PageState | null;
   if (!page) {
     // Closed the browser window (a page that's loading also skips an answer now and then).
@@ -231,15 +257,67 @@ async function step(roomId: string) {
 
   // Follow the shared timeline. A start a moment ahead waits on its first frame.
   if (web.playing && now < web.at) {
-    if (v.p || Math.abs(v.t - web.position) > 0.5) void invoke('browser_apply', { command: { t: web.position, tol: 0.5, p: false } });
+    if (v.p || Math.abs(v.t - web.position) > 0.5) void invoke('browser_apply', { tab, command: { t: web.position, tol: 0.5, p: false } });
     return;
   }
   const target = expectedPosition(web, now);
   const off = Math.abs(v.t - target);
   // Web players can't be nudged frame by frame like ours: a jump only when clearly apart.
   const tol = web.playing ? 2 : 0.75;
-  if (v.p !== web.playing || off > tol) void invoke('browser_apply', { command: { t: target, tol, p: web.playing } });
+  if (v.p !== web.playing || off > tol) void invoke('browser_apply', { tab, command: { t: target, tol, p: web.playing } });
 }
+
+// ─── The browser's top bar ───────────────────────────────────────────────────
+
+/** What the browser's bar shows about the call: a button to watch together, or who's along and in step. */
+export interface BarWatch {
+  inCall: boolean;
+  roomName: string;
+  /** The room is watching a website together. */
+  active: boolean;
+  joined: boolean;
+  status: 'sync' | 'waiting';
+  label: string;
+  people: { id: string; name: string; avatarUrl: string | null }[];
+}
+
+function barWatch(): BarWatch {
+  const v = useVoice.getState();
+  const { channels, users, voice: snapshots } = useChannels.getState();
+  const me = useAuth.getState().me?.id;
+  const roomId = v.roomId;
+  const channel = channels.find((c) => c.id === v.channelId);
+  const room = channel?.rooms.find((r) => r.id === roomId);
+  const st = useWeb.getState();
+  const web = roomId ? st.webs[roomId] : undefined;
+  const statuses = (roomId && st.statuses[roomId]) || {};
+  const ids = [...new Set((v.channelId ? (snapshots[v.channelId]?.participants ?? []) : []).filter((p) => p.roomId === roomId).map((p) => p.userId))];
+  const along = ids.filter((id) => id === me || (statuses[id] && statuses[id].state !== 'away'));
+  // Someone holding everyone up: an ad, or still signing in.
+  const holdUp = along.find((id) => id !== me && (statuses[id]?.state === 'ad' || statuses[id]?.state === 'signin' || statuses[id]?.state === 'opening'));
+  const holdName = holdUp ? (users[holdUp]?.name ?? 'someone') : '';
+  const holdState = holdUp ? statuses[holdUp]?.state : undefined;
+  return {
+    inCall: !!roomId && channel?.kind === 'space',
+    roomName: room?.name ?? 'the call',
+    active: !!web,
+    joined: !!web && st.joined === roomId,
+    status: holdUp ? 'waiting' : 'sync',
+    label: holdUp ? (holdState === 'ad' ? `Waiting for ${holdName}’s ad` : holdState === 'signin' ? `${holdName} is signing in` : `Waiting for ${holdName}`) : along.length > 1 ? 'In sync' : `In ${room?.name ?? 'the call'}`,
+    people: along.map((id) => ({ id, name: users[id]?.name ?? 'Someone', avatarUrl: users[id]?.avatarUrl ?? null })),
+  };
+}
+
+/** What the Browser tab's toolbar shows about the call, kept up to date. */
+export function useBarWatch() {
+  useWeb((s) => s.webs);
+  useWeb((s) => s.statuses);
+  useWeb((s) => s.joined);
+  useVoice((s) => s.roomId);
+  useChannels((s) => s.voice);
+  return barWatch();
+}
+
 
 // ─── Links ───────────────────────────────────────────────────────────────────
 

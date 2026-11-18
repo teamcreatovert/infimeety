@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Download, Plus, Settings } from 'lucide-react';
+import { Download, Globe, Plus, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { ChannelIcon } from '../ui/ChannelIcon';
@@ -7,6 +7,8 @@ import { Tooltip } from '../ui/overlay';
 import { DOWNLOAD_PAGE } from '@/config';
 import { spring, snappy } from '@/lib/motion';
 import { isApp } from '@/lib/platform';
+import { openBrowser } from '@/lib/browser';
+import { canWatchWeb } from '@/lib/watchWeb';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
 import { useMessages } from '@/stores/messages';
@@ -40,6 +42,20 @@ export function ChannelRail() {
             <Plus size={20} strokeWidth={2.2} />
           </motion.button>
         </Tooltip>
+        {canWatchWeb && (
+          <Tooltip label="Infimeety browser: sign in to Netflix, YouTube and more, then watch together" side="right">
+            <motion.button
+              aria-label="Infimeety browser"
+              whileHover={{ scale: 1.06 }}
+              whileTap={{ scale: 0.92 }}
+              transition={snappy}
+              onClick={openBrowser}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-fill-2 text-accent shadow-[inset_0_0_0_0.5px_var(--hairline-strong)] transition-colors hover:bg-accent hover:text-white"
+            >
+              <Globe size={20} strokeWidth={2} />
+            </motion.button>
+          </Tooltip>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-1 pb-3.5">

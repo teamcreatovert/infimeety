@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New tab</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: 'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: radial-gradient(1200px 600px at 50% -10%, rgba(10, 132, 255, 0.16), transparent 60%), radial-gradient(900px 500px at 90% 110%, rgba(191, 90, 242, 0.12), transparent 60%), #0b0b0f;
+        color: rgba(255, 255, 255, 0.94);
+      }
+      main {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 16px 64px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      p.lead {
+        margin: 8px 0 28px;
+        color: rgba(235, 235, 245, 0.6);
+        font-size: 14px;
+      }
+      form {
+        width: min(600px, 100%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 48px;
+        padding: 0 18px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.07);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 20px 50px -20px rgba(0, 0, 0, 0.7);
+      }
+      form:focus-within {
+        box-shadow: inset 0 0 0 1.5px #0a84ff, 0 20px 50px -20px rgba(0, 0, 0, 0.7);
+      }
+      form svg {
+        flex: none;
+        opacity: 0.5;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 15px;
+      }
+      input::placeholder {
+        color: rgba(235, 235, 245, 0.55);
+      }
+      .grid {
+        margin-top: 36px;
+        width: min(640px, 100%);
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 14px;
+      }
+      .grid a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 9px;
+        padding: 14px 6px 12px;
+        border-radius: 16px;
+        color: rgba(255, 255, 255, 0.86);
+        text-decoration: none;
+        font-size: 12.5px;
+        font-weight: 500;
+        transition: background 0.15s, transform 0.15s;
+      }
+      .grid a:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .grid a:active {
+        transform: scale(0.96);
+      }
+      .tile {
+        width: 52px;
+        height: 52px;
+        border-radius: 15px;
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+        font-weight: 800;
+        color: #fff;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 10px 24px -12px rgba(0, 0, 0, 0.8);
+      }
+      .note {
+        margin-top: 40px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: rgba(235, 235, 245, 0.62);
+        font-size: 12px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Infimeety browser</h1>
+      <p class="lead">Sign in to your own accounts, then watch together from any call.</p>
+      <form action="https://www.google.com/search" method="get" id="search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <input name="q" id="q" placeholder="Search Google or type a link" autocomplete="off" autofocus />
+      </form>
+      <div class="grid">
+        <a href="https://www.netflix.com/browse"><span class="tile" style="background: #e50914">N</span>Netflix</a>
+        <a href="https://www.youtube.com/"><span class="tile" style="background: #ff0033">Y</span>YouTube</a>
+        <a href="https://www.primevideo.com/"><span class="tile" style="background: #1a98ff">P</span>Prime Video</a>
+        <a href="https://www.disneyplus.com/"><span class="tile" style="background: #113ccf">D</span>Disney+</a>
+        <a href="https://www.crunchyroll.com/"><span class="tile" style="background: #f47521">C</span>Crunchyroll</a>
+        <a href="https://www.twitch.tv/"><span class="tile" style="background: #9146ff">T</span>Twitch</a>
+        <a href="https://www.max.com/"><span class="tile" style="background: #002be7">M</span>Max</a>
+        <a href="https://www.google.com/"><span class="tile" style="background: #34a853">G</span>Google</a>
+      </div>
+      <div class="note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+        What you sign in to here stays on this computer. Infimeety never sees it.
+      </div>
+    </main>
+    <script>
+      // A link typed in the search box opens that site; anything else searches.
+      document.getElementById('search').addEventListener('submit', (e) => {
+        const v = document.getElementById('q').value.trim();
+        if (v && !v.includes(' ') && v.includes('.')) {
+          e.preventDefault();
+          location.href = /^https?:\/\//.test(v) ? v.replace(/^http:/, 'https:') : 'https://' + v;
+        }
+      });
+    </script>
+  </body>
+</html>

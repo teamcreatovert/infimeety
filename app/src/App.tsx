@@ -11,6 +11,7 @@ import { ScreenPicker } from './components/voice/ScreenPicker';
 import { Background } from './components/shell/Background';
 import { Shell } from './components/shell/Shell';
 import { TitleBar } from './components/shell/TitleBar';
+import { BrowserView } from './components/browser/BrowserView';
 import { Toasts } from './components/ui/Toasts';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ProfileCard } from './components/people/ProfileCard';
@@ -207,6 +208,7 @@ export default function App() {
               {status === 'ready' && <Shell />}
             </motion.div>
           </AnimatePresence>
+          {status === 'ready' && <BrowserTab />}
         </div>
         <ErrorBoundary quiet area="toasts"><Toasts /></ErrorBoundary>
         <ErrorBoundary quiet area="confirm"><ConfirmDialog /></ErrorBoundary>
@@ -229,4 +231,12 @@ export default function App() {
       </div>
     </MotionConfig>
   );
+}
+
+/** The Infimeety browser's tab, over the app (which keeps running underneath: calls, chats).
+ */
+function BrowserTab() {
+  const open = useUI((s) => s.browserOpen);
+  const visible = useUI((s) => s.tab === 'browser');
+  return open ? <BrowserView visible={visible} /> : null;
 }

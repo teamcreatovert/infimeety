@@ -12,7 +12,7 @@ use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilde
 /// they keep timers at full speed while the main window is hidden in the tray, so speaking
 /// detection (and with it the overlay) stays live.
 #[cfg_attr(windows, allow(dead_code))]
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --enable-blink-features=AudioVideoTracks";
+pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --enable-blink-features=AudioVideoTracks";
 
 /// Whether the close button hides to the tray (the default) or quits. Synced from settings.
 pub struct CloseToTray(AtomicBool);

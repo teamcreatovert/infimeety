@@ -11,6 +11,7 @@ import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useVoice } from '@/stores/voice';
+import { useUI } from '@/stores/ui';
 
 const RING_FOR = 45_000;
 /** When you were last in each call room. A friend reconnecting to a call you just dropped out of isn't a new call. */
@@ -54,6 +55,8 @@ export function IncomingCall() {
   // Ring until answered, declined, or it times out.
   useEffect(() => {
     if (!call) return;
+    // On the Browser tab the website covers the app: a call brings Home back.
+    if (useUI.getState().tab === 'browser') useUI.getState().set({ tab: 'home' });
     sounds.ring();
     void appWindow.attention();
     // A pop-up and the ring, never the window jumping up (a game keeps the screen).
