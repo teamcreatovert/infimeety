@@ -7,7 +7,7 @@ import { isTauri } from './platform';
 import { getHub } from './realtime';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
-import { toast } from '@/stores/ui';
+import { toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
 /**
@@ -138,6 +138,7 @@ interface PageState {
   signin: boolean;
   video: { t: number; d: number; p: boolean; r: number; ad: boolean } | null;
   userAt: number;
+  filled?: boolean;
 }
 
 let loop: ReturnType<typeof setInterval> | null = null;
@@ -201,6 +202,12 @@ async function step(roomId: string) {
   if (state !== lastStatus) {
     lastStatus = state;
     hub.send({ t: 'web.status', roomId, status: { state } });
+  }
+
+  // The lobby's screen shows the video alone (a page without one, or "Show page", shows the page).
+  if (tab === LOBBY_TAB) {
+    const want = useUI.getState().webFill && !!v && !page.signin;
+    if (want !== !!page.filled) void invoke('browser_apply', { tab, command: { fill: want } });
   }
 
   // The host leads: a new title they open becomes the room's.

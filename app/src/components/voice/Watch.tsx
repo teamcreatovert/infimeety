@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Armchair, ArrowLeft, AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { Armchair, ArrowLeft, Columns3, Rows3, AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
@@ -10,6 +10,7 @@ import { Avatar } from '../ui/Avatar';
 import { Tooltip } from '../ui/overlay';
 import { StreamVideo } from './StreamVideo';
 import { spring } from '@/lib/motion';
+import { useSettings } from '@/stores/settings';
 import { useParty } from '@/lib/party';
 import { useCompact } from '@/lib/responsive';
 import { useMessages } from '@/stores/messages';
@@ -60,7 +61,8 @@ interface Props extends WatchPeople {
   tallStage?: boolean;
   /** A lobby: its Leave button sits at the top left, and Cinema is offered with its seats. */
   leave?: { label: string; onClick: () => void };
-  seats?: ReactNode;
+  /** Cinema's seats, for where they go: along the bottom, or a column on each side. */
+  seats?: (where: 'bottom' | 'left' | 'right') => ReactNode;
 }
 
 export function WatchStage(props: Props) {
@@ -208,6 +210,7 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
               <Armchair size={15} />
             </LayoutButton>
           )}
+          {seats !== undefined && layout === 'cinema' && <SeatsToggle flat={solid} />}
           <LayoutButton flat={solid} label="Theater: picture and side panel" active={layout === 'theater'} onClick={() => onLayout('theater')}>
             <RectangleHorizontal size={15} />
           </LayoutButton>
@@ -517,7 +520,8 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
  * Cinema: the picture on a big flat screen in a dark room, a soft glow spilling from it, and
  * everyone in their seats below.
  */
-function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; controls?: ReactNode; seats?: ReactNode; idle: boolean; rows: number }) {
+function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; controls?: ReactNode; seats?: (where: 'bottom' | 'left' | 'right') => ReactNode; idle: boolean; rows: number }) {
+  const sides = useSettings((s) => s.cinemaSeats) === 'sides';
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -529,10 +533,11 @@ function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; cont
   }, []);
   const top = 20;
   // Room for the seats: one row, or two staggered (the website's own view can't sit under them).
-  const seatsHeight = rows > 1 ? 178 : 112;
+  const seatsHeight = sides ? 0 : rows > 1 ? 178 : 112;
+  const column = sides ? 112 : 0;
   const dock = 88;
   const room = Math.max(120, box.h - top - seatsHeight - dock - 8);
-  let w = box.w * 0.88;
+  let w = sides ? box.w - column * 2 - 40 : box.w * 0.88;
   let h = (w * 9) / 16;
   if (h > room) {
     h = room;
@@ -553,9 +558,30 @@ function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; cont
         {media}
         {controls && <Chrome idle={idle}>{controls}</Chrome>}
       </div>
-      <div className="absolute inset-x-0 flex justify-center" style={{ bottom: dock + 4 }}>
-        {seats}
-      </div>
+      {sides ? (
+        <>
+          <div className="absolute flex justify-center overflow-y-auto [scrollbar-width:none]" style={{ left: 12, width: column, top, bottom: dock + 4 }}>
+            {seats?.('left')}
+          </div>
+          <div className="absolute flex justify-center overflow-y-auto [scrollbar-width:none]" style={{ right: 12, width: column, top, bottom: dock + 4 }}>
+            {seats?.('right')}
+          </div>
+        </>
+      ) : (
+        <div className="absolute inset-x-0 flex justify-center" style={{ bottom: dock + 4 }}>
+          {seats?.('bottom')}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Cinema: the seats along the bottom, or on the left and right of the screen (remembered). */
+function SeatsToggle({ flat }: { flat?: boolean }) {
+  const sides = useSettings((s) => s.cinemaSeats) === 'sides';
+  return (
+    <LayoutButton flat={flat} label={sides ? 'Seats: on the sides (click for along the bottom)' : 'Seats: along the bottom (click for the sides)'} active={false} onClick={() => useSettings.getState().set({ cinemaSeats: sides ? 'bottom' : 'sides' })}>
+      {sides ? <Columns3 size={15} /> : <Rows3 size={15} />}
+    </LayoutButton>
   );
 }

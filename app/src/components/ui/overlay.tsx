@@ -12,7 +12,22 @@ import {
 } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { create } from 'zustand';
 import { spring } from '@/lib/motion';
+
+/**
+ * Where open popovers are on screen. A website's view (the lobby's movie) draws above the app,
+ * so it makes room for them while they're open.
+ */
+export const usePopoverRects = create<{ rects: Record<string, { left: number; top: number; right: number; bottom: number }> }>()(() => ({ rects: {} }));
+let popoverIds = 0;
+const dropRect = (id: string) =>
+  usePopoverRects.setState((s) => {
+    if (!s.rects[id]) return s;
+    const rects = { ...s.rects };
+    delete rects[id];
+    return { rects };
+  });
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
 
@@ -112,6 +127,7 @@ export function Popover({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; origin: string } | null>(null);
+  const [rectId] = useState(() => `p${++popoverIds}`);
 
   useLayoutEffect(() => {
     if (!open || !anchor || !ref.current) return setPos(null);
@@ -140,14 +156,18 @@ export function Popover({
       top = Math.max(8, Math.min(top, vh - h - 8));
       const origin = s === 'bottom' ? 'top' : s === 'top' ? 'bottom' : s === 'right' ? 'left' : 'right';
       setPos((p) => (p && p.left === left && p.top === top && p.origin === origin ? p : { left, top, origin }));
+      usePopoverRects.setState((st) => ({ rects: { ...st.rects, [rectId]: { left, top, right: left + w, bottom: top + h } } }));
     };
     place();
     // Content that grows or shrinks (a tab switch, a list that loads) places the popover again,
     // so it never runs off the screen.
     const ro = new ResizeObserver(place);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [open, anchor, side, align, offset]);
+    return () => {
+      ro.disconnect();
+      dropRect(rectId);
+    };
+  }, [open, anchor, side, align, offset]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;

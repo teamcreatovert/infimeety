@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
+import { usePopoverRects } from '../ui/overlay';
 import { Button } from '../ui/primitives';
 import { DOWNLOAD_PAGE } from '@/config';
 import { closeLobby, joinLobby, startLobby, useLobby } from '@/lib/activityLobby';
@@ -158,8 +159,17 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
     if (!el || !visible) return;
     const send = () => {
       const r = el.getBoundingClientRect();
-      void invoke('browser_bounds', { x: r.left, y: r.top, width: r.width, height: r.height }).catch(() => {});
+      let top = r.top;
+      let bottom = r.bottom;
+      // An open popover over the screen (reactions, menus): the movie makes room for it.
+      for (const p of Object.values(usePopoverRects.getState().rects)) {
+        if (p.right <= r.left || p.left >= r.right || p.bottom <= top || p.top >= bottom) continue;
+        if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
+        else top = Math.max(top, p.bottom + 6);
+      }
+      void invoke('browser_bounds', { x: r.left, y: top, width: r.width, height: Math.max(1, bottom - top) }).catch(() => {});
     };
+    const offRects = usePopoverRects.subscribe(send);
     void invoke('browser_select', { tab: LOBBY_TAB }).catch(() => {});
     void invoke('browser_visible', { visible: true }).catch(() => {});
     send();
@@ -167,6 +177,7 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
     ro.observe(el);
     window.addEventListener('resize', send);
     return () => {
+      offRects();
       ro.disconnect();
       window.removeEventListener('resize', send);
       void invoke('browser_visible', { visible: false }).catch(() => {});
@@ -183,7 +194,7 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
  * Cinema seats: everyone in the room as a seat facing the screen, in two staggered rows. A
  * speaker's seat glows; their reactions rise from it.
  */
-export function CinemaSeats({ people, speakingOf, myPeer }: { people: VoiceParticipant[]; speakingOf: (p: VoiceParticipant) => boolean; myPeer: string | null }) {
+export function CinemaSeats({ people, speakingOf, myPeer, vertical }: { people: VoiceParticipant[]; speakingOf: (p: VoiceParticipant) => boolean; myPeer: string | null; vertical?: boolean }) {
   const users = useChannels((s) => s.users);
   const reactions = useReactions((s) => s.list);
   const front = people.filter((_, i) => i % 2 === 0);
@@ -220,6 +231,17 @@ export function CinemaSeats({ people, speakingOf, myPeer }: { people: VoiceParti
       </div>
     );
   };
+  // On a side: one column, every other seat nudged, like seats in a curve.
+  if (vertical)
+    return (
+      <div className="pointer-events-auto flex flex-col items-center gap-3 py-2">
+        {people.map((p, i) => (
+          <div key={p.peerId} className={i % 2 ? 'translate-x-2' : '-translate-x-2'}>
+            {seat(p, false)}
+          </div>
+        ))}
+      </div>
+    );
   return (
     <div className="pointer-events-auto flex flex-col items-center">
       {back.length > 0 && <div className="flex translate-x-[38px] gap-3 opacity-90">{back.map((p) => seat(p, true))}</div>}
@@ -263,5 +285,18 @@ export function LobbyCard({ channel, room }: { channel: Channel; room: Room }) {
         </Button>
       )}
     </div>
+  );
+}
+
+/** The lobby's website: its video alone, or the whole page (to pick another video). */
+export function WebFillToggle() {
+  const fill = useUI((s) => s.webFill);
+  return (
+    <button
+      onClick={() => useUI.getState().set({ webFill: !fill })}
+      className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] bg-white/[0.08] px-2.5 text-[12px] font-medium text-white/85 transition-colors hover:bg-white/[0.14]"
+    >
+      <MonitorPlay size={13} /> {fill ? 'Show the page' : 'Video only'}
+    </button>
   );
 }

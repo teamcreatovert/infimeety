@@ -72,6 +72,8 @@ export interface SettingsState {
   gameMode: boolean;
   /** Lite mode: no glass, blur or animations, so slow PCs stay quick. 'auto' turns it on for weak hardware. */
   lite: 'auto' | 'on' | 'off';
+  /** Cinema view: the seats along the bottom, or on the left and right of the screen. */
+  cinemaSeats: 'bottom' | 'sides';
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -148,6 +150,7 @@ export const useSettings = create<SettingsState>()(
       musicVolume: 0.8,
       gameMode: true,
       lite: 'auto',
+      cinemaSeats: 'bottom',
 
       screenQuality: '1080p30',
       screenMode: 'motion',

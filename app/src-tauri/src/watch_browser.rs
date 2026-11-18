@@ -282,13 +282,15 @@ pub struct Command {
     tol: Option<f64>,
     /// Play (true) or pause (false).
     p: Option<bool>,
+    /// Video only: the site's player fills the page (the watch party lobby's screen).
+    fill: Option<bool>,
 }
 
 /// Plays, pauses or seeks a tab's video. Only these numbers reach the page.
 #[tauri::command]
 pub fn browser_apply(app: AppHandle, tab: String, command: Command) -> Result<(), String> {
     let Some(view) = site(&app, &tab) else { return Ok(()) };
-    let clean = Command { t: command.t.filter(|t| t.is_finite() && *t >= 0.0), tol: command.tol.filter(|t| t.is_finite() && *t >= 0.0), p: command.p };
+    let clean = Command { t: command.t.filter(|t| t.is_finite() && *t >= 0.0), tol: command.tol.filter(|t| t.is_finite() && *t >= 0.0), p: command.p, fill: command.fill };
     let json = serde_json::to_string(&clean).map_err(|e| e.to_string())?;
     view.eval(format!("try {{ window.__infimeetySync && window.__infimeetySync.apply({json}); }} catch (e) {{}}")).map_err(|e| e.to_string())
 }

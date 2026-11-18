@@ -47,6 +47,52 @@
   };
   for (const e of ['play', 'pause', 'seeked']) document.addEventListener(e, mark, true);
 
+  // Video only (the watch party lobby's screen): the site's own player fills the page, its
+  // controls included; everything else on the page steps aside.
+  const FILL_CSS =
+    'html.infimeety-fill,html.infimeety-fill body{overflow:hidden!important}' +
+    'html.infimeety-fill [data-infimeety-player]{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;margin:0!important;z-index:2147483646!important;background:#000!important}' +
+    'html.infimeety-fill [data-infimeety-player] video{object-fit:contain!important}' +
+    // Its wrappers can trap a fixed element (transforms, containment, stacking): loosen them.
+    'html.infimeety-fill [data-infimeety-chain]{transform:none!important;contain:none!important;filter:none!important;will-change:auto!important;z-index:auto!important;overflow:visible!important}' +
+    'html.infimeety-fill #masthead-container,html.infimeety-fill ytd-masthead{display:none!important}' +
+    // Everything but the player is hidden (the player keeps its own controls).
+    'html.infimeety-fill body *{visibility:hidden!important}' +
+    'html.infimeety-fill [data-infimeety-player],html.infimeety-fill [data-infimeety-player] *{visibility:visible!important}';
+  const playerOf = (v) => {
+    const yt = v.closest('#movie_player, .html5-video-player');
+    if (yt) return yt;
+    // Elsewhere: the video's wrapper while it's about the video's size (the player, not the page).
+    let el = v;
+    const vr = v.getBoundingClientRect();
+    for (let i = 0; i < 6 && el.parentElement && el.parentElement !== document.body; i++) {
+      const r = el.parentElement.getBoundingClientRect();
+      if (r.width > vr.width * 1.25 || r.height > vr.height * 1.4) break;
+      el = el.parentElement;
+    }
+    return el;
+  };
+  const setFill = (on) => {
+    if (!document.getElementById('infimeety-fill-style')) {
+      const style = document.createElement('style');
+      style.id = 'infimeety-fill-style';
+      style.textContent = FILL_CSS;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    for (const el of document.querySelectorAll('[data-infimeety-player],[data-infimeety-chain]')) el.removeAttribute(el.hasAttribute('data-infimeety-player') ? 'data-infimeety-player' : 'data-infimeety-chain');
+    for (const el of document.querySelectorAll('[data-infimeety-chain]')) el.removeAttribute('data-infimeety-chain');
+    const v = on ? video() : null;
+    if (v) {
+      const player = playerOf(v);
+      player.setAttribute('data-infimeety-player', '');
+      for (let el = player.parentElement; el && el !== document.documentElement; el = el.parentElement) el.setAttribute('data-infimeety-chain', '');
+    }
+    document.documentElement.classList.toggle('infimeety-fill', !!v);
+    // Players lay themselves out again on a resize.
+    window.dispatchEvent(new Event('resize'));
+  };
+  const filled = () => document.documentElement.classList.contains('infimeety-fill') && !!document.querySelector('[data-infimeety-player]');
+
   const signinPage = () => /(^|[/.?=&-])(login|signin|sign-in|sign_in|auth)([/.?=&-]|$)/i.test(location.pathname + location.search) || /^accounts\./.test(location.hostname);
 
   Object.defineProperty(window, '__infimeetySync', {
@@ -59,9 +105,11 @@
           signin: signinPage(),
           video: v ? { t: v.currentTime, d: isFinite(v.duration) ? v.duration : 0, p: !v.paused && !v.ended, r: v.readyState, ad: adShowing() } : null,
           userAt,
+          filled: filled(),
         };
       },
       apply(cmd) {
+        if (typeof cmd.fill === 'boolean') setFill(cmd.fill);
         const v = video();
         if (!v) return false;
         applying = Date.now();

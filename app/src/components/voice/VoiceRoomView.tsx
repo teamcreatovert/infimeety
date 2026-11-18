@@ -40,7 +40,7 @@ import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtr
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { FloatingReactions, FunPanel } from './Fun';
-import { CinemaSeats, LobbyChooser, WebStage } from './Lobby';
+import { CinemaSeats, LobbyChooser, WebFillToggle, WebStage } from './Lobby';
 import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
@@ -425,7 +425,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
             )
           }
           title={focused ? (focused.peerId === myPeer ? 'You’re sharing your screen' : `${sharerUser?.name ?? 'Someone'}’s screen`) : party ? party.file.name : web ? web.title : 'Watch party'}
-          headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : party ? <PartyHeaderInfo roomId={room.id} party={party} /> : undefined}
+          headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : party ? <PartyHeaderInfo roomId={room.id} party={party} /> : web ? <WebFillToggle /> : undefined}
           media={
             focused ? (
               <ScreenMedia stream={screenOf(focused)} />
@@ -448,7 +448,18 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           }
           dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}
           leave={lobbyOn ? { label: 'Leave lobby', onClick: leaveLobby } : undefined}
-          seats={lobbyOn ? <CinemaSeats people={participants} speakingOf={speakingOf} myPeer={myPeer} /> : undefined}
+          seats={
+            lobbyOn
+              ? (where) => (
+                  <CinemaSeats
+                    people={where === 'bottom' ? participants : participants.filter((_, i) => (where === 'left' ? i % 2 === 0 : i % 2 === 1))}
+                    speakingOf={speakingOf}
+                    myPeer={myPeer}
+                    vertical={where !== 'bottom'}
+                  />
+                )
+              : undefined
+          }
           tallStage={watchingParty && !watchingAlong}
           exitLabel={lobbyOn ? 'Leave lobby' : 'Exit watch mode'}
           onExit={exit}

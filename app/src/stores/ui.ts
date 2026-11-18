@@ -45,6 +45,8 @@ interface UIState {
   lobby: string | null;
   /** How the lobby shows the movie: a cinema with seats, a theater with the side panel, or mini. */
   lobbyLayout: 'cinema' | 'theater' | 'mini';
+  /** The lobby's website shows its video alone (or the whole page, to pick something else). */
+  webFill: boolean;
   /** Watch mode folds the channel list away (desktop); a button brings it back. */
   navCollapsed: boolean;
   /** The call's side panel tab. */
@@ -87,6 +89,7 @@ export const useUI = create<UIState>()((set) => ({
   watchLayout: 'theater',
   lobby: null,
   lobbyLayout: 'cinema',
+  webFill: true,
   navCollapsed: false,
   sideTab: 'chat',
   partyPlanner: null,
