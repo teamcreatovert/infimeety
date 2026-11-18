@@ -157,13 +157,22 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
   useEffect(() => {
     const el = area.current;
     if (!el || !visible) return;
+    let sent = '';
     const send = () => {
       const r = el.getBoundingClientRect();
       let top = r.top;
       let bottom = r.bottom;
       // The app's bars (the call bar, the header in full screen) and open panels: the movie makes
       // room for them, since nothing of the app can draw over a website.
-      const bars = [...document.querySelectorAll('[data-avoid-web]')].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
+      // Where each bar rests, not where it is mid-slide (they glide in and out on hover): the room
+      // it needs stays the same, so the movie doesn't resize (and stutter) as the mouse moves.
+      const bars = [...document.querySelectorAll<HTMLElement>('[data-avoid-web]')]
+        .map((e) => {
+          const b = e.getBoundingClientRect();
+          const m = new DOMMatrix(getComputedStyle(e).transform === 'none' ? undefined : getComputedStyle(e).transform);
+          return { left: b.left - m.m41, right: b.right - m.m41, top: b.top - m.m42, bottom: b.bottom - m.m42, width: b.width, height: b.height };
+        })
+        .filter((b) => b.width > 0 && b.height > 0);
       for (const p of [...Object.values(usePopoverRects.getState().rects), ...bars]) {
         if (p.right <= r.left || p.left >= r.right || p.bottom <= top || p.top >= bottom) continue;
         if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
@@ -172,7 +181,12 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
       // Smaller, the screen keeps its shape and stays centred (it steps back while a panel is open).
       const height = Math.max(1, bottom - top);
       const width = height < r.height ? (r.width * height) / r.height : r.width;
-      void invoke('browser_bounds', { x: r.left + (r.width - width) / 2, y: top, width, height }).catch(() => {});
+      // Whole pixels, and only when something really changed: no resizing from tiny wobbles.
+      const next = { x: Math.round(r.left + (r.width - width) / 2), y: Math.round(top), width: Math.round(width), height: Math.round(height) };
+      const key = `${next.x},${next.y},${next.width},${next.height}`;
+      if (key === sent) return;
+      sent = key;
+      void invoke('browser_bounds', next).catch(() => {});
     };
     const offRects = usePopoverRects.subscribe(send);
     // The bars slide in and out: look again now and then.
