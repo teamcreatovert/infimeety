@@ -564,16 +564,17 @@ function AppearanceTab() {
   return (
     <>
       <Group title="Theme">
-        <Row label="Appearance">
+        <Row label="Appearance" detail="Follows your account to every device you sign in on.">
           <Segmented
             id="theme"
-            className="w-[260px]"
+            className="w-[320px]"
             value={s.theme}
             onChange={(v) => s.set({ theme: v })}
             options={[
-              { value: 'system', label: 'Auto' },
-              { value: 'light', label: 'Light' },
               { value: 'dark', label: 'Dark' },
+              { value: 'midnight', label: 'Midnight' },
+              { value: 'light', label: 'Light' },
+              { value: 'system', label: 'Auto' },
             ]}
           />
         </Row>

@@ -44,6 +44,7 @@ import {
   sha256,
   toChannel,
   toMe,
+  parsePrefs,
   toMember,
   toMessage,
   toPublicUser,
@@ -358,6 +359,14 @@ app.post('/auth/logout', guestOk, async (c) => {
 app.get('/me', guestOk, async (c) => {
   const user = c.get('user');
   return c.json(toMe(user, await providersOf(c.env, user.id)));
+});
+
+/** The look someone picked: saved with their account so every device shows it. */
+app.put('/me/prefs', limit('prefs', 60), auth, async (c) => {
+  const user = c.get('user');
+  const prefs = { ...parsePrefs(user.prefs), ...parsePrefs(await c.req.json().catch(() => ({}))) };
+  await c.env.DB.prepare('UPDATE users SET prefs = ? WHERE id = ?').bind(JSON.stringify(prefs), user.id).run();
+  return c.json({ prefs });
 });
 
 const USERNAME = /^[a-z0-9_.]{3,24}$/;

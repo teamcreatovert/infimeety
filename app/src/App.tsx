@@ -52,8 +52,9 @@ export function useAppearance() {
   useEffect(() => {
     const mq = matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
-      const dark = theme === 'dark' || (theme === 'system' && mq.matches);
+      const dark = theme === 'dark' || theme === 'midnight' || (theme === 'system' && mq.matches);
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.toggleAttribute('data-midnight', theme === 'midnight');
     };
     apply();
     mq.addEventListener('change', apply);

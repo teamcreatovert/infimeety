@@ -36,7 +36,8 @@ export type NoiseFilter = 'strong' | 'standard' | 'off';
 export type VoiceInputMode = 'activity' | 'ptt';
 
 export interface SettingsState {
-  theme: 'system' | 'dark' | 'light';
+  /** Dark by default; midnight is pure black (OLED). */
+  theme: 'system' | 'dark' | 'light' | 'midnight';
   accent: Accent;
   wallpaper: Wallpaper;
   livingWallpaper: boolean;
@@ -119,7 +120,7 @@ const without = <T,>(record: Record<string, T>, key: string) => {
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
-      theme: 'system',
+      theme: 'dark',
       accent: 'blue',
       wallpaper: 'aurora',
       livingWallpaper: true,
@@ -183,7 +184,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'infimeety.settings',
-      version: 2,
+      version: 3,
       migrate: (stored, version) => {
         const s = (stored ?? {}) as Record<string, unknown>;
         if (version < 1) {
@@ -196,6 +197,10 @@ export const useSettings = create<SettingsState>()(
         if (version < 2) {
           // The overlay became opt-in: a window over a full-screen game can cost FPS.
           s.overlay = false;
+        }
+        if (version < 3 && s.theme === 'system') {
+          // Dark became the default look (System was the old default, rarely picked on purpose).
+          s.theme = 'dark';
         }
         return s as unknown as SettingsState;
       },

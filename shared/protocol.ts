@@ -39,6 +39,14 @@ export interface Me extends PublicUser {
   hasCustomAvatar: boolean;
   onboarded: boolean;
   providers: Provider[];
+  /** The look they picked, the same on every device they sign in on. */
+  prefs?: UserPrefs;
+}
+
+export interface UserPrefs {
+  theme?: 'system' | 'dark' | 'light' | 'midnight';
+  accent?: string;
+  wallpaper?: string;
 }
 
 export interface Room {

@@ -323,6 +323,18 @@ select:focus-visible {
 .caption-btn:active {
   background: var(--caption-press);
 }
+/* Midnight: the dark look on pure black (OLED screens, dark rooms). */
+:root[data-midnight] {
+  --bg: #000000;
+  --stage: #000000;
+  --glass-rail: rgba(0, 0, 0, 0.82);
+  --glass-side: rgba(6, 6, 8, 0.78);
+  --glass-main: rgba(0, 0, 0, 0.55);
+  --glass-pop: rgba(18, 18, 22, 0.9);
+  --glass-float: rgba(14, 14, 18, 0.72);
+  --glass-tile: rgba(255, 255, 255, 0.04);
+}
+
 /* The dark title bar of watch mode: light hovers. */
 .caption-dark .caption-btn:hover {
   background: rgba(255, 255, 255, 0.1);

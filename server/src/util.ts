@@ -1,5 +1,5 @@
 import { MAX_FILE_SIZE } from '../../shared/protocol';
-import type { Attachment, Channel, InvitePreview, Me, Member, Message, Provider, PublicUser, RemoteConfig, Role, Room, Category } from '../../shared/protocol';
+import type { Attachment, Channel, InvitePreview, Me, UserPrefs, Member, Message, Provider, PublicUser, RemoteConfig, Role, Room, Category } from '../../shared/protocol';
 import type { ChannelHub } from './hub';
 import type { Lobby } from './lobby';
 
@@ -38,6 +38,8 @@ export interface UserRow {
   avatar_key: string | null;
   provider_avatar_url: string | null;
   onboarded: number;
+  /** JSON: the look they picked (UserPrefs). */
+  prefs?: string | null;
   created_at: number;
   /** Set for browser guests: the meeting (channel id) they belong to. */
   guest_of: string | null;
@@ -86,7 +88,23 @@ export const toMe = (r: UserRow, providers: Provider[]): Me => ({
   hasCustomAvatar: !!r.avatar_key,
   onboarded: !!r.onboarded,
   providers,
+  prefs: parsePrefs(r.prefs),
 });
+
+/** Saved looks: only known themes and short names, whatever was stored. */
+export function parsePrefs(raw: unknown): UserPrefs {
+  let p: Record<string, unknown> = {};
+  try {
+    p = typeof raw === 'string' ? JSON.parse(raw) : raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+  const out: UserPrefs = {};
+  if (p.theme === 'system' || p.theme === 'dark' || p.theme === 'light' || p.theme === 'midnight') out.theme = p.theme;
+  if (typeof p.accent === 'string' && /^[a-z]{2,16}$/.test(p.accent)) out.accent = p.accent;
+  if (typeof p.wallpaper === 'string' && /^[a-z0-9-]{2,24}$/.test(p.wallpaper)) out.wallpaper = p.wallpaper;
+  return out;
+}
 
 export const toRoom = (r: any): Room => ({
   id: r.id,
