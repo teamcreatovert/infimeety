@@ -41,9 +41,13 @@
   let userAt = 0;
   let gesture = 0;
   for (const e of ['pointerdown', 'keydown']) document.addEventListener(e, () => (gesture = Date.now()), true);
+  // A title that just loaded and starts by itself (Netflix after its Play button, YouTube's
+  // autoplay) isn't anyone pressing play: it waits paused at the start for the room.
+  let loadAt = 0;
+  for (const e of ['loadstart', 'emptied']) document.addEventListener(e, () => (loadAt = Date.now()), true);
   const mark = () => {
     const now = Date.now();
-    if (now - applying > 900 && now - gesture < 1500) userAt = now;
+    if (now - applying > 900 && now - gesture < 1500 && now - loadAt > 3000) userAt = now;
   };
   for (const e of ['play', 'pause', 'seeked']) document.addEventListener(e, mark, true);
 
