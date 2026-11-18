@@ -5,6 +5,8 @@ mod apps;
 #[cfg(desktop)]
 mod games;
 #[cfg(desktop)]
+mod watch_browser;
+#[cfg(desktop)]
 mod media;
 #[cfg(desktop)]
 mod mkv;
@@ -155,6 +157,11 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             games::running_game,
             apps::audio_apps,
             apps::app_title,
+            watch_browser::browser_open,
+            watch_browser::browser_state,
+            watch_browser::browser_apply,
+            watch_browser::browser_show,
+            watch_browser::browser_close,
         ])
 }
 

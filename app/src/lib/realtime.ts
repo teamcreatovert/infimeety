@@ -10,6 +10,7 @@ import { clock, setPenalty, usePenalties } from './penalties';
 import { myActivity, onMyActivity, setActivities, setActivity } from './activity';
 import { onCallDeclined } from './calls';
 import { onReaction } from './reactions';
+import { onWeb, onWebStatus, onWebs } from './watchWeb';
 import { onSound, onSoundBlocked, onSoundStop } from './soundboard';
 import { listenForWords } from './voiceWords';
 import { sounds } from './sounds';
@@ -111,6 +112,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       channels.set({ online: { ...channels.online, [cid]: cleanIds(msg.online) }, voice: { ...channels.voice, [cid]: cleanVoiceSnapshot(msg.voice) } });
       voice.onWelcome(hub);
       onParties(msg.parties, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
+      onWebs(msg.webs, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
@@ -208,6 +210,10 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return useMeetings.getState().onCohost(cid, msg.userId);
     case 'meeting.ended':
       return useMeetings.getState().onEnded(cid);
+    case 'web':
+      return onWeb(msg.roomId, msg.web);
+    case 'web.status':
+      return onWebStatus(msg.roomId, msg.userId, msg.status);
     case 'party':
       return onParty(msg.roomId, msg.party, msg.resolved);
     case 'party.status':

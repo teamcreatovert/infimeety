@@ -46,6 +46,7 @@ import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
 import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty, useWatchingAlong } from '@/lib/party';
+import { useWeb } from '@/lib/watchWeb';
 import { useFeatureOn } from '@/lib/remote';
 import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
 import { getHub } from '@/lib/realtime';
@@ -287,6 +288,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
   const watching = !!focused || watchingParty;
   // The movie (and its controls) once it's on and this device watches along; the lobby before.
   const watchingAlong = useWatchingAlong(party);
+  const webOn = useWeb((s) => !!s.webs[room.id]);
   // The player's code loads as soon as this room has a party, so it is ready before anyone opens it.
   useEffect(() => {
     if (party) void preloadParty();
@@ -469,7 +471,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           </PanelToggle>
           {/* Server voice rooms that allow watch parties; the dot says one is on. */}
           {channel.kind === 'space' && (room.allowParty !== false || !!party) && (
-            <PanelToggle tab="party" label="Watch party" dot={!!party}>
+            <PanelToggle tab="party" label="Watch party" dot={!!party || webOn}>
               <Popcorn size={17} />
             </PanelToggle>
           )}

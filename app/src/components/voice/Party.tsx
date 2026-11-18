@@ -34,6 +34,7 @@ import { create } from 'zustand';
 import { partyRules, type Channel, type PartyAction, type PartyState, type Room, type VoiceParticipant } from '../../../../shared/protocol';
 import { pace } from '../chat/AttachmentView';
 import { Avatar } from '../ui/Avatar';
+import { WebCard, WebStart } from './WebWatch';
 import { MenuItem, MenuSeparator, Popover, Tooltip, type Anchor } from '../ui/overlay';
 import { Button, Slider, Spinner } from '../ui/primitives';
 import { DOWNLOAD_PAGE } from '@/config';
@@ -79,6 +80,7 @@ import {
 } from '@/lib/party';
 import { isApp, isPhoneApp, isTauri } from '@/lib/platform';
 import { useCompact } from '@/lib/responsive';
+import { useWeb } from '@/lib/watchWeb';
 import { cancelCopy } from '@/lib/transfer';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
@@ -702,6 +704,9 @@ function StartButton({ roomId, party, people, size, onStage, className }: { room
 /** The Watch party tab: plan one, or everything about getting ready for the one that's on. */
 export function PartyPanel({ channel, room }: { channel: Channel; room: Room }) {
   const party = useParty((s) => s.parties[room.id]);
+  // A website watched together shows first (a movie party can still be planned after it ends).
+  const web = useWeb((s) => !!s.webs[room.id]);
+  if (web) return <WebCard channel={channel} roomId={room.id} />;
   return party ? <PartyDetails channel={channel} room={room} party={party} /> : <PartyEmpty channel={channel} room={room} />;
 }
 
@@ -717,6 +722,7 @@ function PartyEmpty({ channel, room }: { channel: Channel; room: Room }) {
       <Button variant="primary" className="mt-5" icon={<Popcorn size={15} />} onClick={() => useUI.getState().set({ partyPlanner: { channelId: channel.id, roomId: room.id } })}>
         Plan a watch party
       </Button>
+      <WebStart roomId={room.id} />
     </div>
   );
 }

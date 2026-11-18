@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
 import { DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
-import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
+import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -77,6 +77,8 @@ export class ChannelHub extends DurableObject<Env> {
   private promoting = false;
   /** Watch parties by voice room. */
   private parties = new Map<string, PartyState>();
+  /** Websites watched together, by voice room. */
+  private webs = new Map<string, WebWatch>();
   private lastRequest = new Map<string, number>();
   private rates = new Buckets();
   /** This channel's AI bots (Nova and the admins' own), loaded when first called on. */
@@ -96,6 +98,7 @@ export class ChannelHub extends DurableObject<Env> {
       this.meeting = (await ctx.storage.get<MeetingState>('meeting')) ?? null;
       this.held = new Map(Object.entries((await ctx.storage.get<Record<string, { peer: Peer; until: number }>>('held')) ?? {}));
       // Parties saved before lobbies and settings existed are already live, with the defaults.
+      this.webs = new Map(Object.entries((await ctx.storage.get<Record<string, WebWatch>>('webs')) ?? {}));
       const saved = (await ctx.storage.get<Record<string, PartyState>>('parties')) ?? {};
       this.parties = new Map(
         Object.entries(saved).map(([roomId, p]) => [roomId, { ...p, phase: p.phase ?? 'live', settings: p.settings ?? DEFAULT_PARTY_SETTINGS, ready: p.ready ?? [] }]),
@@ -154,7 +157,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), config: remoteConfig(this.env), activities: this.activities() });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), webs: Object.fromEntries(this.webs), config: remoteConfig(this.env), activities: this.activities() });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
     const pen = await this.penaltiesOf(peer.userId);
     if (pen.chat || pen.voice) this.send(server, { t: 'penalty', chatUntil: pen.chat, voiceUntil: pen.voice });
@@ -525,6 +528,33 @@ export class ChannelHub extends DurableObject<Env> {
         if (!party || !(this.isHost(party, me.userId) || canModerateRole(me.role))) return;
         await this.savePartyState(msg.roomId, { ...party, settings: cleanSettings(msg.settings), by: me.userId, seq: party.seq + 1 });
         return this.maybeAutoStart(msg.roomId);
+      }
+      case 'web.set': {
+        const roomId = String(msg.roomId);
+        if (me.voice?.roomId !== roomId) return;
+        if (!msg.web) return this.saveWeb(roomId, null);
+        const url = cleanWebUrl(msg.web.url);
+        if (!url) return this.send(ws, { t: 'error', message: 'That link can’t be watched together' });
+        const current = this.webs.get(roomId);
+        const now = Date.now();
+        const same = current?.url === url.href;
+        return this.saveWeb(roomId, {
+          id: same ? current.id : newId(),
+          url: url.href,
+          title: (typeof msg.web.title === 'string' ? msg.web.title : '').trim().slice(0, 120) || url.hostname,
+          site: url.hostname.replace(/^www\./, ''),
+          hostId: current?.hostId ?? me.userId,
+          playing: !!msg.web.playing,
+          position: Math.max(0, Number(msg.web.position) || 0),
+          at: Math.min(now + 5000, Math.max(now - 60_000, Number(msg.web.at) || now)),
+          by: me.userId,
+          seq: (current?.seq ?? 0) + 1,
+        });
+      }
+      case 'web.status': {
+        if (me.voice?.roomId !== msg.roomId || !this.webs.has(msg.roomId) || !msg.status) return;
+        const state = ['opening', 'signin', 'ready', 'ad', 'away'].includes(msg.status.state) ? msg.status.state : 'opening';
+        return this.roomCast(msg.roomId, { t: 'web.status', roomId: msg.roomId, userId: me.userId, status: { state } });
       }
       case 'party.look': {
         const party = this.parties.get(String(msg.roomId));
@@ -988,8 +1018,21 @@ export class ChannelHub extends DurableObject<Env> {
     await this.savePartyState(roomId, next, resolves);
   }
 
+  private async saveWeb(roomId: string, web: WebWatch | null) {
+    if (web) this.webs.set(roomId, web);
+    else this.webs.delete(roomId);
+    await this.ctx.storage.put('webs', Object.fromEntries(this.webs));
+    this.broadcast({ t: 'web', roomId, web });
+  }
+
   /** After the room changes: an empty room ends its party; a host who left hands it on. */
   private async tendParties(except?: WebSocket) {
+    // Websites watched together end with an empty room, and pass to someone still there.
+    for (const [roomId, web] of [...this.webs]) {
+      const present = this.inRoom(roomId, except);
+      if (!present.length) await this.saveWeb(roomId, null);
+      else if (!present.includes(web.hostId)) await this.saveWeb(roomId, { ...web, hostId: present[0], seq: web.seq + 1 });
+    }
     for (const [roomId, party] of [...this.parties]) {
       const present = this.inRoom(roomId, except);
       if (!present.length) {
@@ -1282,6 +1325,9 @@ function rateOf(t: unknown): SocketRate {
     case 'party.cohost':
     case 'party.status':
     case 'party.vote':
+    case 'party.look':
+    case 'web.set':
+    case 'web.status':
     case 'clock':
       return 'party';
     case 'sound.play':
@@ -1299,6 +1345,20 @@ function cleanSound(s: unknown): SoundRef | null {
 }
 
 /** A vote's proposal as sent, or null. */
+/** A page to watch together: an ordinary https link (no passwords in it, nothing local). */
+function cleanWebUrl(v: unknown): URL | null {
+  if (typeof v !== 'string' || v.length > 800) return null;
+  try {
+    const url = new URL(v);
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+    if (/^(localhost|127\.|10\.|192\.168\.|\[)/.test(url.hostname) || !url.hostname.includes('.')) return null;
+    url.hash = '';
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 function cleanProposal(v: unknown): PartyProposal | null {
   const p = v as Record<string, unknown> | null;
   if (!p || typeof p !== 'object') return null;

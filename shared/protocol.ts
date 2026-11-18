@@ -376,6 +376,30 @@ export interface PartyState {
   saturation?: number;
 }
 
+/**
+ * Watching a website together (Netflix, YouTube...): everyone opens the same link in their own
+ * Infimeety browser, signed in to their own account, and the apps keep play, pause and the time
+ * in step. Only the link and the timeline pass through the server; logins stay on each device.
+ */
+export interface WebWatch {
+  id: string;
+  url: string;
+  title: string;
+  /** The site's name for display, e.g. "netflix.com". */
+  site: string;
+  hostId: string;
+  playing: boolean;
+  position: number;
+  at: number;
+  by: string;
+  seq: number;
+}
+
+/** Where each person stands: opening the page, signing in, ready, watching an ad, or not along. */
+export interface WebStatus {
+  state: 'opening' | 'signin' | 'ready' | 'ad' | 'away';
+}
+
 /** A change for everyone that the whole room votes on (it passes only if everyone says yes). */
 export type PartyProposal =
   | { kind: 'subtitle'; file: PartyFile | null; label: string }
@@ -457,6 +481,9 @@ export type ClientMsg =
   | { t: 'party.ready'; roomId: string; ready: boolean }
   /** The host changes how the party runs. */
   | { t: 'party.settings'; roomId: string; settings: PartySettings }
+  /** Watch a website together: the link and the shared timeline (null ends it). */
+  | { t: 'web.set'; roomId: string; web: Pick<WebWatch, 'url' | 'title' | 'playing' | 'position' | 'at'> | null }
+  | { t: 'web.status'; roomId: string; status: WebStatus }
   /** With changes set to "anyone": a change for everyone, applied directly. */
   | { t: 'party.look'; roomId: string; proposal: PartyProposal }
   | { t: 'party.request'; roomId: string; action: PartyAction }
@@ -472,7 +499,7 @@ export type ClientMsg =
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; config?: RemoteConfig; activities?: Record<string, Activity> }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; webs?: Record<string, WebWatch>; config?: RemoteConfig; activities?: Record<string, Activity> }
   | { t: 'activity'; userId: string; activity: Activity | null }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }
@@ -509,6 +536,8 @@ export type ServerMsg =
   /** Meetings: the host ended it or it expired; `channel.removed` follows. */
   | { t: 'meeting.ended' }
   | { t: 'party'; roomId: string; party: PartyState | null; resolved?: string }
+  | { t: 'web'; roomId: string; web: WebWatch | null }
+  | { t: 'web.status'; roomId: string; userId: string; status: WebStatus }
   | { t: 'party.request'; roomId: string; id: string; from: string; action: PartyAction }
   | { t: 'party.status'; roomId: string; peerId: string; userId: string; status: PartyMemberStatus }
   | { t: 'party.vote'; roomId: string; id: string; from: string; proposal?: PartyProposal; yes?: boolean }
