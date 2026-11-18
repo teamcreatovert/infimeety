@@ -14,6 +14,7 @@ import {
   Mic,
   MicOff,
   SmilePlus,
+  Hand,
   MonitorPlay,
   Phone,
   PhoneOff,
@@ -750,6 +751,10 @@ function Dock({
   const noiseOn = useSettings((s) => s.noiseFilter !== 'off');
   const toggleNoise = () => useSettings.getState().set({ noiseFilter: noiseOn ? 'off' : 'strong' });
   const isAdmin = channel.role !== 'member';
+  // Personal calls stay clean; server rooms are the fun ones; meetings are polite, with a hand.
+  const meeting = channel.kind === 'meeting';
+  const fun = channel.kind !== 'dm';
+  const funLabel = meeting ? 'Reactions and applause' : 'Reactions, sounds and music';
   const sharer = participants.find((p) => p.screen && p.peerId !== myPeer) ?? participants.find((p) => p.screen);
   const micOff = muted || deafened || serverMuted;
   const toggleRoomMute = () => getHub(channel.id)?.send({ t: 'voice.roomMute', roomId: room.id, muted: !roomMuted });
@@ -805,9 +810,16 @@ function Dock({
           <MenuItem icon={<AudioWaveform size={15} />} onClick={() => (setMoreMenu(null), toggleNoise())}>
             {noiseOn ? 'Turn off noise suppression' : 'Turn on noise suppression'}
           </MenuItem>
-          <MenuItem icon={<SmilePlus size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
-            {hand ? 'Reactions and hand (raised)' : 'Reactions, hand and sounds'}
-          </MenuItem>
+          {meeting && (
+            <MenuItem icon={<Hand size={15} />} onClick={() => (setMoreMenu(null), voice.toggleHand())}>
+              {hand ? 'Lower your hand' : 'Raise your hand'}
+            </MenuItem>
+          )}
+          {fun && (
+            <MenuItem icon={<SmilePlus size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
+              {funLabel}
+            </MenuItem>
+          )}
           {sharer && (
             <MenuItem icon={<Clapperboard size={15} />} onClick={() => (setMoreMenu(null), toggleWatch())}>
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
@@ -828,7 +840,7 @@ function Dock({
           )}
         </Popover>
         <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12} material="float">
-          <FunPanel sounds={soundboard} music={false} onDone={() => setSoundMenu(null)} />
+          <FunPanel meeting={meeting} sounds={soundboard} music={false} onDone={() => setSoundMenu(null)} />
         </Popover>
       </motion.div>
     );
@@ -878,9 +890,16 @@ function Dock({
           </span>
         </DockButton>
       )}
-      <DockButton label="Reactions, raise hand, sounds and music" state={soundMenu || hand || music ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
-        <SmilePlus size={19} />
-      </DockButton>
+      {meeting && (
+        <DockButton label={hand ? 'Lower your hand' : 'Raise your hand'} state={hand ? 'on' : 'normal'} onClick={() => voice.toggleHand()}>
+          <Hand size={19} />
+        </DockButton>
+      )}
+      {fun && (
+        <DockButton label={funLabel} state={soundMenu || music ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
+          <SmilePlus size={19} />
+        </DockButton>
+      )}
       {isAdmin && (
         <DockButton
           label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins and moderators can still talk)'}
@@ -907,8 +926,9 @@ function Dock({
 
       <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="center" offset={14} material="float">
         <FunPanel
+          meeting={meeting}
           sounds={soundboard}
-          music={canShareMusic && (channel.kind === 'dm' || isAdmin)}
+          music={canShareMusic && isAdmin}
           busy={participants.find((p) => p.music && p.peerId !== myPeer)?.userId}
           onDone={() => setSoundMenu(null)}
         />

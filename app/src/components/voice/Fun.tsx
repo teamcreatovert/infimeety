@@ -1,65 +1,57 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Hand, Music2, SmilePlus, Speaker } from 'lucide-react';
+import { Music2, SmilePlus, Speaker } from 'lucide-react';
 import { useState } from 'react';
-import { REACTIONS } from '../../../../shared/protocol';
+import { MEETING_REACTIONS, REACTIONS } from '../../../../shared/protocol';
 import { MusicPicker } from './Music';
-import { SoundboardPanel } from './Soundboard';
+import { SoundboardPanel, politeSound } from './Soundboard';
 import { sendReaction, useReactions } from '@/lib/reactions';
-import { voice } from '@/lib/voice/engine';
-import { useVoice } from '@/stores/voice';
 
 type Tab = 'react' | 'sounds' | 'music';
 
 /**
- * The call bar's one fun button: reactions and a raised hand on top, then the soundboard and
- * Share music, so the bar stays short.
+ * The call bar's fun button. Server rooms get every reaction, the soundboard and Share music;
+ * meetings get polite reactions and applause. One width for every tab, so it never jumps.
  */
-export function FunPanel({ sounds, music, busy, onDone }: { sounds: boolean; music: boolean; busy?: string; onDone: () => void }) {
+export function FunPanel({ meeting, sounds, music, busy, onDone }: { meeting?: boolean; sounds: boolean; music: boolean; busy?: string; onDone: () => void }) {
   const [tab, setTab] = useState<Tab>('react');
-  const hand = useVoice((s) => s.hand);
   const tabs: { id: Tab; label: string; icon: typeof Speaker }[] = [
     { id: 'react', label: 'React', icon: SmilePlus },
-    ...(sounds ? [{ id: 'sounds' as const, label: 'Sounds', icon: Speaker }] : []),
-    ...(music ? [{ id: 'music' as const, label: 'Music', icon: Music2 }] : []),
+    ...(sounds ? [{ id: 'sounds' as const, label: meeting ? 'Applause' : 'Sounds', icon: Speaker }] : []),
+    ...(music && !meeting ? [{ id: 'music' as const, label: 'Music', icon: Music2 }] : []),
   ];
+  const emojis = meeting ? MEETING_REACTIONS : REACTIONS;
   return (
-    <div className="flex flex-col">
-      <div className="flex gap-1 p-2 pb-0">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={clsx('flex flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium', tab === t.id ? 'bg-accent text-white' : 'text-fg-2 hover:bg-fill-2')}
-          >
-            <t.icon size={14} /> {t.label}
-          </button>
-        ))}
-      </div>
-      {tab === 'react' && (
-        <div className="w-[300px] p-3">
-          <div className="grid grid-cols-4 gap-1.5">
-            {REACTIONS.map((e) => (
-              <motion.button
-                key={e}
-                whileTap={{ scale: 0.85 }}
-                onClick={() => sendReaction(e)}
-                className="emoji grid h-12 place-items-center rounded-[12px] text-[26px] glass-key"
-              >
-                {e}
-              </motion.button>
-            ))}
-          </div>
-          <button
-            onClick={() => voice.toggleHand()}
-            className={clsx('mt-2 flex w-full items-center justify-center gap-2 rounded-[12px] py-2 text-[13px] font-semibold', hand ? 'bg-warning text-black' : 'glass-key')}
-          >
-            <Hand size={15} /> {hand ? 'Lower your hand' : 'Raise your hand'}
-          </button>
+    <div className="flex w-[400px] max-w-[calc(100vw-24px)] flex-col">
+      {tabs.length > 1 && (
+        <div className="flex gap-1 p-2 pb-0">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={clsx('flex flex-1 items-center justify-center gap-1.5 rounded-[10px] py-1.5 text-[12.5px] font-medium', tab === t.id ? 'bg-accent text-white' : 'text-fg-2 hover:bg-fill-2')}
+            >
+              <t.icon size={14} /> {t.label}
+            </button>
+          ))}
         </div>
       )}
-      {tab === 'sounds' && <SoundboardPanel />}
-      {tab === 'music' && <MusicPicker busy={busy} onDone={onDone} />}
+      {/* Every tab fills the same width. */}
+      <div className="[&>*]:w-full!">
+        {tab === 'react' && (
+          <div className="p-3">
+            <div className="grid grid-cols-4 gap-1.5">
+              {emojis.map((e) => (
+                <motion.button key={e} whileTap={{ scale: 0.85 }} onClick={() => sendReaction(e)} className="emoji grid h-14 place-items-center rounded-[12px] text-[28px] glass-key">
+                  {e}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+        )}
+        {tab === 'sounds' && <SoundboardPanel only={meeting ? politeSound : undefined} />}
+        {tab === 'music' && <MusicPicker busy={busy} onDone={onDone} />}
+      </div>
     </div>
   );
 }

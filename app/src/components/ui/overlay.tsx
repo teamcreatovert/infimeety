@@ -113,29 +113,37 @@ export function Popover({
   useLayoutEffect(() => {
     if (!open || !anchor || !ref.current) return setPos(null);
     const el = ref.current;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    const r = 'width' in anchor ? anchor : new DOMRect(anchor.x, anchor.y, 0, 0);
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let s = side;
-    if (s === 'bottom' && r.bottom + offset + h > vh && r.top - offset - h > 0) s = 'top';
-    if (s === 'top' && r.top - offset - h < 0) s = 'bottom';
-    if (s === 'right' && r.right + offset + w > vw) s = 'left';
+    const place = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const r = 'width' in anchor ? anchor : new DOMRect(anchor.x, anchor.y, 0, 0);
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let s = side;
+      if (s === 'bottom' && r.bottom + offset + h > vh && r.top - offset - h > 0) s = 'top';
+      if (s === 'top' && r.top - offset - h < 0) s = 'bottom';
+      if (s === 'right' && r.right + offset + w > vw) s = 'left';
 
-    let left = 0;
-    let top = 0;
-    if (s === 'bottom' || s === 'top') {
-      top = s === 'bottom' ? r.bottom + offset : r.top - offset - h;
-      left = align === 'start' ? r.left : align === 'end' ? r.right - w : r.left + r.width / 2 - w / 2;
-    } else {
-      left = s === 'right' ? r.right + offset : r.left - offset - w;
-      top = align === 'start' ? r.top : align === 'end' ? r.bottom - h : r.top + r.height / 2 - h / 2;
-    }
-    left = Math.max(8, Math.min(left, vw - w - 8));
-    top = Math.max(8, Math.min(top, vh - h - 8));
-    const origin = s === 'bottom' ? 'top' : s === 'top' ? 'bottom' : s === 'right' ? 'left' : 'right';
-    setPos({ left, top, origin });
+      let left = 0;
+      let top = 0;
+      if (s === 'bottom' || s === 'top') {
+        top = s === 'bottom' ? r.bottom + offset : r.top - offset - h;
+        left = align === 'start' ? r.left : align === 'end' ? r.right - w : r.left + r.width / 2 - w / 2;
+      } else {
+        left = s === 'right' ? r.right + offset : r.left - offset - w;
+        top = align === 'start' ? r.top : align === 'end' ? r.bottom - h : r.top + r.height / 2 - h / 2;
+      }
+      left = Math.max(8, Math.min(left, vw - w - 8));
+      top = Math.max(8, Math.min(top, vh - h - 8));
+      const origin = s === 'bottom' ? 'top' : s === 'top' ? 'bottom' : s === 'right' ? 'left' : 'right';
+      setPos((p) => (p && p.left === left && p.top === top && p.origin === origin ? p : { left, top, origin }));
+    };
+    place();
+    // Content that grows or shrinks (a tab switch, a list that loads) places the popover again,
+    // so it never runs off the screen.
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [open, anchor, side, align, offset]);
 
   useEffect(() => {

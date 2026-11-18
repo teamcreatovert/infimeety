@@ -24,8 +24,12 @@ import { useSettings } from '@/stores/settings';
  * Click a chip to play it for everyone; hover it and press ▶ to hear it first (only you); the
  * star keeps it in Favorites. While your sound plays, a big Stop button stops it for everyone.
  */
-export function SoundboardPanel() {
-  const sounds = useSoundPack((s) => s.sounds);
+/** The sounds that suit a meeting: applause and a cheer. */
+export const politeSound = (s: PackSound) => /applause|clap|tada|cheer/i.test(`${s.name} ${s.file}`);
+
+export function SoundboardPanel({ only }: { only?: (s: PackSound) => boolean } = {}) {
+  const all = useSoundPack((s) => s.sounds);
+  const sounds = only ? all.filter(only) : all;
   const ready = useSoundPack((s) => s.ready);
   const favorites = useSettings((s) => s.soundFavorites);
   const hearing = useSettings((s) => s.hearSounds);

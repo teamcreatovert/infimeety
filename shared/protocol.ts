@@ -248,6 +248,9 @@ export interface VoiceLocalState {
 
 /** The reactions that float up over a call. */
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
+/** Meetings get polite ones. */
+export const MEETING_REACTIONS = ['👍', '👏', '❤️', '🎉', '🙌', '💯', '💡', '✅'] as const;
+export const ALL_REACTIONS: readonly string[] = [...new Set<string>([...REACTIONS, ...MEETING_REACTIONS])];
 
 export interface VoiceParticipant extends VoiceLocalState {
   peerId: string;

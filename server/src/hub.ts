@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
-import { DEFAULT_PARTY_SETTINGS, REACTIONS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
+import { ALL_REACTIONS, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks } from '../../shared/protocol';
 import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
@@ -474,7 +474,7 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'reaction': {
         // Floats up for everyone in your voice room; only the known ones, at the reactions' rate.
-        if (!me.voice || !(REACTIONS as readonly string[]).includes(msg.emoji)) return;
+        if (!me.voice || !ALL_REACTIONS.includes(msg.emoji)) return;
         return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: msg.emoji }, ws);
       }
 
