@@ -43,6 +43,7 @@ strip = true
 tauri-winrt-notification = "0.8"
 wasapi = "0.26.0"
 webview2-com = "0.39"
+windows-numerics = "0.3"
 # A word list for the speech recognizer (voice_words.rs).
 windows-collections = "0.3"
 # Native screen sharing (screen_share.rs): Windows.Graphics.Capture, like Discord and OBS.
@@ -55,6 +56,11 @@ windows = { version = "0.62", features = [
   "Graphics_DirectX",
   "Graphics_DirectX_Direct3D11",
   "Win32_Foundation",
+  "Win32_Graphics_Direct2D",
+  "Win32_Graphics_Direct2D_Common",
+  "Win32_Graphics_DirectWrite",
+  "Win32_Graphics_Imaging",
+  "Win32_System_LibraryLoader",
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D11",
   "Win32_Graphics_Dwm",

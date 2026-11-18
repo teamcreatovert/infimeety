@@ -19,6 +19,8 @@ mod phone;
 mod ptt;
 #[cfg(windows)]
 mod screen_share;
+#[cfg(windows)]
+mod overlay_native;
 /// Mac and Linux share through the webview's own picker; these just say so.
 #[cfg(all(desktop, not(windows)))]
 mod screen_share {
@@ -152,6 +154,9 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             desktop::is_store_install,
             desktop::overlay_open,
             desktop::overlay_close,
+            desktop::overlay_state,
+            desktop::overlay_avatar,
+            desktop::overlay_note,
             desktop::notify,
             desktop::webview_memory,
             games::running_game,

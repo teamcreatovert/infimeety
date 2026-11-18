@@ -4,12 +4,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg_attr(windows, allow(unused_imports))]
 use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder, Window, WindowEvent};
 
 /// WebView2 arguments for every webview in the app; they must match `additionalBrowserArgs` in
 /// tauri.conf.json, or WebView2 refuses to create the second window. Besides wry's defaults,
 /// they keep timers at full speed while the main window is hidden in the tray, so speaking
 /// detection (and with it the overlay) stays live.
+#[cfg_attr(windows, allow(dead_code))]
 const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --enable-blink-features=AudioVideoTracks";
 
 /// Whether the close button hides to the tray (the default) or quits. Synced from settings.
@@ -104,6 +106,19 @@ fn overlay_position(app: &AppHandle, corner: &str) -> Option<(f64, f64)> {
 #[tauri::command]
 pub async fn overlay_open(app: AppHandle, corner: String) -> Result<(), String> {
     let (x, y) = overlay_position(&app, &corner).unwrap_or((OVERLAY_MARGIN, OVERLAY_MARGIN));
+    // Windows draws it natively (overlay_native.rs): no second browser window.
+    #[cfg(windows)]
+    {
+        let scale = app.primary_monitor().ok().flatten().map(|m| m.scale_factor()).unwrap_or(1.0);
+        crate::overlay_native::open((x * scale).round() as i32, (y * scale).round() as i32, scale as f32);
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    overlay_webview(app, x, y).await
+}
+
+#[cfg(not(windows))]
+async fn overlay_webview(app: AppHandle, x: f64, y: f64) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
         return window.set_position(LogicalPosition::new(x, y)).map_err(|e| e.to_string());
     }
@@ -127,9 +142,39 @@ pub async fn overlay_open(app: AppHandle, corner: String) -> Result<(), String> 
 
 #[tauri::command]
 pub fn overlay_close(app: AppHandle) {
+    #[cfg(windows)]
+    crate::overlay_native::close();
     if let Some(window) = app.get_webview_window("overlay") {
         let _ = window.destroy();
     }
+}
+
+/// What the native overlay draws (Windows; elsewhere the overlay page listens for events).
+#[cfg(windows)]
+#[tauri::command]
+pub fn overlay_state(state: crate::overlay_native::State) {
+    crate::overlay_native::set_state(state);
+}
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn overlay_state() {}
+
+/// A person's avatar for the native overlay: a small round PNG, sent once.
+#[tauri::command]
+pub fn overlay_avatar(user_id: String, png: Vec<u8>) {
+    #[cfg(windows)]
+    crate::overlay_native::set_avatar(user_id, png);
+    #[cfg(not(windows))]
+    let _ = (user_id, png);
+}
+
+/// A message or call shown on the native overlay for a few seconds.
+#[tauri::command]
+pub fn overlay_note(title: String, body: String) {
+    #[cfg(windows)]
+    crate::overlay_native::note(title, body);
+    #[cfg(not(windows))]
+    let _ = (title, body);
 }
 
 /// A Windows pop-up for a message or call. Clicking it brings Infimeety up and tells the page

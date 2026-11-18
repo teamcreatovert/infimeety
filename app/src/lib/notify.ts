@@ -65,6 +65,7 @@ export async function notify(title: string, body: string, target = '') {
   if (!isTauri || (await getCurrentWindow().isFocused().catch(() => false))) return;
   // In a call, it shows in the who's-talking overlay instead of a pop-up over your game.
   if (useVoice.getState().roomId && useSettings.getState().overlay && !isMac) {
+    if (isWindows) return void invoke('overlay_note', { title, body }).catch(() => {});
     return void emitTo('overlay', 'overlay:note', { title, body }).catch(() => {});
   }
   // Windows: Infimeety's own pop-up, which can open the chat when clicked.

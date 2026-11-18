@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { isMac, isTauri } from './platform';
+import { isMac, isTauri, isWindows } from './platform';
 import { voice } from './voice/engine';
 import { useChannels } from '@/stores/channels';
 import { useSettings, type OverlayCorner } from '@/stores/settings';
@@ -46,6 +46,35 @@ function overlayState(focused: boolean): OverlayState {
   return { visible: !focused, corner: s.overlayCorner, show: s.overlayShow, people };
 }
 
+const avatarsSent = new Set<string>();
+
+/** A person's picture for the native overlay: 56 px, round, as a PNG. */
+async function sendAvatar(userId: string, url: string) {
+  avatarsSent.add(userId);
+  try {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+    await img.decode();
+    const size = 56;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    g.beginPath();
+    g.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    g.clip();
+    const s = Math.min(img.naturalWidth, img.naturalHeight);
+    g.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
+    if (!blob) return;
+    await invoke('overlay_avatar', { userId, png: Array.from(new Uint8Array(await blob.arrayBuffer())) });
+  } catch {
+    // A picture we can't read (another site's, no CORS): the overlay shows the letter instead.
+    avatarsSent.delete(userId);
+  }
+}
+
 /**
  * Desktop-only behaviour: tells Rust whether closing hides to the tray, and runs the
  * who's-talking overlay window for as long as you're in a call.
@@ -78,6 +107,12 @@ export function startDesktop() {
     const json = JSON.stringify(state);
     if (json === sent) return;
     sent = json;
+    // Windows draws it natively (no web page): the state and, once each, round avatars.
+    if (isWindows) {
+      void invoke('overlay_state', { state }).catch(() => {});
+      for (const p of state.people) if (p.avatarUrl && !avatarsSent.has(p.userId)) void sendAvatar(p.userId, p.avatarUrl);
+      return;
+    }
     void emitTo('overlay', 'overlay:state', state).catch(() => {});
   };
 

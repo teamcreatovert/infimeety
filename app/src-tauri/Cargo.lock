@@ -1871,6 +1871,7 @@ dependencies = [
  "webview2-com",
  "windows 0.62.2",
  "windows-collections",
+ "windows-numerics",
 ]
 
 [[package]]
