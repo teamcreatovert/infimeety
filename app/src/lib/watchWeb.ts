@@ -146,6 +146,12 @@ interface PageState {
 let loop: ReturnType<typeof setInterval> | null = null;
 let busy = false;
 let lastUserAt = 0;
+/** The page's count of your own actions when you joined: only newer ones are shared. */
+let baselined = false;
+/** When this device last changed the shared timeline: its own page is right for a moment after. */
+let lastSentAt = 0;
+/** When the page was last made to jump (by us): web players need a moment to buffer after one. */
+let lastJumpAt = 0;
 let lastStatus = '';
 let heldForAd = false;
 let missing = 0;
@@ -154,6 +160,7 @@ function join(roomId: string) {
   stopLoop();
   useWeb.setState({ joined: roomId });
   lastUserAt = 0;
+  baselined = false;
   lastStatus = '';
   heldForAd = false;
   missing = 0;
@@ -241,33 +248,50 @@ async function step(roomId: string) {
   }
 
   // Something I did in the page myself (play, pause, a jump): share it.
+  if (!baselined) {
+    baselined = true;
+    lastUserAt = page.userAt;
+  }
   if (page.userAt > lastUserAt) {
-    const first = lastUserAt === 0;
     lastUserAt = page.userAt;
     // Play waits while someone asked the room to wait (Not ready), themselves included.
     const waitFor = Object.entries(useWeb.getState().statuses[roomId] ?? {}).find(([, s]) => s.state === 'notready')?.[0] ?? (useWeb.getState().notReady ? me : undefined);
-    if (!first && v.p && !web.playing && waitFor) {
-      void invoke('browser_apply', { tab, command: { p: false } });
+    if (v.p && !web.playing && waitFor) {
+      apply(tab, { p: false });
       const name = waitFor === me ? 'you (you’re not ready)' : (useChannels.getState().users[waitFor]?.name ?? 'someone');
       toast({ kind: 'info', title: `Waiting for ${name}`, body: 'It plays for everyone once they’re ready.' });
       return;
     }
-    if (!first) {
-      hub.send({ t: 'web.set', roomId, web: { url: web.url, title: page.title || web.title, playing: v.p, position: v.t, at: v.p ? now + 1000 : now } });
-      return;
-    }
+    // A skip while playing carries on at once (no waiting); a play from paused starts a moment
+    // ahead so everyone begins together. The one who did it keeps watching meanwhile.
+    const lead = v.p && !web.playing ? 700 : 0;
+    hub.send({ t: 'web.set', roomId, web: { url: web.url, title: page.title || web.title, playing: v.p, position: v.t, at: now + lead } });
+    lastSentAt = Date.now();
+    return;
   }
+
+  // Right after this device's own change, its page is the truth: don't correct it.
+  if (Date.now() - lastSentAt < 2500) return;
+  // Still loading the part being played (a jump, a slow line): let it settle first.
+  if (v.r < 3) return;
 
   // Follow the shared timeline. A start a moment ahead waits on its first frame.
   if (web.playing && now < web.at) {
-    if (v.p || Math.abs(v.t - web.position) > 0.5) void invoke('browser_apply', { tab, command: { t: web.position, tol: 0.5, p: false } });
+    if (v.p || Math.abs(v.t - web.position) > 0.75) apply(tab, { t: web.position, tol: 0.75, p: false });
     return;
   }
   const target = expectedPosition(web, now);
   const off = Math.abs(v.t - target);
-  // Web players can't be nudged frame by frame like ours: a jump only when clearly apart.
-  const tol = web.playing ? 2 : 0.75;
-  if (v.p !== web.playing || off > tol) void invoke('browser_apply', { tab, command: { t: target, tol, p: web.playing } });
+  // Web players can't be nudged frame by frame like ours: a jump only when clearly apart, and not
+  // again while the last one is still buffering (that's where the jitter came from).
+  const tol = web.playing ? 2.5 : 0.75;
+  if (v.p !== web.playing) apply(tab, { t: off > tol ? target : undefined, tol, p: web.playing });
+  else if (off > tol && Date.now() - lastJumpAt > 4000) apply(tab, { t: target, tol });
+}
+
+function apply(tab: string, command: { t?: number; tol?: number; p?: boolean }) {
+  if (command.t !== undefined) lastJumpAt = Date.now();
+  void invoke('browser_apply', { tab, command });
 }
 
 // ─── The browser's top bar ───────────────────────────────────────────────────

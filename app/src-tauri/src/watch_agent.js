@@ -17,6 +17,27 @@
     }
   };
 
+  // Play, pause, seek and volume through the site's own player where it has one: YouTube and
+  // Netflix override changes made straight to their video (a play is paused again at once).
+  const control = (v) => {
+    const n = netflix ? netflixPlayer() : null;
+    const yt = document.getElementById('movie_player');
+    const y = yt && typeof yt.playVideo === 'function' && yt.contains(v) ? yt : null;
+    return {
+      play: () => (n ? n.play() : y ? y.playVideo() : v.play().catch(() => {})),
+      pause: () => (n ? n.pause() : y ? y.pauseVideo() : v.pause()),
+      seek: (t) => (n ? n.seek(Math.round(t * 1000)) : y ? y.seekTo(t, true) : (v.currentTime = t)),
+      volume: (by) => {
+        if (y) {
+          y.unMute();
+          y.setVolume(Math.max(0, Math.min(100, y.getVolume() + by * 100)));
+        } else if (n && n.setVolume) n.setVolume(Math.max(0, Math.min(1, n.getVolume() + by)));
+        else (v.muted = false), (v.volume = Math.max(0, Math.min(1, v.volume + by)));
+      },
+      mute: () => (y ? (y.isMuted() ? y.unMute() : y.mute()) : n && n.setMuted ? n.setMuted(!n.isMuted()) : (v.muted = !v.muted)),
+    };
+  };
+
   // The biggest video on the page that has something loaded: the movie, not a preview tile.
   const video = () => {
     let best = null;
@@ -81,7 +102,11 @@
     }
     return el;
   };
+  // Netflix's watch page is the movie already (its subtitles and controls sit beside the video):
+  // nothing to hide there, only the keys to take over.
+  let netflixFill = false;
   const setFill = (on) => {
+    if (netflix) return void (netflixFill = !!on);
     if (!document.getElementById('infimeety-fill-style')) {
       const style = document.createElement('style');
       style.id = 'infimeety-fill-style';
@@ -100,11 +125,13 @@
     // Players lay themselves out again on a resize.
     window.dispatchEvent(new Event('resize'));
   };
-  const filled = () => document.documentElement.classList.contains('infimeety-fill') && !!document.querySelector('[data-infimeety-player]');
+  const filled = () => (netflix ? netflixFill : document.documentElement.classList.contains('infimeety-fill') && !!document.querySelector('[data-infimeety-player]'));
 
   // Infimeety's shortcuts, the same as its own player (YouTube's and VLC's, without clashes),
-  // on the lobby's video-only screen. Elsewhere the site's own keys work as usual.
-  document.addEventListener(
+  // on the lobby's video-only screen. Elsewhere the site's own keys work as usual. On the window,
+  // first of all (this runs before the site's scripts): the site's own handler for the same key
+  // never also runs, or a press would count twice (play then pause, a skip of 20 s).
+  window.addEventListener(
     'keydown',
     (e) => {
       if (e.key === 'Escape') return tell('exit');
@@ -113,23 +140,19 @@
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       const v = video();
       if (!v) return;
-      const n = netflix ? netflixPlayer() : null;
-      const go = (to) => {
-        const t = Math.max(0, Math.min(isFinite(v.duration) ? v.duration - 0.5 : to, to));
-        if (n) n.seek(Math.round(t * 1000));
-        else v.currentTime = t;
-      };
+      const c = control(v);
+      const go = (to) => c.seek(Math.max(0, Math.min(isFinite(v.duration) ? v.duration - 0.5 : to, to)));
       const k = e.key;
       const by = e.ctrlKey ? 60 : e.shiftKey ? 3 : 10;
       if (e.ctrlKey && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
       if (k === ' ' || k === 'k' || k === 'K') {
-        if (v.paused) n ? n.play() : v.play().catch(() => {});
-        else n ? n.pause() : v.pause();
+        if (v.paused) c.play();
+        else c.pause();
       } else if (k === 'ArrowLeft' || k === 'j' || k === 'J') go(v.currentTime - by);
       else if (k === 'ArrowRight' || k === 'l' || k === 'L') go(v.currentTime + by);
-      else if (k === 'ArrowUp') (v.muted = false), (v.volume = Math.min(1, v.volume + 0.05));
-      else if (k === 'ArrowDown') v.volume = Math.max(0, v.volume - 0.05);
-      else if (k === 'm' || k === 'M') v.muted = !v.muted;
+      else if (k === 'ArrowUp') c.volume(0.05);
+      else if (k === 'ArrowDown') c.volume(-0.05);
+      else if (k === 'm' || k === 'M') c.mute();
       else if (k === 'f' || k === 'F') tell('full');
       else if (k === 'Home') go(0);
       else if (/^[0-9]$/.test(k) && isFinite(v.duration)) go((v.duration * Number(k)) / 10);
@@ -140,6 +163,22 @@
     },
     true,
   );
+
+  // The rest of those presses (key up, typed character): the site mustn't act on them either
+  // (YouTube toggles play on Space's key up too).
+  const ours = /^( |k|K|j|J|l|L|m|M|f|F|[0-9]|ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home)$/;
+  for (const type of ['keyup', 'keypress'])
+    window.addEventListener(
+      type,
+      (e) => {
+        if (e.metaKey || e.altKey || !filled() || !ours.test(e.key)) return;
+        const el = e.target;
+        if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      },
+      true,
+    );
 
   const signinPage = () => /(^|[/.?=&-])(login|signin|sign-in|sign_in|auth)([/.?=&-]|$)/i.test(location.pathname + location.search) || /^accounts\./.test(location.hostname);
 
@@ -164,18 +203,10 @@
         const v = video();
         if (!v) return false;
         applying = Date.now();
-        const n = netflix ? netflixPlayer() : null;
-        if (typeof cmd.t === 'number' && Math.abs(v.currentTime - cmd.t) > (cmd.tol ?? 1)) {
-          if (n) n.seek(Math.round(cmd.t * 1000));
-          else v.currentTime = cmd.t;
-        }
-        if (cmd.p === true && v.paused) {
-          if (n) n.play();
-          else v.play().catch(() => {});
-        } else if (cmd.p === false && !v.paused) {
-          if (n) n.pause();
-          else v.pause();
-        }
+        const c = control(v);
+        if (typeof cmd.t === 'number' && Math.abs(v.currentTime - cmd.t) > (cmd.tol ?? 1)) c.seek(cmd.t);
+        if (cmd.p === true && v.paused) c.play();
+        else if (cmd.p === false && !v.paused) c.pause();
         return true;
       },
     }),
