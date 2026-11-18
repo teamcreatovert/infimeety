@@ -1,10 +1,13 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Armchair, ArrowLeft, Columns3, Rows3, AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
+import { Armchair, ArrowLeft, Columns3, Rows3, SmilePlus, AudioLines, Expand, Minimize2, MessageSquareText, PanelLeft, PanelRight, PictureInPicture2, Popcorn, RectangleHorizontal, Shrink, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Channel, PublicUser, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { ChatView } from '../chat/ChatView';
+import { FunPanel } from './Fun';
+import { canShareMusic } from './Music';
 import { PartyPanel } from './PartyLazy';
+import { useFeatureOn } from '@/lib/remote';
 import { ParticipantIcons } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
 import { Tooltip } from '../ui/overlay';
@@ -314,7 +317,11 @@ export function CallPanel({
   const unread = useMessages((s) => s.unread[chatRoom.id] ?? 0);
   const showPeople = tabs && !!people;
   const showParty = tabs && !!room && room.kind === 'voice' && (room.allowParty !== false || !!party);
-  const tab = stored === 'people' && showPeople ? 'people' : stored === 'party' && showParty ? 'party' : 'chat';
+  // In a watch party lobby the fun things live here, beside the screen (nothing may cover a website).
+  const inLobby = useUI((s) => !!room && s.lobby === room.id);
+  const showFun = tabs && inLobby && channel.kind === 'space';
+  const soundboard = useFeatureOn('soundboard');
+  const tab = stored === 'people' && showPeople ? 'people' : stored === 'party' && showParty ? 'party' : stored === 'fun' && showFun ? 'fun' : 'chat';
   const setTab = (sideTab: typeof stored) => useUI.getState().set({ sideTab });
   const close = onClose && (
     <button aria-label="Close the side panel" onClick={onClose} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
@@ -340,6 +347,11 @@ export function CallPanel({
               {tab !== 'party' && party && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
             </PanelTab>
           )}
+          {showFun && (
+            <PanelTab active={tab === 'fun'} onClick={() => setTab('fun')}>
+              <SmilePlus size={15} /> Fun
+            </PanelTab>
+          )}
         </div>
       ) : (
         <div className="flex h-[52px] shrink-0 items-center gap-2 px-4 text-[13.5px] font-semibold hairline-b">
@@ -352,6 +364,10 @@ export function CallPanel({
           <PeopleList {...people} channel={channel} />
         ) : tab === 'party' && room ? (
           <PartyPanel channel={channel} room={room} />
+        ) : tab === 'fun' ? (
+          <div className="scroll h-full">
+            <FunPanel fill sounds={soundboard} music={canShareMusic && channel.role !== 'member'} busy={people?.people.find((p) => p.music && p.peerId !== people.myPeer)?.userId} onDone={() => {}} />
+          </div>
         ) : (
           <ChatView channel={channel} room={chatRoom} compact />
         )}

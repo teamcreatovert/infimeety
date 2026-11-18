@@ -789,6 +789,9 @@ function Dock({
   const toggleWatch = () => sharer && useUI.getState().set({ focusedPeer: focusedPeer ? null : sharer.peerId });
   // A watch party is planned from the chat; here you only go back to (or away from) one that's on.
   const showPopcorn = channel.kind === 'space' && (room.allowParty !== false || lobbyHere);
+  // In the lobby, the fun things open in the side panel, beside the screen (nothing may cover a website).
+  const funTabOpen = useUI((s) => inLobby && s.voiceChat && s.sideTab === 'fun');
+  const openFunTab = () => useUI.getState().set(funTabOpen ? { voiceChat: false } : { voiceChat: true, sideTab: 'fun' });
   const partyLabel = inLobby ? 'Leave the lobby' : lobbyHere ? 'Join the watch party lobby' : 'Start a watch party';
   const togglePartyView = () => (inLobby ? leaveLobby() : lobbyHere ? void joinLobby(channel.id, room.id) : startLobby(room.id));
 
@@ -845,7 +848,7 @@ function Dock({
             </MenuItem>
           )}
           {fun && (
-            <MenuItem icon={<SmilePlus size={15} />} onClick={() => (setSoundMenu(moreMenu), setMoreMenu(null))}>
+            <MenuItem icon={<SmilePlus size={15} />} onClick={() => (inLobby ? openFunTab() : setSoundMenu(moreMenu), setMoreMenu(null))}>
               {funLabel}
             </MenuItem>
           )}
@@ -926,7 +929,7 @@ function Dock({
         </DockButton>
       )}
       {fun && (
-        <DockButton label={funLabel} state={soundMenu || music ? 'on' : 'normal'} onClick={(el) => setSoundMenu(el.getBoundingClientRect())}>
+        <DockButton label={funLabel} state={soundMenu || music || funTabOpen ? 'on' : 'normal'} onClick={(el) => (inLobby ? openFunTab() : setSoundMenu(el.getBoundingClientRect()))}>
           <SmilePlus size={19} />
         </DockButton>
       )}

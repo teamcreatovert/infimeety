@@ -34,7 +34,7 @@ const keepRecent = (e: string) => {
  * The call bar's fun button. Server rooms get every reaction, the soundboard and Share music;
  * meetings get polite reactions and applause. One width for every tab, so it never jumps.
  */
-export function FunPanel({ meeting, sounds, music, busy, onDone }: { meeting?: boolean; sounds: boolean; music: boolean; busy?: string; onDone: () => void }) {
+export function FunPanel({ meeting, sounds, music, busy, onDone, fill }: { meeting?: boolean; sounds: boolean; music: boolean; busy?: string; onDone: () => void; fill?: boolean }) {
   const [tab, setTab] = useState<Tab>('react');
   const [picking, setPicking] = useState(false);
   const [recent, setRecent] = useState(readRecent);
@@ -49,7 +49,7 @@ export function FunPanel({ meeting, sounds, music, busy, onDone }: { meeting?: b
   const extra = meeting ? [] : recent.filter((e) => !base.includes(e));
   const emojis = [...base, ...extra];
   return (
-    <div className="flex w-[400px] max-w-[calc(100vw-24px)] flex-col">
+    <div className={fill ? 'flex w-full flex-col' : 'flex w-[400px] max-w-[calc(100vw-24px)] flex-col'}>
       {tabs.length > 1 && (
         <div className="flex gap-1 p-2 pb-0">
           {tabs.map((t) => (

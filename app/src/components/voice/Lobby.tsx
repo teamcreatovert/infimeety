@@ -169,7 +169,10 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
         if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
         else top = Math.max(top, p.bottom + 6);
       }
-      void invoke('browser_bounds', { x: r.left, y: top, width: r.width, height: Math.max(1, bottom - top) }).catch(() => {});
+      // Smaller, the screen keeps its shape and stays centred (it steps back while a panel is open).
+      const height = Math.max(1, bottom - top);
+      const width = height < r.height ? (r.width * height) / r.height : r.width;
+      void invoke('browser_bounds', { x: r.left + (r.width - width) / 2, y: top, width, height }).catch(() => {});
     };
     const offRects = usePopoverRects.subscribe(send);
     // The bars slide in and out: look again now and then.
