@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { appWindow, isMac, isTauri } from '@/lib/platform';
 import { closeTab, isStartPage, newTab, selectTab, useBrowser } from '@/lib/browser';
 import { useUI } from '@/stores/ui';
+import { useVoice } from '@/stores/voice';
 
 // Segoe Fluent Icons (Windows 11) / Segoe MDL2 Assets (Windows 10) caption glyphs.
 const GLYPHS = { minimize: '', maximize: '', restore: '', close: '' };
@@ -11,6 +12,8 @@ const GLYPHS = { minimize: '', maximize: '', restore: '', close: '' 
 /** Title bar for the frameless window (Windows-style; a plain strip on Mac). `?titlebar` previews it in a dev browser. */
 export function TitleBar() {
   const immersive = useUI((s) => s.immersive);
+  const lobbyRoom = useUI((s) => s.lobby);
+  const callRoom = useVoice((s) => s.roomId);
   // Watch mode: dark, like the picture under it, so the app doesn't look like a page in a browser.
   const browserOpen = useUI((s) => s.browserOpen);
   const onBrowser = useUI((s) => s.tab === 'browser' && s.browserOpen);
@@ -40,7 +43,8 @@ export function TitleBar() {
     };
   }, []);
 
-  if (!show || immersive) return null;
+  // The watch party lobby is edge to edge: its own bar (shown on hover) has the window buttons.
+  if (!show || immersive || (lobbyRoom && lobbyRoom === callRoom)) return null;
 
   // Mac: the window keeps its own traffic lights (top left); this is just the strip to drag it by.
   if (isMac)

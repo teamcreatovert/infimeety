@@ -15,6 +15,7 @@ import { StreamVideo } from './StreamVideo';
 import { spring } from '@/lib/motion';
 import { useSettings } from '@/stores/settings';
 import { useParty } from '@/lib/party';
+import { appWindow, isMac, isTauri } from '@/lib/platform';
 import { useCompact } from '@/lib/responsive';
 import { useMessages } from '@/stores/messages';
 import { openUserMenu, useUI } from '@/stores/ui';
@@ -93,7 +94,8 @@ export function WatchStage(props: Props) {
   const dockSpace = !floatingDock ? '0px' : compact ? '72px' : '88px';
 
   // A flat bar above the picture, like a desktop app's; full screen and phones keep it over the picture.
-  const solid = !compact && !full;
+  // The lobby is edge to edge: its bar floats over the top and shows on hover, in every view.
+  const solid = !compact && !full && !props.leave;
   useEffect(() => {
     useUI.getState().set({ darkChrome: true });
     return () => useUI.getState().set({ darkChrome: false });
@@ -113,7 +115,7 @@ export function WatchStage(props: Props) {
     >
       {solid && <Header {...props} effective={effective} solid />}
       <div className="relative min-h-0 flex-1">
-        {effective === 'cinema' ? <Cinema media={media} controls={controls} seats={props.seats} idle={idle} rows={props.people.length > 1 ? 2 : 1} /> : media}
+        {effective === 'cinema' ? <Cinema media={media} controls={controls} seats={props.seats} idle={idle} rows={props.people.length > 1 ? 2 : 1} top={props.leave ? 64 : 20} /> : media}
         {!solid && <Header {...props} effective={effective} />}
         {overlay}
         {effective !== 'cinema' && controls && <Chrome idle={idle}>{controls}</Chrome>}
@@ -240,6 +242,14 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
       <HeadButton flat={solid} label={exitLabel} onClick={onExit}>
         <Minimize2 size={16} />
       </HeadButton>
+      )}
+      {/* The lobby hides the window's title bar: its buttons live here (Windows; a Mac keeps its own). */}
+      {leave && isTauri && !isMac && (
+        <div className="caption-dark -mr-4 ml-1 flex h-full self-stretch text-white compact:-mr-2.5">
+          <button aria-label="Minimize" title="Minimize" onClick={() => void appWindow.minimize()} className="caption-btn">{''}</button>
+          <button aria-label="Maximize" title="Maximize" onClick={() => void appWindow.toggleMaximize()} className="caption-btn">{''}</button>
+          <button aria-label="Close" title="Close" onClick={() => void appWindow.close()} className="caption-btn caption-close">{''}</button>
+        </div>
       )}
     </motion.header>
   );
@@ -537,7 +547,7 @@ function ChatBubble({ channel, room, idle, lifted }: { channel: Channel; room: R
  * Cinema: the picture on a big flat screen in a dark room, a soft glow spilling from it, and
  * everyone in their seats below.
  */
-function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; controls?: ReactNode; seats?: (where: 'bottom' | 'left' | 'right') => ReactNode; idle: boolean; rows: number }) {
+function Cinema({ media, controls, seats, idle, rows, top }: { media: ReactNode; controls?: ReactNode; seats?: (where: 'bottom' | 'left' | 'right') => ReactNode; idle: boolean; rows: number; top: number }) {
   const sides = useSettings((s) => s.cinemaSeats) === 'sides';
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -548,7 +558,6 @@ function Cinema({ media, controls, seats, idle, rows }: { media: ReactNode; cont
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const top = 20;
   // Room for the seats: one row, or two staggered (the website's own view can't sit under them).
   const seatsHeight = sides ? 0 : rows > 1 ? 178 : 112;
   const column = sides ? 112 : 0;

@@ -109,7 +109,13 @@ pub async fn browser_open(app: AppHandle, tab: String, url: Option<String>) -> R
         return Ok(());
     }
     let window = app.get_window("main").ok_or("no main window")?;
-    let profile = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("browser");
+    let mut profile = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("browser");
+    // Development only: test with an existing browser storage (its sign-ins), never in a release.
+    if cfg!(debug_assertions) {
+        if let Ok(p) = std::env::var("INFIMEETY_BROWSER_PROFILE") {
+            profile = std::path::PathBuf::from(p);
+        }
+    }
     let (page_app, title_app, new_app) = (app.clone(), app.clone(), app.clone());
     let (page_tab, title_tab) = (tab.clone(), tab.clone());
     #[allow(unused_mut)]
