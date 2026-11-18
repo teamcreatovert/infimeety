@@ -25,6 +25,8 @@ const START: &str = "browser-start.html";
 static VISIBLE: AtomicBool = AtomicBool::new(false);
 /// A tab's site is in full screen (a movie's own button): it takes the whole window.
 static FULL: AtomicBool = AtomicBool::new(false);
+/// The last Escape or double-click seen in a page (its time), passed on once.
+static EXIT_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The selected tab.
 static ACTIVE: Mutex<String> = Mutex::new(String::new());
 /// Where the app wants the sites (logical x, y, width, height).
@@ -160,8 +162,13 @@ pub async fn browser_open(app: AppHandle, tab: String, url: Option<String>) -> R
             continue;
         }
         let app = watch_app.clone();
-        let _ = view.eval_with_callback("!!document.fullscreenElement", move |r| {
-            let full = r.trim() == "true";
+        let _ = view.eval_with_callback("[!!document.fullscreenElement, window.__infimeetySync ? window.__infimeetySync.signal() : [0, '']]", move |r| {
+            let (full, (at, kind)) = serde_json::from_str::<(bool, (f64, String))>(&r).unwrap_or((false, (0.0, String::new())));
+            // F, a double-click (full screen on/off) or Escape (leave it) in the page, passed on once.
+            let at = at as u64;
+            if at > 0 && at > EXIT_AT.swap(at, Ordering::Relaxed) && (kind == "full" || kind == "exit") {
+                let _ = app.emit_to("main", "browser:signal", kind);
+            }
             if FULL.swap(full, Ordering::Relaxed) != full {
                 if let Some(window) = app.get_window("main") {
                     let _ = window.set_fullscreen(full);

@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { listen } from '@tauri-apps/api/event';
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   AudioLines,
@@ -45,9 +46,10 @@ import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
 import { channelGradient, gradientFor } from '@/lib/format';
 import { spring, snappy } from '@/lib/motion';
-import { appWindow, canShareScreen, isMac, isTauri } from '@/lib/platform';
+import { canShareScreen, isMac, isTauri } from '@/lib/platform';
 import { useParty, useWatchingAlong } from '@/lib/party';
 import { joinWeb, useWeb } from '@/lib/watchWeb';
+import { setImmersive, toggleImmersive } from '@/lib/immersive';
 import { joinLobby, leaveLobby, startLobby, useHasLobby } from '@/lib/activityLobby';
 import { useFeatureOn } from '@/lib/remote';
 import { clock, usePenalties, useSecondsLeft } from '@/lib/penalties';
@@ -71,20 +73,6 @@ function useRoomParticipants(channelId: string, roomId: string) {
 
 function openMenu(e: React.MouseEvent, channelId: string, p: VoiceParticipant) {
   openUserMenu(e, p.userId, { kind: 'voice', channelId, peerId: p.peerId });
-}
-
-type FullscreenVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
-
-async function setImmersive(on: boolean) {
-  // iPhones can't make a page full screen, only a video: hand the stage to the system player.
-  const video = document.querySelector<FullscreenVideo>('video[data-stage]');
-  if (on && !isTauri && !document.documentElement.requestFullscreen && video?.webkitEnterFullscreen) return video.webkitEnterFullscreen();
-  useUI.getState().set({ immersive: on });
-  await appWindow.setFullscreen(on).catch(() => {});
-  // Phones: a shared screen is landscape, so turn with it while full screen.
-  const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
-  if (on) void orientation?.lock?.('landscape').catch(() => {});
-  else orientation?.unlock?.();
 }
 
 /** `chatRoom` overrides the side chat (DM calls show the DM conversation); `extras` sit in the stage header. */
@@ -363,11 +351,16 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     };
     // The browser leaves full screen on its own (Esc): follow it.
     const onFullscreen = () => !document.fullscreenElement && useUI.getState().immersive && void setImmersive(false);
+    // Escape or a double-click inside a website (it has the keys there).
+    const offExit = isTauri
+      ? listen<string>('browser:signal', (e) => (e.payload === 'exit' ? useUI.getState().immersive && void setImmersive(false) : toggleImmersive()))
+      : null;
     window.addEventListener('keydown', onKey);
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => {
       window.removeEventListener('keydown', onKey);
       document.removeEventListener('fullscreenchange', onFullscreen);
+      void offExit?.then((f) => f());
     };
   }, []);
 
@@ -803,6 +796,7 @@ function Dock({
     return (
       <motion.div
         data-keep-awake
+        data-avoid-web
         animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
         transition={spring}
         style={{ pointerEvents: hidden ? 'none' : 'auto' }}
@@ -883,6 +877,7 @@ function Dock({
   return (
     <motion.div
       data-keep-awake
+      data-avoid-web
       animate={{ opacity: hidden ? 0 : 1, y: hidden ? 18 : 0 }}
       transition={spring}
       style={{ pointerEvents: hidden ? 'none' : 'auto' }}

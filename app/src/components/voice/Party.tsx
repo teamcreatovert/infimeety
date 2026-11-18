@@ -80,6 +80,7 @@ import {
   type PartyRequest,
 } from '@/lib/party';
 import { isApp, isPhoneApp, isTauri } from '@/lib/platform';
+import { toggleImmersive } from '@/lib/immersive';
 import { useCompact } from '@/lib/responsive';
 import { useWeb } from '@/lib/watchWeb';
 import { cancelCopy } from '@/lib/transfer';
@@ -491,7 +492,7 @@ function PartyPlayer({ roomId, fileId, url, subtitleId, chromeHidden }: { roomId
   return (
     <div className="absolute inset-0 bg-black">
       {/* crossOrigin: the 200% boost reads the sound through Web Audio, which gets silence from a file it may not read. */}
-      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={look ? { filter: look } : undefined} onDoubleClick={(e) => e.preventDefault()}>
+      <video ref={ref} data-stage src={url} crossOrigin="anonymous" playsInline preload="auto" className="h-full w-full object-contain" style={look ? { filter: look } : undefined} onDoubleClick={(e) => (e.preventDefault(), toggleImmersive())}>
         {subtitleUrl && <track key={subtitleUrl} ref={trackRef} kind="subtitles" src={subtitleUrl} default />}
       </video>
       {captions && cue && (
@@ -1004,12 +1005,26 @@ export function PartyControls({ roomId, party }: { roomId: string; party: PartyS
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typing(e) || e.metaKey || e.altKey) return;
+      // Ctrl only goes with the arrows (a minute, like VLC).
+      if (e.ctrlKey && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       // Space on a focused button presses that button.
       if (e.key === ' ' && (e.target as HTMLElement | null)?.closest('button')) return;
+      const by = e.ctrlKey ? 60 : e.shiftKey ? 3 : 10;
       if (e.key === ' ' || e.key === 'k') (e.preventDefault(), toggle());
-      else if (e.key === 'ArrowLeft' || e.key === 'j') (e.preventDefault(), skip(-10));
-      else if (e.key === 'ArrowRight' || e.key === 'l') (e.preventDefault(), skip(10));
+      else if (e.key === 'ArrowLeft' || e.key === 'j') (e.preventDefault(), skip(-by));
+      else if (e.key === 'ArrowRight' || e.key === 'l') (e.preventDefault(), skip(by));
+      else if (e.key === 'f') (e.preventDefault(), toggleImmersive());
+      else if (e.key === 'Home') (e.preventDefault(), seek(0));
+      // VLC: B the next sound track, V the next subtitles (just for you, when the rules allow).
+      else if (e.key === 'b' && audios.length > 1 && rules.personal.audio) {
+        usePlayer.setState({ audioMine: true });
+        pickAudio((audio + 1) % audios.length);
+      } else if (e.key === 'v' && rules.personal.subtitles) {
+        const order: (string | null)[] = [null, ...myTracks.map((t) => t.url), 'off'];
+        const next = order[(order.indexOf(mySub) + 1) % order.length];
+        usePlayer.setState({ mySub: next, captions: next !== 'off' });
+      }
       else if (e.key === 'c' && rules.personal.subtitles) usePlayer.setState((s) => ({ captions: !s.captions }));
       else if (e.key === 'm') usePlayer.setState((s) => ({ muted: !s.muted }));
       else if (e.key === 'ArrowUp') (e.preventDefault(), setVolume(Math.min(2, Math.round((volume + 0.05) * 100) / 100)));

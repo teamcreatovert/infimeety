@@ -47,6 +47,11 @@
   };
   for (const e of ['play', 'pause', 'seeked']) document.addEventListener(e, mark, true);
 
+  // Signals for the app, which can't hear keys in here: full screen on/off ("full"), leave it ("exit").
+  let signal = { at: 0, kind: '' };
+  const tell = (kind) => (signal = { at: Date.now(), kind });
+  document.addEventListener('dblclick', () => tell('full'), true);
+
   // Video only (the watch party lobby's screen): the site's own player fills the page, its
   // controls included; everything else on the page steps aside.
   const FILL_CSS =
@@ -93,6 +98,45 @@
   };
   const filled = () => document.documentElement.classList.contains('infimeety-fill') && !!document.querySelector('[data-infimeety-player]');
 
+  // Infimeety's shortcuts, the same as its own player (YouTube's and VLC's, without clashes),
+  // on the lobby's video-only screen. Elsewhere the site's own keys work as usual.
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Escape') return tell('exit');
+      if (e.metaKey || e.altKey || !filled()) return;
+      const el = e.target;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      const v = video();
+      if (!v) return;
+      const n = netflix ? netflixPlayer() : null;
+      const go = (to) => {
+        const t = Math.max(0, Math.min(isFinite(v.duration) ? v.duration - 0.5 : to, to));
+        if (n) n.seek(Math.round(t * 1000));
+        else v.currentTime = t;
+      };
+      const k = e.key;
+      const by = e.ctrlKey ? 60 : e.shiftKey ? 3 : 10;
+      if (e.ctrlKey && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+      if (k === ' ' || k === 'k' || k === 'K') {
+        if (v.paused) n ? n.play() : v.play().catch(() => {});
+        else n ? n.pause() : v.pause();
+      } else if (k === 'ArrowLeft' || k === 'j' || k === 'J') go(v.currentTime - by);
+      else if (k === 'ArrowRight' || k === 'l' || k === 'L') go(v.currentTime + by);
+      else if (k === 'ArrowUp') (v.muted = false), (v.volume = Math.min(1, v.volume + 0.05));
+      else if (k === 'ArrowDown') v.volume = Math.max(0, v.volume - 0.05);
+      else if (k === 'm' || k === 'M') v.muted = !v.muted;
+      else if (k === 'f' || k === 'F') tell('full');
+      else if (k === 'Home') go(0);
+      else if (/^[0-9]$/.test(k) && isFinite(v.duration)) go((v.duration * Number(k)) / 10);
+      else return;
+      gesture = Date.now();
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    true,
+  );
+
   const signinPage = () => /(^|[/.?=&-])(login|signin|sign-in|sign_in|auth)([/.?=&-]|$)/i.test(location.pathname + location.search) || /^accounts\./.test(location.hostname);
 
   Object.defineProperty(window, '__infimeetySync', {
@@ -107,6 +151,9 @@
           userAt,
           filled: filled(),
         };
+      },
+      signal() {
+        return [signal.at, signal.kind];
       },
       apply(cmd) {
         if (typeof cmd.fill === 'boolean') setFill(cmd.fill);

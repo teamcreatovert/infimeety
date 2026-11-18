@@ -161,8 +161,10 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
       const r = el.getBoundingClientRect();
       let top = r.top;
       let bottom = r.bottom;
-      // An open popover over the screen (reactions, menus): the movie makes room for it.
-      for (const p of Object.values(usePopoverRects.getState().rects)) {
+      // The app's bars (the call bar, the header in full screen) and open panels: the movie makes
+      // room for them, since nothing of the app can draw over a website.
+      const bars = [...document.querySelectorAll('[data-avoid-web]')].map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
+      for (const p of [...Object.values(usePopoverRects.getState().rects), ...bars]) {
         if (p.right <= r.left || p.left >= r.right || p.bottom <= top || p.top >= bottom) continue;
         if (p.top > (r.top + r.bottom) / 2) bottom = Math.min(bottom, p.top - 6);
         else top = Math.max(top, p.bottom + 6);
@@ -170,6 +172,8 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
       void invoke('browser_bounds', { x: r.left, y: top, width: r.width, height: Math.max(1, bottom - top) }).catch(() => {});
     };
     const offRects = usePopoverRects.subscribe(send);
+    // The bars slide in and out: look again now and then.
+    const timer = setInterval(send, 500);
     void invoke('browser_select', { tab: LOBBY_TAB }).catch(() => {});
     void invoke('browser_visible', { visible: true }).catch(() => {});
     send();
@@ -177,6 +181,7 @@ export function WebStage({ roomId, visible }: { roomId: string; visible: boolean
     ro.observe(el);
     window.addEventListener('resize', send);
     return () => {
+      clearInterval(timer);
       offRects();
       ro.disconnect();
       window.removeEventListener('resize', send);

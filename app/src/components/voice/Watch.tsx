@@ -166,6 +166,7 @@ function Header({ badge, title, headerExtras, layout, effective, onLayout, idle,
   return (
     <motion.header
       data-tauri-drag-region
+      data-avoid-web
       animate={{ opacity: hidden ? 0 : 1, y: hidden ? -8 : 0 }}
       transition={spring}
       className={clsx(
