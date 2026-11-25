@@ -22,7 +22,7 @@ import { useChannels } from '@/stores/channels';
 import { useMeetings } from '@/stores/meetings';
 import { useVoice } from '@/stores/voice';
 
-type Phase = { k: 'loading' } | { k: 'ended' } | { k: 'prejoin' } | { k: 'waiting' } | { k: 'denied' } | { k: 'removed' } | { k: 'in'; channel: Channel };
+type Phase = { k: 'loading' } | { k: 'ended' } | { k: 'prejoin' } | { k: 'waiting' } | { k: 'denied' } | { k: 'removed' } | { k: 'locked' } | { k: 'in'; channel: Channel };
 
 const NAME_KEY = 'infimeety.guestName';
 /** A guest identity belongs to one meeting, so this browser remembers it per meeting. */
@@ -134,12 +134,15 @@ export function GuestApp({ code }: { code: string }) {
     setBusy(true);
     store.set(NAME_KEY, clean);
     try {
-      const { token } = await api<{ token: string }>(`/meetings/${code}/guests`, { method: 'POST', json: { name: clean } });
+      const { token, status } = await api<{ token: string; status: GuestStatus }>(`/meetings/${code}/guests`, { method: 'POST', json: { name: clean } });
       store.set(tokenKey(code), token);
       setToken(token, { persist: false });
       setPhase({ k: 'waiting' });
+      // An open meeting lets guests straight in.
+      if (status === 'admitted') void check();
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) setPhase({ k: 'ended' });
+      else if (err instanceof ApiError && err.code === 'locked') setPhase({ k: 'locked' });
       else setPhase({ k: 'prejoin' });
     } finally {
       setBusy(false);
@@ -200,10 +203,16 @@ export function GuestApp({ code }: { code: string }) {
                       </Toggle>
                     </div>
 
-                    <Button type="submit" variant="primary" size="lg" className="mt-6 w-full" loading={busy} disabled={!name.trim()}>
-                      Ask to join
+                    <Button type="submit" variant="primary" size="lg" className="mt-6 w-full" loading={busy} disabled={!name.trim() || !!preview.locked}>
+                      {preview.locked ? 'Locked' : preview.access === 'open' ? 'Join now' : 'Ask to join'}
                     </Button>
-                    <p className="mt-3 text-[11.5px] leading-snug text-fg-3">Someone in the meeting lets you in. You join as a guest, no account needed.</p>
+                    <p className="mt-3 text-[11.5px] leading-snug text-fg-3">
+                      {preview.locked
+                        ? 'The host locked this meeting, so nobody new can join right now.'
+                        : preview.access === 'open'
+                          ? 'You join straight away as a guest, no account needed.'
+                          : 'Someone in the meeting lets you in. You join as a guest, no account needed.'}
+                    </p>
                     {!isMobile && (
                       <a href={`infimeety://meet/${code}`} className="mt-4 inline-block text-[12.5px] font-medium text-accent hover:underline">
                         Have Infimeety? Open in the app
@@ -232,6 +241,14 @@ export function GuestApp({ code }: { code: string }) {
                   <Notice title="Nobody let you in" body="Someone in the meeting declined your request to join.">
                     <Button variant="primary" className="mt-6 w-full" onClick={cancel}>
                       Ask again
+                    </Button>
+                  </Notice>
+                )}
+
+                {phase.k === 'locked' && (
+                  <Notice title="This meeting is locked" body="The host isn’t letting anyone new in right now. Try again in a little while.">
+                    <Button variant="primary" className="mt-6 w-full" onClick={cancel}>
+                      Try again
                     </Button>
                   </Notice>
                 )}

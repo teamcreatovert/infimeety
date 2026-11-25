@@ -11,6 +11,7 @@ import { MessageList } from './MessageList';
 import { PinnedMessages } from './PinnedMessages';
 import { useCompact } from '@/lib/responsive';
 import { useChannels } from '@/stores/channels';
+import { HELD_BACK_NOTE, useHeldBack } from '@/stores/meetings';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { useUI } from '@/stores/ui';
 
@@ -35,6 +36,8 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
   }, [unread, room.id]);
 
   const cancelReply = useCallback(() => setReplyTo(null), []);
+  // Meetings: the host can keep the chat to the host and co-hosts.
+  const chatHeld = useHeldBack(channel.id, 'chat');
 
   return (
     <div className="flex h-full min-h-0">
@@ -60,7 +63,12 @@ export function ChatView({ channel, room, compact, dmPeer }: { channel: Channel;
         {!compact && <PartyBanner channel={channel} />}
         <MessageList channel={channel} room={room} onReply={setReplyTo} compact={compact} dmPeer={dmPeer} />
         <TypingIndicator roomId={room.id} />
-        {atLeast(channel.role, room.postRole) ? (
+        {chatHeld ? (
+          <div className="mx-4 mb-4 mt-1 flex items-center justify-center gap-2 rounded-[14px] bg-fill-1 px-4 py-3 text-center text-[13px] text-fg-2 shadow-[inset_0_0_0_0.5px_var(--hairline-strong)] compact:mx-2.5 compact:mb-2.5">
+            <Megaphone size={15} className="shrink-0 text-fg-3" />
+            {HELD_BACK_NOTE.chat}
+          </div>
+        ) : atLeast(channel.role, room.postRole) ? (
           <Composer channel={channel} room={room} replyTo={replyTo} onCancelReply={cancelReply} />
         ) : (
           // Only moderators or admins post here (an announcements room): members read.

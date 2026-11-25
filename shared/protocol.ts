@@ -151,7 +151,45 @@ export interface MeetingPreview {
   /** People in the call right now. */
   inCall: number;
   expiresAt: number;
+  /** Who gets in with the link, and whether the host locked it (absent from older servers). */
+  access?: MeetingSettings['access'];
+  locked?: boolean;
 }
+
+/**
+ * How a meeting runs, set by the host and co-hosts (like Google Meet's host controls).
+ * The "everyone may" switches only hold back other people: the host and co-hosts always can.
+ */
+export interface MeetingSettings {
+  /**
+   * Who gets in with the link. 'open': anyone, straight in (browser guests too). 'trusted':
+   * Infimeety accounts straight in, browser guests ask first. 'restricted': everyone asks first.
+   */
+  access: 'open' | 'trusted' | 'restricted';
+  /** Nobody new gets in, not even by asking (people already in can rejoin). */
+  locked: boolean;
+  /** Everyone may share their screen. */
+  share: boolean;
+  /** Everyone may send chat messages. */
+  chat: boolean;
+  /** Everyone may turn on their mic. */
+  mic: boolean;
+  /** Everyone may turn on their camera. */
+  camera: boolean;
+  /** Everyone may send reactions. */
+  reactions: boolean;
+  /** Whose tile the host put big on everyone's screen (a user id), or null. */
+  spotlight: string | null;
+}
+
+export const DEFAULT_MEETING: MeetingSettings = { access: 'trusted', locked: false, share: true, chat: true, mic: true, camera: true, reactions: true, spotlight: null };
+
+/**
+ * What the host or a co-host does to someone in a meeting: mute them (they can unmute again
+ * if mics are allowed), turn off their camera, stop their screen share, lower their hand.
+ * 'muteAll' and 'lowerHands' are for everyone at once (no peerId).
+ */
+export type MeetingAct = 'mute' | 'camOff' | 'shareOff' | 'lowerHand' | 'muteAll' | 'lowerHands';
 
 /** Where a browser guest stands: waiting in the lobby, let in, turned away, or removed by the host. */
 export type GuestStatus = 'waiting' | 'admitted' | 'denied' | 'removed';
@@ -469,6 +507,10 @@ export type ClientMsg =
   | { t: 'voice.update'; state: Partial<VoiceLocalState> }
   | { t: 'voice.serverMute'; peerId: string; muted: boolean }
   | { t: 'voice.roomMute'; roomId: string; muted: boolean }
+  /** Meetings, host and co-hosts: change the host controls. */
+  | { t: 'meeting.settings'; settings: Partial<MeetingSettings> }
+  /** Meetings, host and co-hosts: act on one person (`peerId`) or everyone. */
+  | { t: 'meeting.act'; act: MeetingAct; peerId?: string }
   | { t: 'voice.disconnect'; peerId: string }
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
@@ -522,7 +564,11 @@ export type ClientMsg =
   | { t: 'ping' };
 
 export type ServerMsg =
-  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; webs?: Record<string, WebWatch>; lobbies?: Record<string, Lobby>; config?: RemoteConfig; activities?: Record<string, Activity> }
+  | { t: 'welcome'; peerId: string; online: string[]; voice: VoiceSnapshot; parties?: Record<string, PartyState>; webs?: Record<string, WebWatch>; lobbies?: Record<string, Lobby>; config?: RemoteConfig; activities?: Record<string, Activity>; meeting?: MeetingSettings }
+  /** Meetings: the host controls changed (also sent in welcome). */
+  | { t: 'meeting.settings'; settings: MeetingSettings }
+  /** Meetings: the host or a co-host (`by`; absent: the meeting's own rules) muted you, turned off your camera, stopped your share or lowered your hand. */
+  | { t: 'meeting.act'; act: 'mute' | 'camOff' | 'shareOff' | 'lowerHand'; by?: string }
   | { t: 'activity'; userId: string; activity: Activity | null }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }

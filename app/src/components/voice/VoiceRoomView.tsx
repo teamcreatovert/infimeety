@@ -22,6 +22,9 @@ import {
   Popcorn,
   ScreenShare,
   ScreenShareOff,
+  ShieldCheck,
+  Pin,
+  PinOff,
   Users,
   Video,
   VideoOff,
@@ -41,6 +44,7 @@ import { PartyBadge, PartyControls, PartyHeaderInfo, PartyMedia, PartyPersonExtr
 import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { FloatingReactions, FunPanel } from './Fun';
+import { HostControls } from '../meeting/HostControls';
 import { CinemaSeats, LobbyChooser, WebFillToggle, WebStage } from './Lobby';
 import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
@@ -58,6 +62,7 @@ import { isCompactNow, useCompact } from '@/lib/responsive';
 import { voice } from '@/lib/voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
+import { HELD_BACK_NOTE, useHeldBack, useMeetings } from '@/stores/meetings';
 import { SCREEN_PRESETS, useSettings, type ScreenQuality } from '@/stores/settings';
 import { openUserMenu, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
@@ -277,6 +282,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     ...participants.map((p) => ({ key: p.peerId, kind: 'user' as const, p })),
   ];
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
+  // Meetings: the person you pinned, or else the one the host put in the spotlight, shows big.
+  const pinnedUser = useMeetings((s) => (channel.kind === 'meeting' ? (s.pinned[channel.id] ?? null) : null));
+  const spotlight = useMeetings((s) => (channel.kind === 'meeting' ? (s.settings[channel.id]?.spotlight ?? null) : null));
+  const meetingPins = channel.kind === 'meeting' ? { pinned: pinnedUser, spotlight } : undefined;
+  const featuredUser = [pinnedUser, spotlight].find((u) => u && participants.some((p) => p.userId === u));
+  const featured = featuredUser ? participants.find((p) => p.userId === featuredUser)?.peerId : undefined;
   // The activity lobby fills the window (a watch party: the chooser, the movie, or a website).
   const lobbyOn = lobby === room.id && !focused;
   const watchingParty = !!party && lobbyOn;
@@ -508,7 +519,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               </div>
             </div>
           ) : (
-            <Grid tiles={tiles} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
+            <Grid tiles={tiles} featured={featured} meeting={meetingPins} channelId={channel.id} users={users} camOf={camOf} screenOf={screenOf} speakingOf={speakingOf} myPeer={myPeer} />
           )}
           <FloatingReactions />
           {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
@@ -547,15 +558,60 @@ interface StreamProps {
   speakingOf: (p: VoiceParticipant) => boolean;
   myPeer: string | null;
   channelId: string;
+  /** Meetings: who you pinned and who the host spotlighted (user ids). */
+  meeting?: { pinned: string | null; spotlight: string | null };
 }
 
-function Grid({ tiles, screenOf, ...rest }: StreamProps & { tiles: Tile[]; screenOf: (p: VoiceParticipant) => MediaStream | undefined }) {
+/** The biggest width a 16:9 (or `aspect`) tile can have in a w×h box. */
+const fit = (w: number, h: number, aspect: number) => Math.max(0, Math.floor(Math.min(w, h * aspect)));
+
+function Grid({ tiles, screenOf, featured, ...rest }: StreamProps & { tiles: Tile[]; featured?: string; screenOf: (p: VoiceParticipant) => MediaStream | undefined }) {
   const ref = useRef<HTMLDivElement>(null);
   const { w, h } = useSize(ref);
   const compact = useCompact();
   const gap = compact ? 8 : 12;
   // A phone held upright fills its screen better with square tiles than with wide ones.
   const aspect = compact && h > w * 1.15 ? 1 : 16 / 9;
+  const big = featured && tiles.length > 1 ? tiles.find((t) => t.key === featured) : undefined;
+  const render = (t: Tile, width: number, height: number) =>
+    t.kind === 'music' ? (
+      <MusicTile key={t.key} p={t.p} mine={t.p.peerId === rest.myPeer} width={width} height={height} />
+    ) : (
+      <TileView key={t.key} tile={t} width={width} height={height} stream={t.kind === 'screen' ? screenOf(t.p) : rest.camOf(t.p)} {...rest} />
+    );
+
+  // Pinned or spotlighted: that person fills the stage, everyone else in a strip beside it
+  // (below it on a tall screen).
+  if (big) {
+    const others = tiles.filter((t) => t !== big);
+    const side = w > h * 1.05;
+    const stripW = side ? Math.round(Math.min(260, Math.max(150, w * 0.2))) : w;
+    const stripH = side ? h : Math.round(Math.min(150, Math.max(84, h * 0.22)));
+    const small = side ? stripW : Math.round(fit(Math.max(0, w), stripH, aspect));
+    const mainW = fit(side ? w - stripW - gap : w, side ? h : h - stripH - gap, aspect);
+    return (
+      <div className="absolute inset-0 px-6 pb-[100px] pt-4 compact:px-2.5 compact:pb-[84px] compact:pt-2.5">
+        <div ref={ref} className={clsx('flex h-full w-full', side ? 'flex-row' : 'flex-col')} style={{ gap }}>
+          <LayoutGroup>
+            <div className="grid min-h-0 min-w-0 flex-1 place-items-center">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {w > 0 && render(big, mainW, Math.round(mainW / aspect))}
+              </AnimatePresence>
+            </div>
+            <div
+              className={clsx('flex shrink-0 items-center [scrollbar-width:none]', side ? 'flex-col justify-center-safe overflow-y-auto' : 'flex-row justify-center-safe overflow-x-auto')}
+              style={{ gap, width: side ? stripW : undefined, height: side ? undefined : stripH }}
+            >
+              <AnimatePresence mode="popLayout" initial={false}>
+                {w > 0 && others.map((t) => render(t, small, Math.round(small / aspect)))}
+              </AnimatePresence>
+            </div>
+          </LayoutGroup>
+        </div>
+      </div>
+    );
+  }
+
   const n = Math.max(1, tiles.length);
   let tileW = 0;
   for (let cols = 1; cols <= n; cols++) {
@@ -571,14 +627,7 @@ function Grid({ tiles, screenOf, ...rest }: StreamProps & { tiles: Tile[]; scree
           {/* popLayout: a card that leaves steps out of the layout at once, so the others glide into place
               while it fades (instead of holding its slot, then everyone snapping). */}
           <AnimatePresence mode="popLayout" initial={false}>
-            {w > 0 &&
-              tiles.map((t) =>
-                t.kind === 'music' ? (
-                  <MusicTile key={t.key} p={t.p} mine={t.p.peerId === rest.myPeer} width={tileW} height={Math.round(tileW / aspect)} />
-                ) : (
-                <TileView key={t.key} tile={t} width={tileW} height={Math.round(tileW / aspect)} stream={t.kind === 'screen' ? screenOf(t.p) : rest.camOf(t.p)} {...rest} />
-                ),
-              )}
+            {w > 0 && tiles.map((t) => render(t, tileW, Math.round(tileW / aspect)))}
           </AnimatePresence>
         </LayoutGroup>
       </div>
@@ -595,9 +644,12 @@ function TileView({
   speakingOf,
   myPeer,
   channelId,
+  meeting,
   ref,
 }: StreamProps & { tile: Tile; width: number; height: number; stream?: MediaStream; ref?: React.Ref<HTMLDivElement> }) {
   const { p, kind } = tile;
+  const pinned = !!meeting && meeting.pinned === p.userId;
+  const spotlit = !!meeting && meeting.spotlight === p.userId;
   const user = users[p.userId];
   const isMe = p.peerId === myPeer;
   const speaking = kind === 'user' && speakingOf(p);
@@ -658,6 +710,11 @@ function TileView({
       />
 
       {kind === 'screen' && !preview && <span className="absolute left-3 top-3 rounded-[6px] bg-danger px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">LIVE</span>}
+      {kind === 'user' && (spotlit || pinned) && (
+        <span className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-white glass-ink">
+          <Pin size={11} className={clsx(spotlit && 'text-accent')} /> {spotlit ? 'Spotlight' : 'Pinned'}
+        </span>
+      )}
 
       <div className="absolute bottom-2.5 left-2.5 flex max-w-[calc(100%-20px)] items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium text-white glass-ink">
         {kind === 'screen' && <MonitorPlay size={12} />}
@@ -697,6 +754,20 @@ function TileView({
               className="grid h-8 w-8 place-items-center rounded-full text-white glass-ink hover:bg-black/60"
             >
               <EyeOff size={15} />
+            </button>
+          </Tooltip>
+        )}
+        {meeting && kind === 'user' && (
+          <Tooltip label={pinned ? 'Unpin' : 'Pin for me'}>
+            <button
+              aria-label={pinned ? 'Unpin' : 'Pin for me'}
+              onClick={(e) => {
+                e.stopPropagation();
+                useMeetings.getState().pin(channelId, pinned ? null : p.userId);
+              }}
+              className="grid h-8 w-8 place-items-center rounded-full text-white glass-ink hover:bg-black/60"
+            >
+              {pinned ? <PinOff size={15} /> : <Pin size={15} />}
             </button>
           </Tooltip>
         )}
@@ -781,7 +852,16 @@ function Dock({
   const isAdmin = channel.role !== 'member';
   // Personal calls stay clean; server rooms are the fun ones; meetings are polite, with a hand.
   const meeting = channel.kind === 'meeting';
-  const fun = channel.kind !== 'dm';
+  // Meetings: what the host turned off for everyone (the host and co-hosts are never held back).
+  const camHeld = useHeldBack(channel.id, 'camera');
+  const shareHeld = useHeldBack(channel.id, 'share');
+  const micHeld = useHeldBack(channel.id, 'mic');
+  const funHeld = useHeldBack(channel.id, 'reactions');
+  const [hostMenu, setHostMenu] = useState<Anchor | null>(null);
+  const toggleCamera = () => (camHeld && !camera ? toast({ kind: 'info', title: HELD_BACK_NOTE.camera }) : void voice.toggleCamera());
+  const toggleShare = () => (screen ? voice.stopScreen() : shareHeld ? toast({ kind: 'info', title: HELD_BACK_NOTE.share }) : void voice.startScreen());
+  const micLabel = muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? (micHeld ? HELD_BACK_NOTE.mic : meeting ? 'The host muted you' : 'Muted by an admin') : muted || deafened ? 'Unmute' : 'Mute';
+  const fun = channel.kind !== 'dm' && !funHeld;
   const funLabel = meeting ? 'Reactions and applause' : 'Reactions, sounds and music';
   const sharer = participants.find((p) => p.screen && p.peerId !== myPeer) ?? participants.find((p) => p.screen);
   const micOff = muted || deafened || serverMuted;
@@ -806,14 +886,14 @@ function Dock({
         className="absolute bottom-2.5 left-1/2 z-30 flex max-w-[calc(100%-20px)] -translate-x-1/2 items-center gap-1.5 rounded-[24px] p-1.5 glass-float"
       >
         <SoundBursts />
-        <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
+        <DockButton label={micLabel} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
           {muteLeft ? <span className="text-[12px] font-semibold tabular-nums">{clock(muteLeft)}</span> : micOff ? <MicOff size={20} /> : <Mic size={20} />}
         </DockButton>
-        <DockButton label={camera ? 'Turn camera off' : 'Turn camera on'} state={camera ? 'on' : 'normal'} onClick={() => void voice.toggleCamera()}>
+        <DockButton label={camera ? 'Turn camera off' : 'Turn camera on'} state={camera ? 'on' : 'normal'} onClick={toggleCamera}>
           {camera ? <Video size={20} /> : <VideoOff size={20} />}
         </DockButton>
         {canShareScreen && (
-          <DockButton label={screen ? 'Stop sharing' : 'Share your screen'} state={screen ? 'on' : 'normal'} onClick={() => (screen ? voice.stopScreen() : void voice.startScreen())}>
+          <DockButton label={screen ? 'Stop sharing' : 'Share your screen'} state={screen ? 'on' : 'normal'} onClick={toggleShare}>
             {screen ? <ScreenShareOff size={20} /> : <ScreenShare size={20} />}
           </DockButton>
         )}
@@ -865,11 +945,20 @@ function Dock({
           {isAdmin && (
             <>
               <MenuSeparator />
-              <MenuItem icon={<Users size={15} />} onClick={() => (setMoreMenu(null), toggleRoomMute())}>
-                {roomMuted ? 'Unmute everyone' : 'Mute everyone'}
-              </MenuItem>
+              {meeting ? (
+                <MenuItem icon={<ShieldCheck size={15} />} onClick={() => (setHostMenu(moreMenu), setMoreMenu(null))}>
+                  Host controls
+                </MenuItem>
+              ) : (
+                <MenuItem icon={<Users size={15} />} onClick={() => (setMoreMenu(null), toggleRoomMute())}>
+                  {roomMuted ? 'Unmute everyone' : 'Mute everyone'}
+                </MenuItem>
+              )}
             </>
           )}
+        </Popover>
+        <Popover open={!!hostMenu} anchor={hostMenu} onClose={() => setHostMenu(null)} side="top" align="end" offset={12} className="rounded-[18px]!">
+          <HostControls channelId={channel.id} participants={participants} myPeer={myPeer} onDone={() => setHostMenu(null)} />
         </Popover>
         <Popover open={!!soundMenu} anchor={soundMenu} onClose={() => setSoundMenu(null)} side="top" align="end" offset={12} material="float">
           <FunPanel meeting={meeting} sounds={soundboard} music={false} onDone={() => setSoundMenu(null)} />
@@ -887,18 +976,18 @@ function Dock({
       className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-[26px] p-2 glass-float"
     >
       <SoundBursts />
-      <DockButton label={muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? 'Muted by an admin' : micOff ? 'Unmute' : 'Mute'} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
+      <DockButton label={micLabel} state={micOff ? 'off' : 'normal'} onClick={() => void voice.toggleMute()}>
         {muteLeft ? <span className="text-[12px] font-semibold tabular-nums">{clock(muteLeft)}</span> : micOff ? <MicOff size={19} /> : <Mic size={19} />}
       </DockButton>
       <DockButton label={deafened ? 'Undeafen' : 'Deafen'} state={deafened ? 'off' : 'normal'} onClick={() => voice.toggleDeafen()}>
         {deafened ? <HeadphoneOff size={19} /> : <Headphones size={19} />}
       </DockButton>
       <Divider />
-      <DockButton label={camera ? 'Turn camera off' : 'Turn camera on'} state={camera ? 'on' : 'normal'} onClick={() => void voice.toggleCamera()}>
+      <DockButton label={camera ? 'Turn camera off' : 'Turn camera on'} state={camera ? 'on' : 'normal'} onClick={toggleCamera}>
         {camera ? <Video size={19} /> : <VideoOff size={19} />}
       </DockButton>
       <div className="flex items-center">
-        <DockButton label={screen ? 'Stop sharing' : 'Share your screen'} state={screen ? 'on' : 'normal'} onClick={() => (screen ? voice.stopScreen() : void voice.startScreen())} className="rounded-r-[6px]!">
+        <DockButton label={screen ? 'Stop sharing' : 'Share your screen'} state={screen ? 'on' : 'normal'} onClick={toggleShare} className="rounded-r-[6px]!">
           {screen ? <ScreenShareOff size={19} /> : <ScreenShare size={19} />}
         </DockButton>
         <Tooltip label="Screen share options">
@@ -933,7 +1022,12 @@ function Dock({
           <SmilePlus size={19} />
         </DockButton>
       )}
-      {isAdmin && (
+      {isAdmin && meeting && (
+        <DockButton label="Host controls" state={hostMenu ? 'on' : 'normal'} onClick={(el) => setHostMenu(el.getBoundingClientRect())}>
+          <ShieldCheck size={19} />
+        </DockButton>
+      )}
+      {isAdmin && !meeting && (
         <DockButton
           label={roomMuted ? 'Unmute everyone' : 'Mute everyone (admins and moderators can still talk)'}
           state={roomMuted ? 'off' : 'normal'}
@@ -966,12 +1060,15 @@ function Dock({
           onDone={() => setSoundMenu(null)}
         />
       </Popover>
+      <Popover open={!!hostMenu} anchor={hostMenu} onClose={() => setHostMenu(null)} side="top" align="center" offset={14} className="rounded-[18px]!">
+        <HostControls channelId={channel.id} participants={participants} myPeer={myPeer} onDone={() => setHostMenu(null)} />
+      </Popover>
       <Popover open={!!shareMenu} anchor={shareMenu} onClose={() => setShareMenu(null)} side="top" align="center" offset={14} material="float">
         <ShareOptions
           sharing={screen}
           onStart={() => {
             setShareMenu(null);
-            void voice.startScreen();
+            toggleShare();
           }}
         />
       </Popover>

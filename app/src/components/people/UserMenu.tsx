@@ -3,6 +3,10 @@ import {
   Bell,
   BellOff,
   CheckCheck,
+  Hand,
+  ScreenShareOff,
+  Sparkles,
+  VideoOff,
   HeadphoneOff,
   MessageCircle,
   MicOff,
@@ -103,6 +107,7 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
       {context.kind === 'voice' && self && (
         <>
           <SelfVoice channelId={context.channelId} close={close} />
+          <MeetingPin channelId={context.channelId} userId={userId} close={close} />
           {people && <MenuSeparator />}
           {people}
         </>
@@ -110,6 +115,7 @@ function MenuBody({ userId, context, at, close }: { userId: string; context: Use
       {context.kind === 'voice' && !self && (
         <>
           <PeerVoice channelId={context.channelId} peerId={context.peerId} userId={userId} />
+          <MeetingPin channelId={context.channelId} userId={userId} close={close} />
           {people && <MenuSeparator />}
           {people}
           {user && !guestViewer && <FriendItems user={user} close={close} />}
@@ -299,11 +305,42 @@ function Moderation({ channelId, peerId, userId, close }: { channelId: string; p
     close();
     run().catch(() => toast({ kind: 'error', title: failed }));
   };
+  const act = (what: 'mute' | 'camOff' | 'shareOff' | 'lowerHand') => {
+    close();
+    useMeetings.getState().act(channelId, what, peerId);
+  };
   return (
     <>
       <MenuSeparator />
-      <Toggle icon={<ShieldAlert size={14} className="text-danger" />} label="Server mute" checked={participant.serverMuted} onChange={(v) => send({ t: 'voice.serverMute', peerId, muted: v })} />
-      <MoveTo channelId={channelId} fromRoomId={participant.roomId} onPick={(roomId) => (close(), send({ t: 'voice.move', peerId, roomId }))} />
+      {meeting ? (
+        <>
+          {/* Like Google Meet: a mute they can undo; "Keep muted" holds it until you let go. */}
+          <MenuItem icon={<MicOff size={14} />} disabled={participant.muted || participant.serverMuted} onClick={() => act('mute')}>
+            {participant.muted || participant.serverMuted ? 'Muted' : 'Mute'}
+          </MenuItem>
+          <Toggle icon={<ShieldAlert size={14} className="text-danger" />} label="Keep muted" checked={participant.serverMuted} onChange={(v) => send({ t: 'voice.serverMute', peerId, muted: v })} />
+          {participant.camera && (
+            <MenuItem icon={<VideoOff size={14} />} onClick={() => act('camOff')}>
+              Turn off camera
+            </MenuItem>
+          )}
+          {participant.screen && (
+            <MenuItem icon={<ScreenShareOff size={14} />} onClick={() => act('shareOff')}>
+              Stop screen share
+            </MenuItem>
+          )}
+          {participant.hand && (
+            <MenuItem icon={<Hand size={14} />} onClick={() => act('lowerHand')}>
+              Lower hand
+            </MenuItem>
+          )}
+        </>
+      ) : (
+        <>
+          <Toggle icon={<ShieldAlert size={14} className="text-danger" />} label="Server mute" checked={participant.serverMuted} onChange={(v) => send({ t: 'voice.serverMute', peerId, muted: v })} />
+          <MoveTo channelId={channelId} fromRoomId={participant.roomId} onPick={(roomId) => (close(), send({ t: 'voice.move', peerId, roomId }))} />
+        </>
+      )}
       {lift}
       {/* Meetings: the host picks co-hosts (people with an account only). */}
       {meeting && myRole === 'owner' && !target?.guest && targetRole && targetRole !== 'owner' && (
@@ -321,6 +358,28 @@ function Moderation({ channelId, peerId, userId, close }: { channelId: string; p
       ) : (
         <MenuItem danger icon={<PhoneOff size={14} />} onClick={() => (close(), send({ t: 'voice.disconnect', peerId }))}>
           Disconnect from voice
+        </MenuItem>
+      )}
+    </>
+  );
+}
+
+/** Meetings: pin someone big just for you; the host and co-hosts can also spotlight them for everyone. */
+function MeetingPin({ channelId, userId, close }: { channelId: string; userId: string; close: Close }) {
+  const channel = useChannels((s) => s.channels.find((c) => c.id === channelId));
+  const pinned = useMeetings((s) => s.pinned[channelId] === userId);
+  const spotlit = useMeetings((s) => s.settings[channelId]?.spotlight === userId);
+  if (channel?.kind !== 'meeting') return null;
+  const host = channel.role !== 'member';
+  return (
+    <>
+      <MenuSeparator />
+      <MenuItem icon={pinned ? <PinOff size={14} /> : <Pin size={14} />} onClick={() => (close(), useMeetings.getState().pin(channelId, pinned ? null : userId))}>
+        {pinned ? 'Unpin' : 'Pin for me'}
+      </MenuItem>
+      {host && (
+        <MenuItem icon={<Sparkles size={14} />} onClick={() => (close(), useMeetings.getState().configure(channelId, { spotlight: spotlit ? null : userId }))}>
+          {spotlit ? 'Remove spotlight' : 'Spotlight for everyone'}
         </MenuItem>
       )}
     </>

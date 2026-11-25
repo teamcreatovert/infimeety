@@ -39,7 +39,7 @@ export function MeetingKnocks() {
             <Avatar user={user} size={40} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13.5px] font-semibold">{user.name}</div>
-              <div className="truncate text-[11.5px] text-fg-2">{hosting.length > 1 ? `Wants to join ${channel.name}` : 'Guest · wants to join'}</div>
+              <div className="truncate text-[11.5px] text-fg-2">{hosting.length > 1 ? `Wants to join ${channel.name}` : user.guest ? 'Guest · wants to join' : 'Wants to join'}</div>
             </div>
             <Button size="sm" variant="ghost" onClick={() => answer(channel.id, user.id, false)}>
               Deny

@@ -116,6 +116,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       onWebs(msg.webs, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       onLobbies(msg.lobbies, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
+      if (msg.meeting) useMeetings.getState().onSettings(cid, msg.meeting);
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
     }
@@ -210,6 +211,10 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return useMeetings.getState().setWaiting(cid, msg.users);
     case 'meeting.cohost':
       return useMeetings.getState().onCohost(cid, msg.userId);
+    case 'meeting.settings':
+      return useMeetings.getState().onSettings(cid, msg.settings);
+    case 'meeting.act':
+      return useMeetings.getState().onAct(cid, msg.act, msg.by);
     case 'meeting.ended':
       return useMeetings.getState().onEnded(cid);
     case 'lobby':

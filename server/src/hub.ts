@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
-import { DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
-import type { Activity, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch, Lobby } from '../../shared/protocol';
+import { DEFAULT_MEETING, DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
+import type { Activity, MeetingSettings, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch, Lobby } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -46,6 +46,18 @@ interface MeetingState {
   channelId: string;
   expiresAt: number;
   emptySince: number | null;
+  /** The host controls (absent: the defaults). */
+  settings?: MeetingSettings;
+}
+
+/** A host controls change as sent: only known keys and values, applied over `prev`. */
+function cleanMeetingSettings(raw: unknown, prev: MeetingSettings): MeetingSettings {
+  const x = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const next = { ...prev };
+  if (x.access === 'open' || x.access === 'trusted' || x.access === 'restricted') next.access = x.access;
+  for (const k of ['locked', 'share', 'chat', 'mic', 'camera', 'reactions'] as const) if (typeof x[k] === 'boolean') next[k] = x[k];
+  if (x.spotlight === null || (typeof x.spotlight === 'string' && x.spotlight.length <= 64)) next.spotlight = x.spotlight as string | null;
+  return next;
 }
 
 const MAX_FRAME = 64 * 1024;
@@ -160,7 +172,7 @@ export class ChannelHub extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [peer.userId]);
     server.serializeAttachment(peer);
 
-    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), webs: Object.fromEntries(this.webs), lobbies: Object.fromEntries(this.lobbies), config: remoteConfig(this.env), activities: this.activities() });
+    this.send(server, { t: 'welcome', peerId: peer.peerId, online: this.online(), voice: this.visibleTo(this.voiceSnapshot(), peer.role), parties: Object.fromEntries(this.parties), webs: Object.fromEntries(this.webs), lobbies: Object.fromEntries(this.lobbies), config: remoteConfig(this.env), activities: this.activities(), ...(this.meeting ? { meeting: this.meetingRules()! } : {}) });
     if (!wasOnline) this.broadcast({ t: 'presence', online: this.online() }, server);
     const pen = await this.penaltiesOf(peer.userId);
     if (pen.chat || pen.voice) this.send(server, { t: 'penalty', chatUntil: pen.chat, voiceUntil: pen.voice });
@@ -246,6 +258,73 @@ export class ChannelHub extends DurableObject<Env> {
   /** People in the call right now. */
   async callSize() {
     return this.voiceSnapshot().participants.length;
+  }
+
+  /** The meeting's host controls (null: not a meeting hub). */
+  async meetingSettings(): Promise<MeetingSettings | null> {
+    return this.meetingRules();
+  }
+
+  private meetingRules(): MeetingSettings | null {
+    return this.meeting ? { ...DEFAULT_MEETING, ...this.meeting.settings } : null;
+  }
+
+  /** In a meeting whose host turned `what` off for everyone, someone who isn't the host or a co-host. */
+  private heldBack(me: Peer, what: 'share' | 'chat' | 'mic' | 'camera' | 'reactions') {
+    const rules = this.meetingRules();
+    return !!rules && !rules[what] && !isAdmin(me.role);
+  }
+
+  private async setMeetingSettings(me: Peer, raw: unknown) {
+    const m = this.meeting;
+    const before = this.meetingRules();
+    if (!m || !before || !isAdmin(me.role)) return;
+    const next = cleanMeetingSettings(raw, before);
+    m.settings = next;
+    await this.ctx.storage.put('meeting', m);
+    void audit(this.env, me.channelId, me.userId, 'meeting.settings', null, { ...next });
+    this.broadcast({ t: 'meeting.settings', settings: next });
+    // Turned off for everyone: cameras and screen shares already on stop now (mics follow through the voice list).
+    for (const s of this.sockets()) {
+      const p = this.peer(s);
+      if (!p.voice || isAdmin(p.role)) continue;
+      if (!next.camera && p.voice.camera) this.send(s, { t: 'meeting.act', act: 'camOff' });
+      if (!next.share && p.voice.screen) this.send(s, { t: 'meeting.act', act: 'shareOff' });
+    }
+    if (before.mic !== next.mic) this.broadcastVoice();
+  }
+
+  /** The host or a co-host acts on one person (someone they outrank) or on everyone. */
+  private meetingAct(me: Peer, act: unknown, peerId: unknown) {
+    if (!this.meeting || !isAdmin(me.role)) return;
+    if (act === 'muteAll' || act === 'lowerHands') {
+      let lowered = false;
+      for (const s of this.sockets()) {
+        const p = this.peer(s);
+        if (!p.voice || p.peerId === me.peerId) continue;
+        if (act === 'muteAll' && !p.voice.muted && outranks(me.role, p.role)) this.send(s, { t: 'meeting.act', act: 'mute', by: me.userId });
+        if (act === 'lowerHands' && p.voice.hand) {
+          this.save(s, { ...p, voice: { ...p.voice, hand: false } });
+          this.send(s, { t: 'meeting.act', act: 'lowerHand', by: me.userId });
+          lowered = true;
+        }
+      }
+      void audit(this.env, me.channelId, me.userId, 'meeting.' + act, null, {});
+      if (lowered) this.broadcastVoice();
+      return;
+    }
+    if (act !== 'mute' && act !== 'camOff' && act !== 'shareOff' && act !== 'lowerHand') return;
+    const target = typeof peerId === 'string' ? this.byPeer(peerId) : undefined;
+    if (!target) return;
+    const t = this.peer(target);
+    // Lowering a hand is a kindness anyone running the meeting may do; the rest need a higher role.
+    if (!t.voice || (act !== 'lowerHand' && !this.canModerate(me, t))) return;
+    if (act === 'lowerHand') {
+      this.save(target, { ...t, voice: { ...t.voice, hand: false } });
+      this.broadcastVoice();
+    }
+    void audit(this.env, me.channelId, me.userId, 'meeting.' + act, t.userId, {});
+    this.send(target, { t: 'meeting.act', act, by: me.userId });
   }
 
   /** The meeting is over (already deleted from D1): tell everyone and close their sockets. */
@@ -382,6 +461,7 @@ export class ChannelHub extends DurableObject<Env> {
           },
         });
         await this.sendVoiceWords(ws);
+        this.holdBackMedia(ws);
         return this.broadcastVoice();
       }
       case 'voice.leave':
@@ -402,8 +482,13 @@ export class ChannelHub extends DurableObject<Env> {
         if ('hand' in s) v.hand = !!s.hand;
         if (Array.isArray(s.watching)) v.watching = (Array.isArray(s.watching) ? s.watching.filter((w: unknown): w is string => typeof w === 'string' && w.length <= 64).slice(0, 24) : undefined);
         this.save(ws, { ...me, voice: v });
+        this.holdBackMedia(ws);
         return this.broadcastVoice();
       }
+      case 'meeting.settings':
+        return this.setMeetingSettings(me, msg.settings);
+      case 'meeting.act':
+        return this.meetingAct(me, msg.act, msg.peerId);
       case 'voice.serverMute': {
         const target = this.byPeer(msg.peerId);
         if (!target || !this.canModerate(me, this.peer(target))) return;
@@ -480,7 +565,7 @@ export class ChannelHub extends DurableObject<Env> {
 
       case 'reaction': {
         // Floats up for everyone in your voice room; only the known ones, at the reactions' rate.
-        if (!me.voice) return;
+        if (!me.voice || this.heldBack(me, 'reactions')) return;
         if (validGifId(msg.gif)) return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: '', gif: msg.gif }, ws);
         if (!validReaction(msg.emoji)) return;
         return this.roomCast(me.voice.roomId, { t: 'reaction', peerId: me.peerId, userId: me.userId, emoji: msg.emoji }, ws);
@@ -662,6 +747,7 @@ export class ChannelHub extends DurableObject<Env> {
     const room = await this.access(msg.roomId, me.channelId);
     if (!room || !atLeast(me.role, room.view)) return this.send(ws, { t: 'error', message: 'Room not found' });
     if (!atLeast(me.role, room.post)) return this.send(ws, { t: 'error', message: 'Only moderators and admins can post in this room.' });
+    if (this.heldBack(me, 'chat')) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can send messages right now.' });
     const nonce = String(msg.nonce ?? '').slice(0, 64);
     // Slow mode: one message per person every N seconds; moderators and up are exempt.
     const slow = room.slow;
@@ -1136,6 +1222,18 @@ export class ChannelHub extends DurableObject<Env> {
   }
 
   /** Moderators and up act on lower roles only: owners on anyone, admins on moderators and members, moderators on members. */
+  /** A meeting whose host turned cameras or screen sharing off: this person's go off again. */
+  private holdBackMedia(ws: WebSocket) {
+    const me = this.peer(ws);
+    if (!me.voice) return;
+    const camera = me.voice.camera && this.heldBack(me, 'camera');
+    const screen = me.voice.screen && this.heldBack(me, 'share');
+    if (!camera && !screen) return;
+    this.save(ws, { ...me, voice: { ...me.voice, camera: camera ? false : me.voice.camera, screen: screen ? false : me.voice.screen } });
+    if (camera) this.send(ws, { t: 'meeting.act', act: 'camOff' });
+    if (screen) this.send(ws, { t: 'meeting.act', act: 'shareOff' });
+  }
+
   private canModerate(me: Peer, target: Peer) {
     return canModerateRole(me.role) && outranks(me.role, target.role);
   }
@@ -1243,7 +1341,7 @@ export class ChannelHub extends DurableObject<Env> {
     for (const p of [...this.sockets(exceptSocket).map((s) => this.peer(s)), ...heldPeers]) {
       if (!p.voice || p.userId === exceptUser) continue;
       const { forceMuted, ...v } = p.voice;
-      const roomMuted = this.mutedRooms.has(v.roomId) && !canModerateRole(p.role);
+      const roomMuted = (this.mutedRooms.has(v.roomId) && !canModerateRole(p.role)) || this.heldBack(p, 'mic');
       const entry = { ...v, serverMuted: forceMuted || roomMuted || (v.mutedUntil ?? 0) > Date.now() };
       const i = seen.get(v.userId);
       if (i === undefined) {
@@ -1375,6 +1473,9 @@ function rateOf(t: unknown): SocketRate {
       return 'party';
     case 'sound.play':
       return 'sound';
+    case 'meeting.settings':
+    case 'meeting.act':
+      return 'voice';
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }

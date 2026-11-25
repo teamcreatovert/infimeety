@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 import { Video } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { MeetingPreview } from '../../../../shared/protocol';
+import type { Channel, MeetingPreview } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
 import { Modal } from '../ui/overlay';
 import { Button, Spinner, TextField } from '../ui/primitives';
@@ -37,22 +37,92 @@ function JoinMeeting({ initial, onClose }: { initial: string; onClose: () => voi
     void loadMeetingPreview(code).then(setPreview);
   }, [code]);
 
+  // A restricted meeting: asked to join, waiting for the host (with or without video once in).
+  const [asking, setAsking] = useState<{ camera: boolean } | null>(null);
+
+  const enter = async (channel: Channel, camera: boolean) => {
+    useChannels.getState().select(channel.id);
+    onClose();
+    await useMeetings.getState().enterCall(channel, { camera, confirmed: true });
+  };
+
+  const failed = (err: unknown) => {
+    const why = err instanceof ApiError ? err.code : null;
+    toast({
+      kind: 'error',
+      title:
+        why === 'removed'
+          ? 'You were removed from this meeting'
+          : why === 'locked'
+            ? 'This meeting is locked'
+            : why === 'denied'
+              ? 'The host didn’t let you in'
+              : 'This meeting has ended',
+      body: why === 'locked' ? 'The host isn’t letting anyone new in right now.' : undefined,
+    });
+  };
+
   const join = async (camera: boolean) => {
     if (!code) return;
     if (!(await confirmCallSwitch(existing?.id ?? null, `Joining ${preview?.name ?? 'this meeting'}`))) return;
     setBusy(true);
     try {
-      const meetings = useMeetings.getState();
-      const channel = existing ?? (await meetings.join(code));
-      useChannels.getState().select(channel.id);
-      onClose();
-      await meetings.enterCall(channel, { camera, confirmed: true });
+      const channel = existing ?? (await useMeetings.getState().join(code));
+      if (channel === 'waiting') {
+        setAsking({ camera });
+        setBusy(false);
+        return;
+      }
+      await enter(channel, camera);
     } catch (err) {
-      const removed = err instanceof ApiError && err.code === 'removed';
-      toast({ kind: 'error', title: removed ? 'You were removed from this meeting' : 'This meeting has ended' });
+      failed(err);
       setBusy(false);
     }
   };
+
+  // Waiting to be let in: check every couple of seconds.
+  useEffect(() => {
+    if (!asking || !code) return;
+    let stop = false;
+    const check = async () => {
+      try {
+        const res = await useMeetings.getState().checkAdmission(code);
+        if (stop) return;
+        if (typeof res !== 'string') return void (await enter(res, asking.camera));
+        if (res === 'denied' || res === 'removed') {
+          stop = true;
+          setAsking(null);
+          failed(new ApiError(403, res));
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          stop = true;
+          setAsking(null);
+          failed(err);
+        }
+      }
+    };
+    const poll = setInterval(() => void check(), 2000);
+    return () => {
+      stop = true;
+      clearInterval(poll);
+    };
+  }, [asking, code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (asking)
+    return (
+      <div className="p-7 text-center">
+        <MeetingTile color="teal" />
+        <h2 className="mt-4 font-display text-[20px] font-bold tracking-[-0.02em]">Asking to join…</h2>
+        <p className="mt-1 text-[13px] leading-snug text-fg-2">You’ll join {preview?.name ?? 'the meeting'} as soon as the host lets you in.</p>
+        <div className="mt-5 flex justify-center text-fg-3">
+          <Spinner />
+        </div>
+        <Button className="mt-6 w-full" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    );
 
   if (!code) {
     const parsed = parseMeetingInput(input);
@@ -122,11 +192,11 @@ function JoinMeeting({ initial, onClose }: { initial: string; onClose: () => voi
             <Button className="flex-1" onClick={onClose}>
               Not now
             </Button>
-            <Button variant="primary" className="flex-1" loading={busy} onClick={() => void join(false)}>
-              {existing ? 'Rejoin' : 'Join'}
+            <Button variant="primary" className="flex-1" loading={busy} disabled={!existing && !!preview.locked} onClick={() => void join(false)}>
+              {existing ? 'Rejoin' : preview.locked ? 'Locked' : preview.access === 'restricted' ? 'Ask to join' : 'Join'}
             </Button>
           </div>
-          <button disabled={busy} onClick={() => void join(true)} className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-accent hover:underline disabled:opacity-50">
+          <button disabled={busy || (!existing && !!preview.locked)} onClick={() => void join(true)} className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-accent hover:underline disabled:opacity-50">
             <Video size={13} /> Join with video
           </button>
         </>

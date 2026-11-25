@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Channel, PublicUser } from '../../../shared/protocol';
+import { DEFAULT_MEETING, type Channel, type GuestStatus, type MeetingAct, type MeetingSettings, type PublicUser } from '../../../shared/protocol';
 import { api } from '@/lib/api';
 import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
@@ -18,9 +18,21 @@ interface MeetingsState {
   waiting: Record<string, PublicUser[]>;
   /** Meetings that went away while open here, and why. */
   closed: Record<string, 'ended' | 'removed'>;
+  /** Each meeting's host controls, as its hub last said. */
+  settings: Record<string, MeetingSettings>;
+  /** The person you pinned big in each meeting (a user id), just for you. */
+  pinned: Record<string, string | null>;
 
   create: () => Promise<Channel>;
-  join: (code: string) => Promise<Channel>;
+  /** In you go, or 'waiting' when the meeting is restricted and the host has to let you in. */
+  join: (code: string) => Promise<Channel | 'waiting'>;
+  /** While waiting to be let in: the meeting once you're in, or why not. */
+  checkAdmission: (code: string) => Promise<Channel | GuestStatus>;
+  /** Host and co-hosts: change the host controls for everyone. */
+  configure: (channelId: string, patch: Partial<MeetingSettings>) => void;
+  /** Host and co-hosts: mute someone, turn off their camera, stop their share, lower hands... */
+  act: (channelId: string, act: MeetingAct, peerId?: string) => void;
+  pin: (channelId: string, userId: string | null) => void;
   /** Join (or rejoin) a meeting's call. */
   enterCall: (channel: Channel, opts?: { camera?: boolean; confirmed?: boolean }) => Promise<void>;
   end: (channelId: string) => Promise<void>;
@@ -33,6 +45,9 @@ interface MeetingsState {
 
   // Realtime events (lib/realtime.ts)
   setWaiting: (channelId: string, users: PublicUser[]) => void;
+  onSettings: (channelId: string, settings: MeetingSettings) => void;
+  /** The host or a co-host did something to you (or the meeting's rules did). */
+  onAct: (channelId: string, act: 'mute' | 'camOff' | 'shareOff' | 'lowerHand', by?: string) => void;
   onCohost: (channelId: string, userId: string) => void;
   onEnded: (channelId: string) => void;
   /** The meeting's channel was removed: say why. */
@@ -60,6 +75,8 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
   sharing: null,
   waiting: {},
   closed: {},
+  settings: {},
+  pinned: {},
 
   async create() {
     const channel = await api<Channel>('/meetings', { method: 'POST' });
@@ -69,9 +86,33 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
   },
 
   async join(code) {
-    const channel = await api<Channel>(`/meetings/${code}/join`, { method: 'POST' });
-    addAndSelect(channel);
-    return channel;
+    const res = await api<Channel | { status: 'waiting' }>(`/meetings/${code}/join`, { method: 'POST' });
+    if ('status' in res) return 'waiting';
+    addAndSelect(res);
+    return res;
+  },
+
+  async checkAdmission(code) {
+    const res = await api<{ status: GuestStatus; channel?: Channel }>(`/meetings/${code}/guest`);
+    if (res.status === 'admitted' && res.channel) {
+      addAndSelect(res.channel);
+      return res.channel;
+    }
+    return res.status === 'admitted' ? 'waiting' : res.status;
+  },
+
+  configure(channelId, patch) {
+    // Shown at once; the hub's answer (to everyone) follows.
+    set((s) => ({ settings: { ...s.settings, [channelId]: { ...DEFAULT_MEETING, ...s.settings[channelId], ...patch } } }));
+    getHub(channelId)?.send({ t: 'meeting.settings', settings: patch });
+  },
+
+  act(channelId, act, peerId) {
+    getHub(channelId)?.send({ t: 'meeting.act', act, ...(peerId ? { peerId } : {}) });
+  },
+
+  pin(channelId, userId) {
+    set((s) => ({ pinned: { ...s.pinned, [channelId]: userId } }));
   },
 
   async enterCall(channel, { camera = false, confirmed = false } = {}) {
@@ -126,6 +167,29 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
     set((s) => ({ waiting: { ...s.waiting, [channelId]: users } }));
   },
 
+  onSettings(channelId, settings) {
+    set((s) => ({ settings: { ...s.settings, [channelId]: { ...DEFAULT_MEETING, ...settings } } }));
+  },
+
+  onAct(channelId, act, by) {
+    const v = useVoice.getState();
+    if (v.channelId !== channelId) return;
+    const who = by ? (useChannels.getState().users[by]?.name ?? 'The host') : null;
+    if (act === 'mute') {
+      if (!v.muted) void voice.toggleMute();
+      toast({ kind: 'info', title: `${who ?? 'The host'} muted you`, body: v.serverMuted ? undefined : 'You can unmute yourself when you’re ready to talk.' });
+    } else if (act === 'camOff') {
+      if (v.camera) voice.stopCamera();
+      toast({ kind: 'info', title: who ? `${who} turned off your camera` : 'The host has turned off cameras' });
+    } else if (act === 'shareOff') {
+      if (v.screen) voice.stopScreen();
+      toast({ kind: 'info', title: who ? `${who} stopped your screen share` : 'Only the host and co-hosts can share their screen right now' });
+    } else if (act === 'lowerHand') {
+      if (v.hand) voice.toggleHand();
+      if (who) toast({ kind: 'info', title: `${who} lowered your hand` });
+    }
+  },
+
   onCohost(channelId, userId) {
     if (userId !== useAuth.getState().me?.id) return;
     toast({ kind: 'info', title: 'You’re now a co-host', body: 'Nobody else was here to run the meeting, so you can let guests in and manage people.' });
@@ -144,3 +208,34 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
 
   set: (patch) => set(patch),
 }));
+
+/**
+ * Whether the host turned `what` off for everyone in this meeting and you're not the host or a
+ * co-host (false outside meetings).
+ */
+export function heldBack(channelId: string | null | undefined, what: 'share' | 'chat' | 'mic' | 'camera' | 'reactions'): boolean {
+  if (!channelId) return false;
+  const channel = useChannels.getState().channels.find((c) => c.id === channelId);
+  if (channel?.kind !== 'meeting' || channel.role !== 'member') return false;
+  const rules = useMeetings.getState().settings[channelId];
+  return !!rules && !rules[what];
+}
+
+/** heldBack as a hook, so buttons update when the host changes the rules. */
+export function useHeldBack(channelId: string | null | undefined, what: 'share' | 'chat' | 'mic' | 'camera' | 'reactions'): boolean {
+  const rules = useMeetings((s) => (channelId ? s.settings[channelId] : undefined));
+  const member = useChannels((s) => {
+    const c = channelId ? s.channels.find((x) => x.id === channelId) : undefined;
+    return c?.kind === 'meeting' && c.role === 'member';
+  });
+  return member && !!rules && !rules[what];
+}
+
+/** What each held-back thing says when you try it anyway. */
+export const HELD_BACK_NOTE: Record<'share' | 'chat' | 'mic' | 'camera' | 'reactions', string> = {
+  share: 'Only the host and co-hosts can share their screen right now',
+  chat: 'Only the host and co-hosts can send messages right now',
+  mic: 'The host has turned off mics for now',
+  camera: 'The host has turned off cameras for now',
+  reactions: 'The host has turned off reactions for now',
+};

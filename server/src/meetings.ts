@@ -52,12 +52,14 @@ export async function meetingPreview(env: Env, code: string): Promise<MeetingPre
   const row = await findMeeting(env, code);
   if (!row) return null;
   const host = await env.DB.prepare('SELECT id, name, username, avatar_url FROM users WHERE id = ?').bind(row.owner_id).first<any>();
+  const rules = await hub(env, row.id).meetingSettings();
   return {
     code: row.invite_code,
     name: row.name,
     host: toPublicUser(host ?? { id: row.owner_id, name: 'Someone', username: null, avatar_url: null }),
     inCall: await hub(env, row.id).callSize(),
     expiresAt: row.expires_at,
+    ...(rules ? { access: rules.access, locked: rules.locked } : {}),
   };
 }
 

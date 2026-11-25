@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
-import { atLeast, canModerateRole, outranks } from '../../shared/protocol';
+import { DEFAULT_MEETING, atLeast, canModerateRole, outranks } from '../../shared/protocol';
 import { validGifId } from '../../shared/protocol';
 import type { AuditEntry, Friend, Provider, PublicUser, Role, ServerMsg } from '../../shared/protocol';
 import {
@@ -1109,7 +1109,10 @@ app.get('/meetings/:code', limit('preview', 200), async (c) => {
   return preview ? c.json(preview) : c.json({ error: 'meeting_ended' }, 404);
 });
 
-/** Infimeety users walk straight in, unless the host removed them earlier. */
+/**
+ * Infimeety users walk straight in (unless the host removed them earlier), or ask first when
+ * the host made the meeting restricted. Nobody new gets into a locked meeting.
+ */
 app.post('/meetings/:code/join', limit('join', 60), auth, async (c) => {
   const user = c.get('user');
   const meeting = await findMeeting(c.env, c.req.param('code'));
@@ -1118,6 +1121,21 @@ app.post('/meetings/:code/join', limit('join', 60), auth, async (c) => {
     .bind(meeting.id, user.id)
     .first<{ status: string }>();
   if (access?.status === 'removed') return c.json({ error: 'removed' }, 403);
+  // Already in it: back in, whatever the rules are now.
+  if (!(await memberRole(c.env, meeting.id, user.id))) {
+    const rules = (await hub(c.env, meeting.id).meetingSettings()) ?? DEFAULT_MEETING;
+    if (rules.locked) return c.json({ error: 'locked' }, 403);
+    if (rules.access === 'restricted') {
+      if (access?.status === 'denied') return c.json({ error: 'denied' }, 403);
+      if (access?.status !== 'waiting') {
+        await c.env.DB.prepare("INSERT OR REPLACE INTO meeting_access (channel_id, user_id, status, created_at) VALUES (?, ?, 'waiting', ?)")
+          .bind(meeting.id, user.id, Date.now())
+          .run();
+        c.executionCtx.waitUntil(announceWaiting(c.env, meeting.id));
+      }
+      return c.json({ status: 'waiting' }, 202);
+    }
+  }
   const res = await c.env.DB.prepare("INSERT OR IGNORE INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)")
     .bind(meeting.id, user.id, Date.now())
     .run();
@@ -1140,23 +1158,32 @@ app.post('/meetings/:code/guests', limit('guest', 60), async (c) => {
     .bind(meeting.id)
     .first<{ n: number }>();
   if ((waiting?.n ?? 0) >= MAX_WAITING) return c.json({ error: 'lobby_full' }, 429);
+  const rules = (await hub(c.env, meeting.id).meetingSettings()) ?? DEFAULT_MEETING;
+  if (rules.locked) return c.json({ error: 'locked' }, 403);
 
   const id = newId();
   const now = Date.now();
+  // An open meeting lets guests straight in; otherwise they wait for the host or a co-host.
+  const open = rules.access === 'open';
   await c.env.DB.batch([
     c.env.DB.prepare('INSERT INTO users (id, name, onboarded, created_at, guest_of) VALUES (?, ?, 1, ?, ?)').bind(id, clean, now, meeting.id),
-    c.env.DB.prepare("INSERT INTO meeting_access (channel_id, user_id, status, created_at) VALUES (?, ?, 'waiting', ?)").bind(meeting.id, id, now),
+    open
+      ? c.env.DB.prepare("INSERT INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)").bind(meeting.id, id, now)
+      : c.env.DB.prepare("INSERT INTO meeting_access (channel_id, user_id, status, created_at) VALUES (?, ?, 'waiting', ?)").bind(meeting.id, id, now),
   ]);
   const token = await createSession(c.env, id);
-  c.executionCtx.waitUntil(announceWaiting(c.env, meeting.id));
-  return c.json({ token, status: 'waiting' }, 201);
+  c.executionCtx.waitUntil(open ? hub(c.env, meeting.id).notify({ t: 'channel.changed' }) : announceWaiting(c.env, meeting.id));
+  return c.json({ token, status: open ? 'admitted' : 'waiting' }, 201);
 });
 
-/** The guest's waiting screen polls this until they're let in (then it carries the meeting). */
+/**
+ * The waiting screen polls this until they're let in (then it carries the meeting): a browser
+ * guest's, or an Infimeety user's asking to join a restricted meeting.
+ */
 app.get('/meetings/:code/guest', guestOk, async (c) => {
   const user = c.get('user');
   const meeting = await findMeeting(c.env, c.req.param('code'));
-  if (!meeting || user.guest_of !== meeting.id) return c.json({ error: 'meeting_ended' }, 404);
+  if (!meeting || (user.guest_of && user.guest_of !== meeting.id)) return c.json({ error: 'meeting_ended' }, 404);
   if (await memberRole(c.env, meeting.id, user.id)) {
     const [channel] = await loadChannels(c.env, user.id, meeting.id);
     return c.json({ status: 'admitted', channel });
