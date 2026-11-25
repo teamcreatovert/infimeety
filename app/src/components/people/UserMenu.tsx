@@ -3,6 +3,7 @@ import {
   Bell,
   BellOff,
   CheckCheck,
+  Crown,
   Hand,
   ScreenShareOff,
   Sparkles,
@@ -349,6 +350,15 @@ function Moderation({ channelId, peerId, userId, close }: { channelId: string; p
           onClick={() => meetingAction(() => useMeetings.getState().setCohost(channelId, userId, targetRole !== 'admin'), 'Couldn’t change co-hosts')}
         >
           {targetRole === 'admin' ? 'Remove as co-host' : 'Make co-host'}
+        </MenuItem>
+      )}
+      {/* Meetings: the host can hand the whole meeting over (to someone with an account). */}
+      {meeting && myRole === 'owner' && !target?.guest && targetRole && targetRole !== 'owner' && (
+        <MenuItem
+          icon={<Crown size={14} />}
+          onClick={() => meetingAction(() => useMeetings.getState().makeHost(channelId, userId), 'Couldn’t make them the host')}
+        >
+          Make host
         </MenuItem>
       )}
       {meeting ? (

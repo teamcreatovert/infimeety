@@ -2,7 +2,7 @@ import { FixerCard } from './FixerCard';
 import { FIXER_ID } from '@/lib/fixer';
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { Copy, Pencil, Pin, PinOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
+import { Copy, Lock, Pencil, Pin, PinOff, Reply, SmilePlus, Trash2 } from 'lucide-react';
 import { memo, useState } from 'react';
 import { canModerateRole, type Channel } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
@@ -33,6 +33,7 @@ interface Props {
 
 export const MessageItem = memo(function MessageItem({ msg, grouped, channel, replyTarget, animate, onReply, onJump }: Props) {
   const author = useChannels((s) => s.users[msg.userId]);
+  const recipient = useChannels((s) => (msg.to ? s.users[msg.to] : undefined));
   const replyAuthor = useChannels((s) => (replyTarget ? s.users[replyTarget.userId] : undefined));
   const me = useAuth((s) => s.me);
   // Touch screens have no hover: a tap on the message shows its actions.
@@ -69,7 +70,13 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         if (e.pointerType !== 'touch' || (e.target as Element).closest('button, a, input, textarea, video, audio, img')) return;
         useUI.getState().set({ touchedMessage: touched ? null : msg.id });
       }}
-      className={clsx('group relative flex gap-3 rounded-[10px] px-5 py-[3px] transition-colors hover:bg-fill-1 compact:px-3', grouped ? '' : 'mt-3 pt-1.5', touched && 'bg-fill-1')}
+      className={clsx(
+        'group relative flex gap-3 rounded-[10px] px-5 py-[3px] transition-colors hover:bg-fill-1 compact:px-3',
+        grouped ? '' : 'mt-3 pt-1.5',
+        touched && 'bg-fill-1',
+        // Private (meetings): tinted, so it's never mistaken for something everyone saw.
+        msg.to && 'bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] pb-1.5 shadow-[inset_2px_0_0_var(--accent)]',
+      )}
     >
       <div className="w-9 shrink-0">
         {grouped ? (
@@ -111,6 +118,11 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
             {msg.pinnedAt && (
               <span className="flex items-center gap-0.5 text-[11px] font-medium text-accent">
                 <Pin size={11} /> Pinned
+              </span>
+            )}
+            {msg.to && (
+              <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
+                <Lock size={10} /> {mine ? `Privately to ${recipient?.name ?? 'someone'}` : 'Privately to you'}
               </span>
             )}
           </div>
@@ -180,7 +192,7 @@ export const MessageItem = memo(function MessageItem({ msg, grouped, channel, re
         )}
       </div>
 
-      {!msg.pending && !msg.local && !editing && (
+      {!msg.pending && !msg.local && !msg.to && !editing && (
         <div
           className={clsx(
             'absolute -top-3.5 right-4 z-10 flex items-center gap-px rounded-[10px] p-[3px] opacity-0 glass-pop transition-opacity duration-100 group-hover:opacity-100 compact:right-2',

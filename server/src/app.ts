@@ -18,6 +18,8 @@ import {
 } from './auth';
 import {
   MAX_WAITING,
+  MEETING_LATER_TTL,
+  MEETING_MAX_AHEAD,
   MEETING_TTL,
   announceWaiting,
   endMeeting,
@@ -1083,21 +1085,31 @@ app.post('/dms', auth, async (c) => {
 
 // ─── Meetings ──────────────────────────────────────────────────────────────────
 
-/** Start a quick meeting: a short-lived channel with one call and one chat, shared by link. */
+/**
+ * Start a meeting: a short-lived channel with one call and one chat, shared by link. Now (the
+ * default), for later (a link that waits for its first call), or at a set time, maybe repeating.
+ */
 app.post('/meetings', limit('create', 20), auth, async (c) => {
   const user = c.get('user');
   const id = newId();
   const now = Date.now();
-  const expiresAt = now + MEETING_TTL;
+  const body = await c.req.json<{ name?: string; startsAt?: number; repeat?: string; later?: boolean; tz?: number }>().catch(() => ({}) as Record<string, never>);
+  const startsAt = typeof body.startsAt === 'number' && Number.isFinite(body.startsAt) ? Math.round(body.startsAt) : null;
+  if (startsAt !== null && (startsAt < now - 5 * 60_000 || startsAt > now + MEETING_MAX_AHEAD)) return c.json({ error: 'bad_time' }, 400);
+  const repeat = startsAt !== null && (body.repeat === 'daily' || body.repeat === 'weekdays' || body.repeat === 'weekly') ? body.repeat : null;
+  const later = !!body.later && startsAt === null;
+  const tz = typeof body.tz === 'number' && Math.abs(body.tz) <= 14 * 60 ? Math.round(body.tz) : 0;
+  const expiresAt = startsAt !== null ? startsAt + MEETING_TTL : later ? now + MEETING_LATER_TTL : now + MEETING_TTL;
+  const name = (typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '').slice(0, 60) || `${user.name}’s meeting`.slice(0, 60);
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "INSERT INTO channels (id, name, emoji, color, owner_id, invite_code, created_at, kind, expires_at) VALUES (?, ?, '📹', 'teal', ?, ?, ?, 'meeting', ?)",
-    ).bind(id, `${user.name}’s meeting`.slice(0, 60), user.id, meetingCode(), now, expiresAt),
+      "INSERT INTO channels (id, name, emoji, color, owner_id, invite_code, created_at, kind, expires_at, starts_at, repeat) VALUES (?, ?, '📹', 'teal', ?, ?, ?, 'meeting', ?, ?, ?)",
+    ).bind(id, name, user.id, meetingCode(), now, expiresAt, startsAt, repeat),
     c.env.DB.prepare("INSERT INTO channel_members (channel_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)").bind(id, user.id, now),
     c.env.DB.prepare("INSERT INTO rooms (id, channel_id, kind, name, position, created_at) VALUES (?, ?, 'text', 'chat', 0, ?)").bind(newId(), id, now),
     c.env.DB.prepare("INSERT INTO rooms (id, channel_id, kind, name, position, created_at) VALUES (?, ?, 'voice', 'Meeting', 1, ?)").bind(newId(), id, now),
   ]);
-  await hub(c.env, id).startMeeting(id, expiresAt);
+  await hub(c.env, id).startMeeting(id, expiresAt, { startsAt, repeat, later, tz });
   c.executionCtx.waitUntil(sweepMeetings(c.env));
   const [channel] = await loadChannels(c.env, user.id, id);
   return c.json(channel, 201);
@@ -1219,6 +1231,27 @@ app.post('/channels/:id/guests/:userId', auth, requireRole('admin'), requireMeet
     await c.env.DB.prepare("UPDATE meeting_access SET status = 'denied' WHERE channel_id = ? AND user_id = ?").bind(id, target).run();
   }
   c.executionCtx.waitUntil(announceWaiting(c.env, id));
+  return c.json({ ok: true });
+});
+
+/** The host hands the meeting to someone else in it (who has an account); they become a co-host. */
+app.post('/channels/:id/host', auth, requireRole('owner'), requireMeeting, async (c) => {
+  const id = c.req.param('id');
+  const me = c.get('user').id;
+  const { userId } = await c.req.json<{ userId?: string }>();
+  if (typeof userId !== 'string' || userId === me) return c.json({ error: 'bad_user' }, 400);
+  const target = await c.env.DB.prepare('SELECT u.guest_of FROM channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND m.user_id = ?')
+    .bind(id, userId)
+    .first<{ guest_of: string | null }>();
+  if (!target) return c.json({ error: 'not_found' }, 404);
+  if (target.guest_of) return c.json({ error: 'guest' }, 400);
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE channels SET owner_id = ? WHERE id = ?').bind(userId, id),
+    c.env.DB.prepare("UPDATE channel_members SET role = 'owner' WHERE channel_id = ? AND user_id = ?").bind(id, userId),
+    c.env.DB.prepare("UPDATE channel_members SET role = 'admin' WHERE channel_id = ? AND user_id = ?").bind(id, me),
+  ]);
+  log(c, 'meeting.host', userId, {});
+  await hub(c.env, id).hostChanged(userId, me);
   return c.json({ ok: true });
 });
 

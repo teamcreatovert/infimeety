@@ -138,7 +138,7 @@ export const toChannel = (r: any, rooms: Room[], peer?: PublicUser, categories: 
   rooms,
   categories,
   iconUrl: r.icon_url ?? null,
-  ...(r.kind === 'meeting' ? { expiresAt: r.expires_at } : {}),
+  ...(r.kind === 'meeting' ? { expiresAt: r.expires_at, startsAt: r.starts_at ?? null, repeat: r.repeat ?? null } : {}),
 });
 
 export const toMember = (r: any): Member => ({ ...toPublicUser(r), role: r.role, joinedAt: r.joined_at });

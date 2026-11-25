@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, Copy, Link2, LogOut, Phone, PhoneOff, Video, X } from 'lucide-react';
+import { CalendarClock, Check, Copy, Link2, LogOut, Phone, PhoneOff, Video, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Channel, Room, VoiceParticipant } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
@@ -10,6 +10,7 @@ import { Button } from '../ui/primitives';
 import { ChatToggle, VoiceChatPanel, VoiceRoomView } from '../voice/VoiceRoomView';
 import { channelGradient } from '@/lib/format';
 import { meetingUrl, timeLeft } from '@/lib/meeting';
+import { CalendarButtons, scheduleLabel } from './ScheduleMeeting';
 import { spring } from '@/lib/motion';
 import { useCompact } from '@/lib/responsive';
 import { useAuth } from '@/stores/auth';
@@ -166,10 +167,21 @@ function MeetingLobby({ channel, callRoom, chatRoom }: { channel: Channel; callR
               </Button>
             </div>
             {channel.inviteCode && <LinkField code={channel.inviteCode} className="mt-6" />}
-            {channel.expiresAt && (
-              <p className="mt-2.5 text-[11.5px] leading-snug text-fg-3">
-                The link works for {timeLeft(channel.expiresAt)} more, or until nobody has been in the call for an hour.
-              </p>
+            {scheduleLabel(channel) ? (
+              <>
+                <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[12.5px] font-medium text-fg-2">
+                  <CalendarClock size={13} /> {channel.startsAt! > Date.now() ? 'Starts' : 'Started'} {scheduleLabel(channel)?.replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase())}
+                </p>
+                {channel.role !== 'member' && <CalendarButtons channel={channel} className="mt-3 w-full" />}
+              </>
+            ) : (
+              channel.expiresAt && (
+                <p className="mt-2.5 text-[11.5px] leading-snug text-fg-3">
+                  {channel.expiresAt - Date.now() > 2 * 86_400_000
+                    ? 'The link is ready whenever you are. It stops working an hour after the meeting ends.'
+                    : `The link works for ${timeLeft(channel.expiresAt)} more, or until nobody has been in the call for an hour.`}
+                </p>
+              )
             )}
             {channel.role === 'owner' ? (
               <EndMeeting channel={channel} variant="link" />

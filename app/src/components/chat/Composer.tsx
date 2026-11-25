@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowUp, File as FileIcon, Folder, Music, Paperclip, Popcorn, Reply, Smile, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, File as FileIcon, Folder, Lock, Music, Paperclip, Popcorn, Reply, Smile, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MAX_FILE_SIZE, type Attachment, type Channel, type Member, type Room } from '../../../../shared/protocol';
 import { Avatar } from '../ui/Avatar';
@@ -19,6 +19,7 @@ import { featureOn } from '@/lib/remote';
 import { sounds } from '@/lib/sounds';
 import { useAuth } from '@/stores/auth';
 import { useChannels, type Bot } from '@/stores/channels';
+import { useMeetings } from '@/stores/meetings';
 import { useMedia } from '@/stores/media';
 import { useMessages, type LocalMessage } from '@/stores/messages';
 import { toast, useUI } from '@/stores/ui';
@@ -126,6 +127,9 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const [dragging, setDragging] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
+  // Meetings: who this goes to (null: everyone), like Zoom's "To:".
+  const [to, setTo] = useState<string | null>(null);
+  const toUser = useChannels((s) => (to ? s.users[to] : undefined));
 
   // @mentions: a list of people and bots while you type a name; arrows, Enter or Tab pick one.
   const [caret, setCaret] = useState(0);
@@ -286,6 +290,15 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
   const send = () => {
     const content = text.trim();
     if ((!content && !staged.length) || !me || slowWait || banLeft) return;
+    if (to) {
+      // Private messages go straight to them and aren't saved, so they're words only.
+      if (staged.length) return toast({ kind: 'info', title: 'Files go to everyone', body: 'Private messages are text only. Switch "To" back to Everyone to share files.' });
+      const nonce = useMessages.getState().addPending(room.id, me.id, content, [], null, to);
+      getHub(channel.id)?.send({ t: 'chat.private', roomId: room.id, to, content, nonce });
+      setText('');
+      sounds.send();
+      return;
+    }
     // Fixer checks this device, so the question never leaves it.
     if (/(?:^|\s)@fixer\b/i.test(content) && !staged.length) {
       askFixer(room.id, me.id, content);
@@ -366,7 +379,8 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="field rounded-[20px]! bg-[var(--glass-tile)]!">
+      {channel.kind === 'meeting' && <PrivateTo channel={channel} to={to} onChange={setTo} />}
+      <div className={clsx('field rounded-[20px]! bg-[var(--glass-tile)]!', to && 'shadow-[inset_0_0_0_1.5px_var(--accent)]!')}>
         <AnimatePresence initial={false}>
           {replyTo && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring} className="overflow-hidden">
@@ -479,6 +493,8 @@ export function Composer({ channel, room, replyTo, onCancelReply }: { channel: C
             placeholder={
               banLeft
                 ? `You’re chat-banned. You can chat again in ${clock(banLeft)}`
+                : to
+                ? `Message ${toUser?.name ?? 'them'} privately`
                 : slowWait
                 ? `Slow mode: you can post again in ${slowLabel(slowWait)}`
                 : channel.kind === 'dm'
@@ -567,6 +583,52 @@ export function TypingIndicator({ roomId }: { roomId: string }) {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** Meetings: send to everyone, or privately to one person in the meeting. */
+function PrivateTo({ channel, to, onChange }: { channel: Channel; to: string | null; onChange: (id: string | null) => void }) {
+  const me = useAuth((s) => s.me);
+  const members = useChannels((s) => s.members[channel.id]);
+  const online = useChannels((s) => s.online[channel.id]);
+  const allowed = useMeetings((s) => s.settings[channel.id]?.privateChat ?? true);
+  const [menu, setMenu] = useState<Anchor | null>(null);
+  const host = channel.role !== 'member';
+  // Without the host's OK, private messages only go to the host and co-hosts.
+  const people = (members ?? []).filter((m) => m.id !== me?.id && !m.bot && (online?.includes(m.id) ?? true) && (allowed || host || m.role !== 'member'));
+  const target = people.find((m) => m.id === to);
+  // They left: back to everyone.
+  useEffect(() => {
+    if (to && members && !target) onChange(null);
+  }, [to, members, target]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!people.length && !to) return null;
+  const roleOf = (role: string) => (role === 'owner' ? 'Host' : role === 'admin' ? 'Co-host' : '');
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[12px] text-fg-3">
+      <span>To</span>
+      <button
+        onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
+        className={clsx('flex h-6 items-center gap-1 rounded-full px-2.5 font-medium transition-colors', to ? 'bg-accent text-white' : 'bg-fill-2 text-fg-2 hover:bg-fill-3 hover:text-fg')}
+      >
+        {to ? <Lock size={11} /> : <Users size={12} />}
+        {target ? `${target.name} (privately)` : 'Everyone'}
+        <ChevronDown size={12} />
+      </button>
+      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="top" align="start" offset={8} className="w-[240px] p-1.5">
+        <MenuItem icon={<Users size={14} />} trailing={!to ? <Check size={13} /> : undefined} onClick={() => (onChange(null), setMenu(null))}>
+          Everyone
+        </MenuItem>
+        {people.length > 0 && <div className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-fg-3">Privately to</div>}
+        <div className="max-h-[260px] overflow-y-auto">
+          {people.map((m) => (
+            <MenuItem key={m.id} icon={<Avatar user={m} size={18} />} trailing={to === m.id ? <Check size={13} /> : roleOf(m.role) ? <span className="text-[11px] text-fg-3">{roleOf(m.role)}</span> : undefined} onClick={() => (onChange(m.id), setMenu(null))}>
+              {m.name}
+            </MenuItem>
+          ))}
+        </div>
+        {!allowed && !host && <div className="px-2.5 pb-1 pt-1.5 text-[11px] leading-snug text-fg-3">The host has turned off private messages between everyone else.</div>}
+      </Popover>
     </div>
   );
 }

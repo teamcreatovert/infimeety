@@ -89,7 +89,8 @@ export function MessageList({ channel, room, onReply, compact, dmPeer }: { chann
           {items.map((m, i) => {
             const prev = items[i - 1];
             const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
-            const grouped = !!prev && !newDay && prev.userId === m.userId && !m.replyTo && m.createdAt - prev.createdAt < GROUP_WINDOW;
+            // Private messages always show who they're between.
+            const grouped = !!prev && !newDay && prev.userId === m.userId && !m.replyTo && !m.to && !prev.to && m.createdAt - prev.createdAt < GROUP_WINDOW;
             return (
               <Fragment key={m.nonce ?? m.id}>
                 {newDay && <DayDivider ms={m.createdAt} />}

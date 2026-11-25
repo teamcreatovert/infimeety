@@ -289,3 +289,72 @@ pub fn webview_memory(webview: tauri::Webview, low: bool) {
     #[cfg(not(windows))]
     let _ = (webview, low);
 }
+
+/// A meeting's calendar invite (.ics): saved to a temporary file and opened, so it lands in the
+/// person's own calendar app (Outlook, Calendar…).
+#[tauri::command]
+pub fn open_calendar_invite(app: AppHandle, name: String, ics: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    if ics.len() > 64 * 1024 || !ics.starts_with("BEGIN:VCALENDAR") {
+        return Err("not a calendar invite".into());
+    }
+    let safe: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ' ')).take(60).collect();
+    let file = std::env::temp_dir().join(format!("{}.ics", if safe.trim().is_empty() { "Infimeety meeting" } else { safe.trim() }));
+    std::fs::write(&file, ics).map_err(|e| e.to_string())?;
+    app.opener().open_path(file.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Drawing on a shared screen (meetings): a see-through window over the screen being shared,
+/// showing everyone's marks to the person sharing. It never takes clicks, and screen capture
+/// leaves it out, so friends see the marks once (drawn by their own app) instead of twice.
+#[tauri::command]
+pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>) -> Result<(), String> {
+    if !open {
+        if let Some(window) = app.get_webview_window("annotate") {
+            let _ = window.destroy();
+        }
+        return Ok(());
+    }
+    #[cfg(windows)]
+    {
+        use tauri::{PhysicalPosition, PhysicalSize};
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO};
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
+
+        let source = source.ok_or("nothing shared")?;
+        let handle = source.strip_prefix("screen:").ok_or("not a whole screen")?.parse::<isize>().map_err(|_| "not a screen")?;
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !unsafe { GetMonitorInfoW(HMONITOR(handle as *mut core::ffi::c_void), &mut info) }.as_bool() {
+            return Err("that screen isn't connected".into());
+        }
+        let r = info.rcMonitor;
+        let window = match app.get_webview_window("annotate") {
+            Some(window) => window,
+            None => WebviewWindowBuilder::new(&app, "annotate", WebviewUrl::App("annotate.html".into()))
+                .title("Infimeety drawing")
+                .decorations(false)
+                .transparent(true)
+                .shadow(false)
+                .resizable(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .focused(false)
+                .focusable(false)
+                .visible(false)
+                .additional_browser_args(BROWSER_ARGS)
+                .build()
+                .map_err(|e| e.to_string())?,
+        };
+        window.set_position(PhysicalPosition::new(r.left, r.top)).map_err(|e| e.to_string())?;
+        window.set_size(PhysicalSize::new((r.right - r.left) as u32, (r.bottom - r.top) as u32)).map_err(|e| e.to_string())?;
+        window.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        // Windows 10 (2004) and later; older ones would show the marks in the share as well.
+        let _ = unsafe { SetWindowDisplayAffinity(HWND(hwnd.0 as _), WDA_EXCLUDEFROMCAPTURE) };
+        window.show().map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    let _ = (app, source);
+    Ok(())
+}

@@ -20,6 +20,7 @@ import { voice } from './voice/engine';
 import { useAuth } from '@/stores/auth';
 import { useChannels } from '@/stores/channels';
 import { useMeetings } from '@/stores/meetings';
+import { onDrawOp, onDrawState, resetDrawSync } from './draw';
 import { useMessages } from '@/stores/messages';
 import { useMedia } from '@/stores/media';
 import { useSettings } from '@/stores/settings';
@@ -117,6 +118,7 @@ function handle(hub: HubClient, msg: ServerMsg) {
       onLobbies(msg.lobbies, channels.channels.find((c) => c.id === cid)?.rooms.map((r) => r.id) ?? []);
       announceRevocations(hub);
       if (msg.meeting) useMeetings.getState().onSettings(cid, msg.meeting);
+      if (msg.meeting) resetDrawSync();
       if (channels.channels.some((c) => c.id === cid && c.kind === 'meeting' && c.role !== 'member')) void useMeetings.getState().loadWaiting(cid);
       return;
     }
@@ -215,6 +217,12 @@ function handle(hub: HubClient, msg: ServerMsg) {
       return useMeetings.getState().onSettings(cid, msg.settings);
     case 'meeting.act':
       return useMeetings.getState().onAct(cid, msg.act, msg.by);
+    case 'draw':
+      return onDrawOp(msg.surface, msg.op, msg.by);
+    case 'draw.state':
+      return onDrawState(msg.surface, msg.strokes);
+    case 'meeting.host':
+      return useMeetings.getState().onHost(cid, msg.userId, msg.from);
     case 'meeting.ended':
       return useMeetings.getState().onEnded(cid);
     case 'lobby':

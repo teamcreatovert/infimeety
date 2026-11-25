@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanActivity, cleanMusic } from '../../shared/activity';
-import { DEFAULT_MEETING, DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
-import type { Activity, MeetingSettings, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch, Lobby } from '../../shared/protocol';
+import { DEFAULT_MEETING, DRAW_COLORS, DEFAULT_PARTY_RULES, DEFAULT_PARTY_SETTINGS, atLeast, canModerateRole, outranks, partyRules, validGifId, validReaction } from '../../shared/protocol';
+import type { Activity, DrawOp, MeetingRepeat, MeetingSettings, Stroke, MusicShare, PartyProposal, AutoModRules, AutoModTrigger, ClientMsg, Message, PartyFile, PartySettings, PartyState, Role, ServerMsg, SoundRef, StreamIds, VoiceParticipant, VoiceSnapshot, WebWatch, Lobby } from '../../shared/protocol';
 import { audit } from './audit';
 import { blockedBy, parseRules, triggeredBy, type History } from './automod';
 import { BOT_DAILY_LIMIT, FIXER_ID, NOVA_ID, botAnswer, loadBots, mentionedBot, type BotInfo } from './bots';
@@ -48,6 +48,63 @@ interface MeetingState {
   emptySince: number | null;
   /** The host controls (absent: the defaults). */
   settings?: MeetingSettings;
+  /** Scheduled meetings: when this occurrence starts. */
+  startsAt?: number | null;
+  /** Repeating meetings come back with the same link instead of ending. */
+  repeat?: MeetingRepeat | null;
+  /** The person's time zone (minutes behind UTC, like getTimezoneOffset), for "weekdays". */
+  tz?: number;
+  /** Someone has been in this occurrence's call (absent on older meetings: yes). An unused one never ends for being empty. */
+  used?: boolean;
+  /** Repeats in a row nobody came to; a repeating meeting stops after a few. */
+  skipped?: number;
+}
+
+const DAY = 24 * 3600_000;
+/** A meeting's link lasts this long after it starts (or after it was made, for "later"). */
+const OCCURRENCE = DAY;
+/** A repeating meeting nobody uses this many times in a row ends for good. */
+const MAX_SKIPPED = 5;
+/** Drawing limits per surface and per mark. */
+const MAX_STROKES = 1000;
+const MAX_PTS = 2000;
+const STROKE_ID = /^[a-z0-9]{6,24}$/i;
+const COLORS = new Set<string>(DRAW_COLORS);
+
+/** The next time a repeating meeting comes round, after `now`. */
+export function nextOccurrence(from: number, repeat: MeetingRepeat, now: number, tz = 0): number {
+  let t = from;
+  const step = repeat === 'weekly' ? 7 * DAY : DAY;
+  // Whole steps until it's in the future.
+  if (t <= now) t += Math.ceil((now - t + 1) / step) * step;
+  if (repeat === 'weekdays') {
+    // Saturday (6) and Sunday (0) in the person's own time zone are skipped.
+    for (let i = 0; i < 3 && [0, 6].includes(new Date(t - tz * 60_000).getUTCDay()); i++) t += DAY;
+  }
+  return t;
+}
+
+/** A mark as sent: known tool and colour, sensible size, points rounded into the surface. */
+function cleanStroke(raw: unknown, by: string): Stroke | null {
+  const x = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  if (typeof x.id !== 'string' || !STROKE_ID.test(x.id)) return null;
+  const tool = x.tool;
+  if (tool !== 'pen' && tool !== 'marker' && tool !== 'line' && tool !== 'arrow' && tool !== 'rect' && tool !== 'ellipse') return null;
+  const color = typeof x.color === 'string' && COLORS.has(x.color) ? x.color : '#ff3b30';
+  const size = Math.max(2, Math.min(24, Math.round(Number(x.size) || 4)));
+  const pts = cleanPts(x.pts);
+  if (!pts || pts.length < 2) return null;
+  return { id: x.id, by, tool, color, size, pts };
+}
+
+function cleanPts(raw: unknown, max = MAX_PTS): number[] | null {
+  if (!Array.isArray(raw) || raw.length > max || raw.length % 2) return null;
+  const out: number[] = [];
+  for (const n of raw) {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+    out.push(Math.round(Math.max(-0.05, Math.min(1.05, n)) * 10000) / 10000);
+  }
+  return out;
 }
 
 /** A host controls change as sent: only known keys and values, applied over `prev`. */
@@ -55,7 +112,7 @@ function cleanMeetingSettings(raw: unknown, prev: MeetingSettings): MeetingSetti
   const x = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const next = { ...prev };
   if (x.access === 'open' || x.access === 'trusted' || x.access === 'restricted') next.access = x.access;
-  for (const k of ['locked', 'share', 'chat', 'mic', 'camera', 'reactions'] as const) if (typeof x[k] === 'boolean') next[k] = x[k];
+  for (const k of ['locked', 'share', 'chat', 'mic', 'camera', 'reactions', 'privateChat', 'annotate', 'board'] as const) if (typeof x[k] === 'boolean') next[k] = x[k];
   if (x.spotlight === null || (typeof x.spotlight === 'string' && x.spotlight.length <= 64)) next.spotlight = x.spotlight as string | null;
   return next;
 }
@@ -86,6 +143,8 @@ export class ChannelHub extends DurableObject<Env> {
   private penalties: Map<string, { chat?: number; voice?: number }> | null = null;
   private recentPosts: History = new Map();
   private meeting: MeetingState | null = null;
+  /** Marks on each drawing surface, loaded from storage on first use. */
+  private drawings = new Map<string, Map<string, Stroke>>();
   private promoting = false;
   /** Watch parties by voice room. */
   private parties = new Map<string, PartyState>();
@@ -248,9 +307,11 @@ export class ChannelHub extends DurableObject<Env> {
   // ─── Meetings ────────────────────────────────────────────────────────────────
 
   /** Makes this a meeting hub: it ends the meeting at `expiresAt`, or after an hour with nobody in the call. */
-  async startMeeting(channelId: string, expiresAt: number) {
-    // Counts as empty until the host's call connects, so an unused meeting ends too.
-    this.meeting = { channelId, expiresAt, emptySince: Date.now() };
+  async startMeeting(channelId: string, expiresAt: number, opts: { startsAt?: number | null; repeat?: MeetingRepeat | null; later?: boolean; tz?: number } = {}) {
+    // A meeting for now counts as empty until the host's call connects, so an unused one ends
+    // too. One for later (or at a set time) waits for its first call instead.
+    const now = !opts.later && !opts.startsAt;
+    this.meeting = { channelId, expiresAt, emptySince: now ? Date.now() : null, used: now, startsAt: opts.startsAt ?? null, repeat: opts.repeat ?? null, tz: opts.tz ?? 0, skipped: 0 };
     await this.ctx.storage.put('meeting', this.meeting);
     await this.scheduleCheck();
   }
@@ -327,6 +388,210 @@ export class ChannelHub extends DurableObject<Env> {
     this.send(target, { t: 'meeting.act', act, by: me.userId });
   }
 
+  /**
+   * A repeating meeting's occurrence is over: it comes back at the next time with the same link,
+   * a fresh chat and nobody waiting. Returns false when it should end for good instead (nobody
+   * came the last few times).
+   */
+  async rollMeeting(): Promise<boolean> {
+    const m = this.meeting;
+    if (!m?.repeat) return false;
+    const skipped = m.used ? 0 : (m.skipped ?? 0) + 1;
+    if (skipped >= MAX_SKIPPED) return false;
+    const now = Date.now();
+    const startsAt = nextOccurrence(m.startsAt ?? now, m.repeat, now, m.tz);
+    const expiresAt = startsAt + OCCURRENCE;
+    const id = m.channelId;
+    await this.env.DB.batch([
+      this.env.DB.prepare('UPDATE channels SET starts_at = ?, expires_at = ? WHERE id = ?').bind(startsAt, expiresAt, id),
+      this.env.DB.prepare('DELETE FROM messages WHERE room_id IN (SELECT id FROM rooms WHERE channel_id = ?)').bind(id),
+      this.env.DB.prepare("DELETE FROM meeting_access WHERE channel_id = ? AND status != 'removed'").bind(id),
+      this.env.DB.prepare('DELETE FROM channel_members WHERE channel_id = ? AND user_id IN (SELECT id FROM users WHERE guest_of = ?)').bind(id, id),
+      this.env.DB.prepare('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE guest_of = ?)').bind(id),
+      this.env.DB.prepare('DELETE FROM users WHERE guest_of = ?').bind(id),
+    ]);
+    Object.assign(m, { startsAt, expiresAt, used: false, emptySince: null, skipped });
+    if (m.settings) m.settings = { ...m.settings, spotlight: null, board: false };
+    await this.ctx.storage.put('meeting', m);
+    await this.clearDrawings();
+    await this.scheduleCheck();
+    this.broadcast({ t: 'meeting.settings', settings: this.meetingRules()! });
+    await this.notify({ t: 'channel.changed' });
+    return true;
+  }
+
+  /** The host handed the meeting to someone: both see their new roles at once. */
+  async hostChanged(newHost: string, oldHost: string) {
+    for (const s of this.ctx.getWebSockets(newHost)) this.save(s, { ...this.peer(s), role: 'owner' });
+    for (const s of this.ctx.getWebSockets(oldHost)) this.save(s, { ...this.peer(s), role: 'admin' });
+    this.broadcast({ t: 'meeting.host', userId: newHost, from: oldHost });
+    this.broadcast({ t: 'channel.changed' });
+    this.broadcastVoice();
+  }
+
+  /** A private message in a meeting: straight to that person and back to the sender, never saved. */
+  private async chatPrivate(ws: WebSocket, me: Peer, msg: Extract<ClientMsg, { t: 'chat.private' }>) {
+    const rules = this.meetingRules();
+    if (!rules) return;
+    const content = String(msg.content ?? '').slice(0, 2000).trim();
+    if (!content || typeof msg.to !== 'string' || msg.to === me.userId) return;
+    const room = await this.access(msg.roomId, me.channelId);
+    if (room?.kind !== 'text' || !atLeast(me.role, room.view)) return;
+    if (this.heldBack(me, 'chat')) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can send messages right now.' });
+    const targets = this.sockets().filter((s) => this.peer(s).userId === msg.to);
+    if (!targets.length) return this.send(ws, { t: 'error', message: 'They’ve left the meeting, so the message wasn’t sent.' });
+    // Anyone can always reach the host and co-hosts; between everyone else, only if the host allows it.
+    if (!rules.privateChat && !isAdmin(me.role) && !isAdmin(this.peer(targets[0]).role)) {
+      return this.send(ws, { t: 'error', message: 'The host has turned off private messages. You can still message the host and co-hosts.' });
+    }
+    const message: Message = { id: newId(), roomId: String(msg.roomId).slice(0, 32), userId: me.userId, content, attachments: [], replyTo: null, reactions: {}, createdAt: Date.now(), editedAt: null, to: msg.to };
+    for (const s of targets) this.send(s, { t: 'chat.new', message });
+    const nonce = String(msg.nonce ?? '').slice(0, 64);
+    for (const s of this.sockets()) if (this.peer(s).userId === me.userId) this.send(s, { t: 'chat.new', message, ...(s === ws ? { nonce } : {}) });
+  }
+
+  /** Open or close the whiteboard: anyone allowed to share their screen. */
+  private async setBoard(ws: WebSocket, me: Peer, open: boolean) {
+    const m = this.meeting;
+    const rules = this.meetingRules();
+    if (!m || !rules) return;
+    if (!isAdmin(me.role) && !rules.share) return this.send(ws, { t: 'error', message: 'Only the host and co-hosts can open the whiteboard right now.' });
+    m.settings = { ...rules, board: open };
+    await this.ctx.storage.put('meeting', m);
+    this.broadcast({ t: 'meeting.settings', settings: m.settings });
+  }
+
+  /** Who may draw where: the whiteboard while it's open, a screen share when the host turned drawing on. */
+  private canDraw(me: Peer, surface: string) {
+    const rules = this.meetingRules();
+    if (!rules) return false;
+    const presenter = isAdmin(me.role) || rules.share;
+    if (surface === 'board') return rules.board && presenter;
+    const sharer = this.sharerOf(surface);
+    return !!sharer && rules.annotate && presenter;
+  }
+
+  /** The person sharing the screen a 'screen:<peerId>' surface is on (while they still are). */
+  private sharerOf(surface: string): Peer | null {
+    if (!surface.startsWith('screen:')) return null;
+    const ws = this.byPeer(surface.slice(7));
+    const p = ws ? this.peer(ws) : null;
+    return p?.voice?.screen ? p : null;
+  }
+
+  private async strokesOf(surface: string) {
+    let map = this.drawings.get(surface);
+    if (!map) {
+      map = new Map();
+      const saved = await this.ctx.storage.list<Stroke>({ prefix: `draw:${surface}:` });
+      for (const st of saved.values()) map.set(st.id, st);
+      this.drawings.set(surface, map);
+    }
+    return map;
+  }
+
+  private async draw(ws: WebSocket, me: Peer, surface: unknown, raw: unknown) {
+    if (typeof surface !== 'string' || surface.length > 48 || !this.canDraw(me, surface)) return;
+    const op = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    const map = await this.strokesOf(surface);
+    const key = (id: string) => `draw:${surface}:${id}`;
+    const relay = (out: DrawOp) => this.broadcast({ t: 'draw', surface, op: out, by: me.userId }, ws);
+    // On a screen share, others' marks are for the host, co-hosts and the person sharing; on the board, for everyone drawing.
+    const mayRemove = (st: Stroke) => st.by === me.userId || surface === 'board' || isAdmin(me.role) || this.sharerOf(surface)?.userId === me.userId;
+    switch (op.k) {
+      case 'begin': {
+        const stroke = cleanStroke(op.stroke, me.userId);
+        if (!stroke || map.size >= MAX_STROKES) return;
+        const had = map.get(stroke.id);
+        if (had && had.by !== me.userId) return;
+        map.set(stroke.id, stroke);
+        return relay({ k: 'begin', stroke });
+      }
+      case 'pts':
+      case 'shape': {
+        const st = typeof op.id === 'string' ? map.get(op.id) : undefined;
+        const pts = cleanPts(op.pts, op.k === 'shape' ? 4 : 400);
+        if (!st || st.by !== me.userId || !pts) return;
+        if (op.k === 'shape') st.pts = pts;
+        else if (st.pts.length + pts.length <= MAX_PTS) st.pts.push(...pts);
+        else return;
+        return relay({ k: op.k, id: st.id, pts });
+      }
+      case 'end': {
+        const st = typeof op.id === 'string' ? map.get(op.id) : undefined;
+        if (!st || st.by !== me.userId) return;
+        await this.ctx.storage.put(key(st.id), st);
+        return relay({ k: 'end', id: st.id });
+      }
+      case 'add': {
+        // Redo: marks put back as they were (only your own).
+        const strokes = (Array.isArray(op.strokes) ? op.strokes.slice(0, 50) : []).map((x) => cleanStroke(x, me.userId)).filter((x): x is Stroke => !!x);
+        const fresh = strokes.filter((st) => !map.has(st.id)).slice(0, Math.max(0, MAX_STROKES - map.size));
+        if (!fresh.length) return;
+        for (const st of fresh) map.set(st.id, st);
+        await this.ctx.storage.put(Object.fromEntries(fresh.map((st) => [key(st.id), st])));
+        return relay({ k: 'add', strokes: fresh });
+      }
+      case 'remove': {
+        const ids = (Array.isArray(op.ids) ? op.ids.slice(0, 100) : []).filter((id): id is string => typeof id === 'string' && !!map.get(id) && mayRemove(map.get(id)!));
+        if (!ids.length) return;
+        for (const id of ids) map.delete(id);
+        await this.ctx.storage.delete(ids.map(key));
+        return relay({ k: 'remove', ids });
+      }
+      case 'clear': {
+        const all = op.mine !== true;
+        // Everyone's marks: the host, co-hosts, or the person whose screen it is.
+        if (all && !isAdmin(me.role) && this.sharerOf(surface)?.userId !== me.userId) return;
+        const ids = [...map.values()].filter((st) => all || st.by === me.userId).map((st) => st.id);
+        for (const id of ids) map.delete(id);
+        for (let i = 0; i < ids.length; i += 128) await this.ctx.storage.delete(ids.slice(i, i + 128).map(key));
+        return relay(all ? { k: 'clear' } : { k: 'remove', ids });
+      }
+      case 'laser': {
+        const pts = cleanPts(op.pts, 64);
+        if (pts) relay({ k: 'laser', pts });
+        return;
+      }
+    }
+  }
+
+  /** Everything on a surface, in pieces small enough for one message each. */
+  private async drawSync(ws: WebSocket, surface: unknown) {
+    if (typeof surface !== 'string' || surface.length > 48 || !this.meeting) return;
+    const strokes = [...(await this.strokesOf(surface)).values()];
+    let chunk: Stroke[] = [];
+    let size = 0;
+    let first = true;
+    const flush = () => {
+      this.send(ws, first ? { t: 'draw.state', surface, strokes: chunk } : { t: 'draw', surface, op: { k: 'add', strokes: chunk }, by: '' });
+      first = false;
+      chunk = [];
+      size = 0;
+    };
+    for (const st of strokes) {
+      chunk.push(st);
+      size += st.pts.length * 8 + 120;
+      if (size > 200_000) flush();
+    }
+    if (chunk.length || first) flush();
+  }
+
+  /** A screen share ended: its marks go with it. */
+  private async dropSurface(surface: string) {
+    const map = await this.strokesOf(surface);
+    const ids = [...map.keys()];
+    this.drawings.delete(surface);
+    for (let i = 0; i < ids.length; i += 128) await this.ctx.storage.delete(ids.slice(i, i + 128).map((id) => `draw:${surface}:${id}`));
+    if (ids.length) this.broadcast({ t: 'draw', surface, op: { k: 'clear' }, by: '' });
+  }
+
+  private async clearDrawings() {
+    this.drawings.clear();
+    const keys = [...(await this.ctx.storage.list({ prefix: 'draw:' })).keys()];
+    for (let i = 0; i < keys.length; i += 128) await this.ctx.storage.delete(keys.slice(i, i + 128));
+  }
+
   /** The meeting is over (already deleted from D1): tell everyone and close their sockets. */
   async meetingEnded() {
     this.broadcast({ t: 'meeting.ended' });
@@ -343,6 +608,7 @@ export class ChannelHub extends DurableObject<Env> {
     const now = Date.now();
     await this.trackEmpty(this.voiceSnapshot().participants.length === 0);
     if (now >= m.expiresAt || (m.emptySince !== null && now - m.emptySince >= MEETING_IDLE)) {
+      if (m.repeat && (await this.rollMeeting())) return;
       await deleteMeetingData(this.env, m.channelId);
       return this.meetingEnded();
     }
@@ -360,7 +626,15 @@ export class ChannelHub extends DurableObject<Env> {
 
   private async trackEmpty(empty: boolean) {
     const m = this.meeting;
-    if (!m || empty === (m.emptySince !== null)) return;
+    if (!m) return;
+    if (!empty && m.used === false) {
+      m.used = true;
+      m.skipped = 0;
+      await this.ctx.storage.put('meeting', m);
+    }
+    // Nobody has come yet: an empty call is just a meeting waiting for its time.
+    if (empty && m.used === false) return;
+    if (empty === (m.emptySince !== null)) return;
     m.emptySince = empty ? Date.now() : null;
     await this.ctx.storage.put('meeting', m);
     await this.scheduleCheck();
@@ -466,6 +740,7 @@ export class ChannelHub extends DurableObject<Env> {
       }
       case 'voice.leave':
         if (!me.voice) return;
+        if (this.meeting && me.voice.screen) void this.dropSurface(`screen:${me.peerId}`);
         this.save(ws, { ...me, voice: null });
         this.dropHeld(me.userId);
         return this.broadcastVoice();
@@ -477,6 +752,7 @@ export class ChannelHub extends DurableObject<Env> {
         if (typeof s.deafened === 'boolean') v.deafened = s.deafened;
         if (typeof s.camera === 'boolean') v.camera = s.camera;
         if (typeof s.screen === 'boolean') v.screen = s.screen;
+        if (this.meeting && me.voice.screen && !v.screen) void this.dropSurface(`screen:${me.peerId}`);
         if (s.streams && typeof s.streams === 'object') v.streams = streamIds(s.streams);
         if ('music' in s) v.music = await this.musicFor(ws, me, v.roomId, cleanMusic(s.music));
         if ('hand' in s) v.hand = !!s.hand;
@@ -489,6 +765,14 @@ export class ChannelHub extends DurableObject<Env> {
         return this.setMeetingSettings(me, msg.settings);
       case 'meeting.act':
         return this.meetingAct(me, msg.act, msg.peerId);
+      case 'chat.private':
+        return this.chatPrivate(ws, me, msg);
+      case 'board':
+        return this.setBoard(ws, me, !!msg.open);
+      case 'draw':
+        return this.draw(ws, me, msg.surface, msg.op);
+      case 'draw.sync':
+        return this.drawSync(ws, msg.surface);
       case 'voice.serverMute': {
         const target = this.byPeer(msg.peerId);
         if (!target || !this.canModerate(me, this.peer(target))) return;
@@ -1475,7 +1759,13 @@ function rateOf(t: unknown): SocketRate {
       return 'sound';
     case 'meeting.settings':
     case 'meeting.act':
+    case 'board':
       return 'voice';
+    case 'chat.private':
+      return 'chat';
+    case 'draw':
+    case 'draw.sync':
+      return 'rtc';
     default:
       return typeof t === 'string' && t.startsWith('voice.') ? 'voice' : 'other';
   }

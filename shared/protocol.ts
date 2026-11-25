@@ -141,7 +141,13 @@ export interface Channel {
   peer?: PublicUser;
   /** For meetings: when the link stops working at the latest. */
   expiresAt?: number;
+  /** Scheduled meetings: when it's meant to start (null: now, or "for later" with no time). */
+  startsAt?: number | null;
+  /** Repeating meetings keep their link and come back on this schedule. */
+  repeat?: MeetingRepeat | null;
 }
+
+export type MeetingRepeat = 'daily' | 'weekdays' | 'weekly';
 
 /** Public preview of a meeting link (no sign-in needed). */
 export interface MeetingPreview {
@@ -154,6 +160,7 @@ export interface MeetingPreview {
   /** Who gets in with the link, and whether the host locked it (absent from older servers). */
   access?: MeetingSettings['access'];
   locked?: boolean;
+  startsAt?: number | null;
 }
 
 /**
@@ -178,11 +185,64 @@ export interface MeetingSettings {
   camera: boolean;
   /** Everyone may send reactions. */
   reactions: boolean;
+  /** Everyone may send private messages (to the host and co-hosts they always can). */
+  privateChat: boolean;
+  /**
+   * Advanced: drawing on shared screens. When on, the host, co-hosts and everyone allowed to
+   * share their screen can mark up a screen someone is sharing.
+   */
+  annotate: boolean;
+  /** The whiteboard is open (everyone allowed to share can draw on it). */
+  board: boolean;
   /** Whose tile the host put big on everyone's screen (a user id), or null. */
   spotlight: string | null;
 }
 
-export const DEFAULT_MEETING: MeetingSettings = { access: 'trusted', locked: false, share: true, chat: true, mic: true, camera: true, reactions: true, spotlight: null };
+export const DEFAULT_MEETING: MeetingSettings = {
+  access: 'trusted',
+  locked: false,
+  share: true,
+  chat: true,
+  mic: true,
+  camera: true,
+  reactions: true,
+  privateChat: true,
+  annotate: false,
+  board: false,
+  spotlight: null,
+};
+
+/** A drawing tool's mark. Points are x,y pairs from 0 to 1 across the surface (screen or board). */
+export type DrawTool = 'pen' | 'marker' | 'line' | 'arrow' | 'rect' | 'ellipse';
+export interface Stroke {
+  id: string;
+  /** Who drew it (a user id). */
+  by: string;
+  tool: DrawTool;
+  /** "#rrggbb". */
+  color: string;
+  /** Line width, in thousandths of the surface's width (2 to 24). */
+  size: number;
+  /** Flat [x, y, x, y, ...], each 0 to 1. Shapes have two points: from and to. */
+  pts: number[];
+}
+
+/**
+ * Drawing on a surface ('board', or 'screen:<peerId>' for someone's screen share), as it
+ * happens: a mark begins, grows (or, for shapes, changes) and ends; marks are removed (eraser,
+ * undo), added back (redo) or cleared; a laser pointer leaves a fading trail.
+ */
+export type DrawOp =
+  | { k: 'begin'; stroke: Stroke }
+  | { k: 'pts'; id: string; pts: number[] }
+  | { k: 'shape'; id: string; pts: number[] }
+  | { k: 'end'; id: string }
+  | { k: 'add'; strokes: Stroke[] }
+  | { k: 'remove'; ids: string[] }
+  | { k: 'clear'; mine?: boolean }
+  | { k: 'laser'; pts: number[] };
+
+export const DRAW_COLORS = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#bf5af2', '#ffffff', '#1c1c1e'] as const;
 
 /**
  * What the host or a co-host does to someone in a meeting: mute them (they can unmute again
@@ -263,6 +323,8 @@ export interface Message {
   editedAt: number | null;
   /** When a moderator pinned it (absent or null: not pinned). */
   pinnedAt?: number | null;
+  /** Meetings: a private message, only for this person (and its sender). Never saved. */
+  to?: string;
 }
 
 export interface StreamIds {
@@ -511,6 +573,14 @@ export type ClientMsg =
   | { t: 'meeting.settings'; settings: Partial<MeetingSettings> }
   /** Meetings, host and co-hosts: act on one person (`peerId`) or everyone. */
   | { t: 'meeting.act'; act: MeetingAct; peerId?: string }
+  /** Meetings: a private message to one person in the meeting (never saved). */
+  | { t: 'chat.private'; roomId: string; to: string; content: string; nonce: string }
+  /** Meetings: open or close the whiteboard (anyone allowed to share). */
+  | { t: 'board'; open: boolean }
+  /** Draw on a surface ('board' or 'screen:<peerId>'). */
+  | { t: 'draw'; surface: string; op: DrawOp }
+  /** Send me everything drawn on this surface. */
+  | { t: 'draw.sync'; surface: string }
   | { t: 'voice.disconnect'; peerId: string }
   /** Admin: move someone to another voice room in this channel. */
   | { t: 'voice.move'; peerId: string; roomId: string }
@@ -569,6 +639,12 @@ export type ServerMsg =
   | { t: 'meeting.settings'; settings: MeetingSettings }
   /** Meetings: the host or a co-host (`by`; absent: the meeting's own rules) muted you, turned off your camera, stopped your share or lowered your hand. */
   | { t: 'meeting.act'; act: 'mute' | 'camOff' | 'shareOff' | 'lowerHand'; by?: string }
+  /** Meetings: the host handed the meeting to this person. */
+  | { t: 'meeting.host'; userId: string; from: string }
+  /** Someone drew on a surface (`by`: a user id). */
+  | { t: 'draw'; surface: string; op: DrawOp; by: string }
+  /** Everything drawn on a surface so far (answer to draw.sync). */
+  | { t: 'draw.state'; surface: string; strokes: Stroke[] }
   | { t: 'activity'; userId: string; activity: Activity | null }
   | { t: 'presence'; online: string[] }
   | { t: 'voice'; voice: VoiceSnapshot }

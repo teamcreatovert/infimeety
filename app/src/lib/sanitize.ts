@@ -50,6 +50,7 @@ export function cleanMessage(v: unknown): Message | null {
     createdAt: num(m.createdAt, Date.now()),
     editedAt: typeof m.editedAt === 'number' ? m.editedAt : null,
     ...(typeof m.pinnedAt === 'number' ? { pinnedAt: m.pinnedAt } : {}),
+    ...(typeof m.to === 'string' ? { to: m.to } : {}),
   };
 }
 

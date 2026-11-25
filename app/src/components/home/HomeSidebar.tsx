@@ -6,19 +6,19 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Channel } from '../../../../shared/protocol';
 import { UserBar, VoicePanel } from '../shell/Sidebar';
 import { Avatar } from '../ui/Avatar';
-import { Spinner } from '../ui/primitives';
 import { DOWNLOAD_PAGE } from '@/config';
 import { channelGradient } from '@/lib/format';
-import { timeLeft } from '@/lib/meeting';
+import { REPEAT_LABEL, timeLeft } from '@/lib/meeting';
+import { NewMeetingMenu, scheduleLabel } from '../meeting/ScheduleMeeting';
+import { Popover, type Anchor } from '../ui/overlay';
 import { spring } from '@/lib/motion';
 import { isApp } from '@/lib/platform';
 import { useChannels } from '@/stores/channels';
 import { useFriends } from '@/stores/friends';
-import { confirmCallSwitch } from '@/lib/voice/callSwitch';
 import { useMeetings } from '@/stores/meetings';
 import { useMessages } from '@/stores/messages';
 import { useSettings } from '@/stores/settings';
-import { openUserMenu, showMain, toast } from '@/stores/ui';
+import { openUserMenu, showMain } from '@/stores/ui';
 
 /** Home: Friends, quick meetings, and the list of direct messages. */
 export function HomeSidebar() {
@@ -38,21 +38,9 @@ export function HomeSidebar() {
     if (active && closed[active]) useSettings.getState().setDmClosed(active, false);
   }, [active, closed]);
 
-  const meetings = useMemo(() => channels.filter((c) => c.kind === 'meeting'), [channels]);
-  const [starting, setStarting] = useState(false);
-
-  const startMeeting = async () => {
-    if (!(await confirmCallSwitch(null, 'Starting a new meeting'))) return;
-    setStarting(true);
-    try {
-      const meeting = await useMeetings.getState().create();
-      await useMeetings.getState().enterCall(meeting, { confirmed: true });
-    } catch {
-      toast({ kind: 'error', title: 'Couldn’t start a meeting', body: 'Check your connection.' });
-    } finally {
-      setStarting(false);
-    }
-  };
+  // Soonest first: meetings happening now, then scheduled ones by their time.
+  const meetings = useMemo(() => channels.filter((c) => c.kind === 'meeting').sort((a, b) => (a.startsAt ?? 0) - (b.startsAt ?? 0)), [channels]);
+  const [newMenu, setNewMenu] = useState<Anchor | null>(null);
 
   return (
     <aside className="glass-side hairline-r relative z-[5] flex w-[252px] shrink-0 flex-col compact:w-auto compact:min-w-0 compact:flex-1">
@@ -68,10 +56,13 @@ export function HomeSidebar() {
           <span className="relative flex-1 text-left">Friends</span>
           {incoming > 0 && <Badge>{incoming}</Badge>}
         </NavButton>
-        <NavButton active={false} onClick={() => !starting && void startMeeting()}>
-          {starting ? <Spinner size={16} className="relative shrink-0 text-accent" /> : <Video size={16} className="relative shrink-0 text-accent" />}
+        <NavButton active={!!newMenu} onClick={(e) => setNewMenu(e.currentTarget.getBoundingClientRect())}>
+          <Video size={16} className="relative shrink-0 text-accent" />
           <span className="relative flex-1 text-left">New meeting</span>
         </NavButton>
+        <Popover open={!!newMenu} anchor={newMenu} onClose={() => setNewMenu(null)} side="right" align="start" offset={8}>
+          <NewMeetingMenu onDone={() => setNewMenu(null)} />
+        </Popover>
         <NavButton active={false} onClick={() => useMeetings.getState().set({ joining: '' })}>
           <Link2 size={16} className="relative shrink-0 text-fg-2" />
           <span className="relative flex-1 text-left">Join a meeting</span>
@@ -107,7 +98,7 @@ export function HomeSidebar() {
   );
 }
 
-function NavButton({ active, onClick, onContextMenu, children }: { active: boolean; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void; children: ReactNode }) {
+function NavButton({ active, onClick, onContextMenu, children }: { active: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; onContextMenu?: (e: React.MouseEvent) => void; children: ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -143,7 +134,15 @@ function MeetingRow({ meeting, active }: { meeting: Channel; active: boolean }) 
             <AudioLines size={11} /> {inCall} in the call
           </span>
         ) : (
-          <span className="block truncate text-[11px] leading-tight text-fg-3">{meeting.expiresAt ? `Ends in ${timeLeft(meeting.expiresAt)}` : meeting.inviteCode}</span>
+          <span className="block truncate text-[11px] leading-tight text-fg-3">
+            {meeting.startsAt && meeting.startsAt > Date.now()
+              ? scheduleLabel(meeting)
+              : meeting.repeat
+                ? `${REPEAT_LABEL[meeting.repeat]} · on now`
+                : meeting.expiresAt
+                  ? `Ends in ${timeLeft(meeting.expiresAt)}`
+                  : meeting.inviteCode}
+          </span>
         )}
       </span>
       {waiting > 0 && <Badge>{waiting}</Badge>}

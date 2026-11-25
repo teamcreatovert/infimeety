@@ -51,6 +51,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         overlay: fileURLToPath(new URL('./overlay.html', import.meta.url)),
+        annotate: fileURLToPath(new URL('./annotate.html', import.meta.url)),
       },
     },
   },

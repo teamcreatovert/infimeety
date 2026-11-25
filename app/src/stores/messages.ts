@@ -24,7 +24,8 @@ interface MessagesState {
   unread: Record<string, number>;
   load: (channelId: string, roomId: string) => Promise<void>;
   loadOlder: (channelId: string, roomId: string) => Promise<void>;
-  addPending: (roomId: string, userId: string, content: string, attachments: Attachment[], replyTo: string | null) => string;
+  /** `to`: a private message in a meeting. */
+  addPending: (roomId: string, userId: string, content: string, attachments: Attachment[], replyTo: string | null, to?: string) => string;
   /** A private message only this app shows. */
   addLocal: (msg: LocalMessage) => void;
   receive: (msg: Message, nonce?: string) => void;
@@ -80,12 +81,13 @@ export const useMessages = create<MessagesState>()((set, get) => {
       }
     },
 
-    addPending(roomId, userId, content, attachments, replyTo) {
+    addPending(roomId, userId, content, attachments, replyTo, to) {
       const nonce = randomId(9);
       const msg: LocalMessage = {
         id: `~${nonce}`,
         nonce,
         pending: true,
+        ...(to ? { to } : {}),
         roomId,
         userId,
         content,

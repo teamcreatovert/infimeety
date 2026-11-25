@@ -107,6 +107,8 @@ class VoiceEngine {
   private screen: MediaStream | null = null;
   private systemAudio: SystemAudioCapture | null = null;
   private nativeScreen: { stop: () => void } | null = null;
+  /** What the Windows app is capturing ("screen:<id>" or "window:<id>"), while it shares. */
+  screenSource: string | null = null;
 
   // Stable container streams: their ids are announced once, tracks come and go.
   private micOut = new MediaStream();
@@ -424,6 +426,7 @@ class VoiceEngine {
       try {
         const native = await startNativeScreen(source, preset.fps, () => this.stopScreen());
         this.nativeScreen = native;
+        this.screenSource = source;
         stream = new MediaStream([native.track]);
       } catch (err) {
         nativeFailed = true;
@@ -540,6 +543,7 @@ class VoiceEngine {
     this.screen = null;
     this.nativeScreen?.stop();
     this.nativeScreen = null;
+    this.screenSource = null;
     this.systemAudio?.stop();
     this.systemAudio = null;
     useVoice.setState({ screen: false, localScreen: null });

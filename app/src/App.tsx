@@ -18,6 +18,7 @@ import { ProfileCard } from './components/people/ProfileCard';
 import { UserMenu } from './components/people/UserMenu';
 import { IncomingCall } from './components/home/IncomingCall';
 import { JoinMeetingModal } from './components/meeting/JoinMeetingModal';
+import { ScheduleMeetingModal } from './components/meeting/ScheduleMeeting';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SafeModeBanner } from './components/shell/SafeModeBanner';
@@ -227,6 +228,7 @@ export default function App() {
         <ErrorBoundary quiet area="update-gate"><UpdateGate /></ErrorBoundary>
         {status === 'ready' && <ErrorBoundary quiet area="incoming-call"><IncomingCall /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="join-meeting"><JoinMeetingModal /></ErrorBoundary>}
+        {status === 'ready' && <ErrorBoundary quiet area="schedule-meeting"><ScheduleMeetingModal /></ErrorBoundary>}
         {status === 'ready' && <ErrorBoundary quiet area="meeting-knocks"><MeetingKnocks /></ErrorBoundary>}
       </div>
     </MotionConfig>

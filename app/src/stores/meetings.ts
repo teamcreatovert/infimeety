@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_MEETING, type Channel, type GuestStatus, type MeetingAct, type MeetingSettings, type PublicUser } from '../../../shared/protocol';
+import { DEFAULT_MEETING, type Channel, type GuestStatus, type MeetingAct, type MeetingRepeat, type MeetingSettings, type PublicUser } from '../../../shared/protocol';
 import { api } from '@/lib/api';
 import { getHub } from '@/lib/realtime';
 import { sounds } from '@/lib/sounds';
@@ -14,6 +14,10 @@ interface MeetingsState {
   joining: string | null;
   /** Meeting whose "share the link" card is showing (right after you start it). */
   sharing: string | null;
+  /** The "Schedule a meeting" sheet is open. */
+  scheduling: boolean;
+  /** How long you said each meeting you scheduled lasts (minutes), for its calendar invite. */
+  durations: Record<string, number>;
   /** Guests knocking, per meeting. Only the host and co-hosts receive these. */
   waiting: Record<string, PublicUser[]>;
   /** Meetings that went away while open here, and why. */
@@ -23,7 +27,8 @@ interface MeetingsState {
   /** The person you pinned big in each meeting (a user id), just for you. */
   pinned: Record<string, string | null>;
 
-  create: () => Promise<Channel>;
+  /** Now (default), `later` (a link that waits for its first call), or at `startsAt`, maybe repeating. */
+  create: (opts?: { name?: string; startsAt?: number; repeat?: MeetingRepeat | null; later?: boolean }) => Promise<Channel>;
   /** In you go, or 'waiting' when the meeting is restricted and the host has to let you in. */
   join: (code: string) => Promise<Channel | 'waiting'>;
   /** While waiting to be let in: the meeting once you're in, or why not. */
@@ -40,6 +45,9 @@ interface MeetingsState {
   leave: (channelId: string) => Promise<void>;
   answer: (channelId: string, userId: string, admit: boolean) => Promise<void>;
   setCohost: (channelId: string, userId: string, on: boolean) => Promise<void>;
+  /** The host hands the meeting to someone else (you become a co-host). */
+  makeHost: (channelId: string, userId: string) => Promise<void>;
+  onHost: (channelId: string, userId: string, from: string) => void;
   remove: (channelId: string, userId: string) => Promise<void>;
   loadWaiting: (channelId: string) => Promise<void>;
 
@@ -73,15 +81,18 @@ function addAndSelect(channel: Channel) {
 export const useMeetings = create<MeetingsState>()((set, get) => ({
   joining: null,
   sharing: null,
+  scheduling: false,
+  durations: {},
   waiting: {},
   closed: {},
   settings: {},
   pinned: {},
 
-  async create() {
-    const channel = await api<Channel>('/meetings', { method: 'POST' });
+  async create(opts = {}) {
+    const channel = await api<Channel>('/meetings', { method: 'POST', json: { ...opts, tz: new Date().getTimezoneOffset() } });
     addAndSelect(channel);
-    set({ sharing: channel.id });
+    // Scheduled ones show their own "scheduled" sheet; the rest get the share card.
+    if (!opts.startsAt) set({ sharing: channel.id });
     return channel;
   },
 
@@ -147,6 +158,24 @@ export const useMeetings = create<MeetingsState>()((set, get) => ({
 
   async setCohost(channelId, userId, on) {
     await api(`/channels/${channelId}/members/${userId}`, { method: 'PATCH', json: { role: on ? 'admin' : 'member' } });
+  },
+
+  async makeHost(channelId, userId) {
+    await api(`/channels/${channelId}/host`, { method: 'POST', json: { userId } });
+  },
+
+  onHost(channelId, userId, from) {
+    const me = useAuth.getState().me?.id;
+    const name = (id: string) => useChannels.getState().users[id]?.name ?? 'Someone';
+    // Roles show at once; the channel list catches up from the server.
+    useChannels.setState((s) => ({
+      channels: s.channels.map((c) => (c.id === channelId ? { ...c, ownerId: userId, role: c.role === 'owner' || me === userId ? (me === userId ? 'owner' : 'admin') : c.role } : c)),
+    }));
+    void useChannels.getState().loadMembers(channelId);
+    if (me === userId) toast({ kind: 'info', title: 'You’re the host now', body: `${name(from)} handed you the meeting. You can change the host controls and end it for everyone.` });
+    else if (me === from) toast({ kind: 'success', title: `${name(userId)} is the host now`, body: 'You’re a co-host, so you can still let people in and manage them.' });
+    else toast({ kind: 'info', title: `${name(userId)} is the host now` });
+    if (me === userId) void get().loadWaiting(channelId);
   },
 
   async remove(channelId, userId) {

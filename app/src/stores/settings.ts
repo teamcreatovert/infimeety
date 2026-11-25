@@ -74,6 +74,8 @@ export interface SettingsState {
   lite: 'auto' | 'on' | 'off';
   /** Cinema view: the seats along the bottom, or on the left and right of the screen. */
   cinemaSeats: 'bottom' | 'sides';
+  /** Meetings: everyone in a grid, or whoever's talking (or presenting) big. 'auto': grid, big for a pin or spotlight. */
+  meetingLayout: 'auto' | 'grid' | 'speaker';
 
   screenQuality: ScreenQuality;
   screenMode: 'motion' | 'detail';
@@ -151,6 +153,7 @@ export const useSettings = create<SettingsState>()(
       gameMode: true,
       lite: 'auto',
       cinemaSeats: 'bottom',
+      meetingLayout: 'auto',
 
       screenQuality: '1080p30',
       screenMode: 'motion',

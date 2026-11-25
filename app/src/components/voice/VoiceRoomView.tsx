@@ -4,6 +4,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import {
   AudioLines,
   AudioWaveform,
+  Check,
   ChevronDown,
   ChevronUp,
   Clapperboard,
@@ -23,6 +24,11 @@ import {
   ScreenShare,
   ScreenShareOff,
   ShieldCheck,
+  PenLine,
+  Presentation,
+  LayoutGrid,
+  RectangleHorizontal,
+  Sparkles,
   Pin,
   PinOff,
   Users,
@@ -45,6 +51,8 @@ import { StreamVideo } from './StreamVideo';
 import { CallStatus } from './CallStatus';
 import { FloatingReactions, FunPanel } from './Fun';
 import { HostControls } from '../meeting/HostControls';
+import { BoardTile, DrawLayer, DrawToolbar, toggleBoard, useCanDraw, useCanPresent, useSharerOverlay } from '../meeting/Draw';
+import { useDraw } from '@/lib/draw';
 import { CinemaSeats, LobbyChooser, WebFillToggle, WebStage } from './Lobby';
 import { MusicTile, canShareMusic } from './Music';
 import { CallPanel, WatchStage, type WatchLayout, type WatchPeople } from './Watch';
@@ -67,7 +75,7 @@ import { SCREEN_PRESETS, useSettings, type ScreenQuality } from '@/stores/settin
 import { openUserMenu, toast, useUI } from '@/stores/ui';
 import { useVoice } from '@/stores/voice';
 
-type Tile = { key: string; kind: 'user' | 'screen' | 'music'; p: VoiceParticipant };
+type Tile = { key: string; kind: 'user' | 'screen' | 'music' | 'board'; p: VoiceParticipant };
 
 const EMPTY: VoiceParticipant[] = [];
 
@@ -281,13 +289,47 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
     ...participants.filter((p) => p.music).map((p) => ({ key: `${p.peerId}:music`, kind: 'music' as const, p })),
     ...participants.map((p) => ({ key: p.peerId, kind: 'user' as const, p })),
   ];
+  // Meetings: the whiteboard, while it's open, is a tile of its own (shown big).
+  const boardOpen = useMeetings((s) => channel.kind === 'meeting' && !!s.settings[channel.id]?.board);
+  if (boardOpen && participants.length) tiles.unshift({ key: 'board', kind: 'board', p: participants[0] });
   const focused = focusedPeer ? participants.find((p) => p.peerId === focusedPeer && p.screen) : undefined;
+  const drawOpen = useDraw((s) => s.open);
   // Meetings: the person you pinned, or else the one the host put in the spotlight, shows big.
   const pinnedUser = useMeetings((s) => (channel.kind === 'meeting' ? (s.pinned[channel.id] ?? null) : null));
   const spotlight = useMeetings((s) => (channel.kind === 'meeting' ? (s.settings[channel.id]?.spotlight ?? null) : null));
   const meetingPins = channel.kind === 'meeting' ? { pinned: pinnedUser, spotlight } : undefined;
+  const meetingLayout = useSettings((s) => s.meetingLayout);
+  const speakerPeer = useLastSpeaker(participants, speakingOf, myPeer);
   const featuredUser = [pinnedUser, spotlight].find((u) => u && participants.some((p) => p.userId === u));
-  const featured = featuredUser ? participants.find((p) => p.userId === featuredUser)?.peerId : undefined;
+  // Big, in order: someone pinned or spotlighted, the whiteboard, a screen being shared (not in
+  // the grid layout), then in speaker view whoever spoke last.
+  const presenting = participants.find((p) => p.screen);
+  const featured =
+    channel.kind !== 'meeting'
+      ? undefined
+      : featuredUser
+        ? participants.find((p) => p.userId === featuredUser)?.peerId
+        : boardOpen
+          ? 'board'
+          : presenting && meetingLayout !== 'grid'
+            ? `${presenting.peerId}:screen`
+            : meetingLayout === 'speaker'
+              ? speakerPeer
+              : undefined;
+  // What you'd draw on: the screen you're watching, or what's big on the stage.
+  const drawSurface =
+    channel.kind !== 'meeting'
+      ? null
+      : focused
+        ? `screen:${focused.peerId}`
+        : featured === 'board'
+          ? 'board'
+          : featured?.endsWith(':screen')
+            ? `screen:${featured.slice(0, -7)}`
+            : null;
+  const canDraw = useCanDraw(channel.id, drawSurface);
+  useSharerOverlay(channel.id, channel.kind === 'meeting');
+  const toolbar = drawOpen && drawSurface && canDraw ? <DrawToolbar channelId={channel.id} surface={drawSurface} /> : null;
   // The activity lobby fills the window (a watch party: the chooser, the movie, or a website).
   const lobbyOn = lobby === room.id && !focused;
   const watchingParty = !!party && lobbyOn;
@@ -432,7 +474,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           headerExtras={focused ? focused.peerId !== myPeer && focused.streams && <SharerVolume userId={focused.userId} /> : party ? <PartyHeaderInfo roomId={room.id} party={party} /> : web ? <WebFillToggle /> : undefined}
           media={
             focused ? (
-              <ScreenMedia stream={screenOf(focused)} />
+              <ScreenMedia stream={screenOf(focused)} channelId={channel.kind === 'meeting' ? channel.id : undefined} surface={`screen:${focused.peerId}`} />
             ) : party ? (
               <PartyMedia roomId={room.id} party={party} chromeHidden={hideChrome} />
             ) : web ? (
@@ -450,7 +492,12 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
               {layout !== 'cinema' && <FloatingReactions />}
             </>
           }
-          dock={(hidden) => <Dock channel={channel} room={room} participants={participants} hidden={hidden} myPeer={myPeer} watching />}
+          dock={(hidden) => (
+            <>
+              {toolbar}
+              <Dock channel={channel} room={room} participants={participants} hidden={hidden && !toolbar} myPeer={myPeer} watching drawSurface={drawSurface} />
+            </>
+          )}
           leave={lobbyOn ? { label: 'Leave lobby', onClick: leaveLobby } : undefined}
           seats={
             lobbyOn
@@ -492,6 +539,7 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           </span>
           <div data-tauri-drag-region className="flex-1 self-stretch" />
           {extras}
+          {channel.kind === 'meeting' && <LayoutPicker />}
           <PanelToggle tab="people" label="People">
             <Users size={17} />
           </PanelToggle>
@@ -525,7 +573,8 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
           {channel.kind === 'dm' && <CallStatus channel={channel} room={room} connected={status === 'connected'} me={participants.find((p) => p.peerId === myPeer)} alone={participants.length === 1} />}
         </div>
 
-        <Dock channel={channel} room={room} participants={participants} hidden={anyShare && idle && !isCompactNow()} myPeer={myPeer} watching={false} />
+        {toolbar}
+        <Dock channel={channel} room={room} participants={participants} hidden={anyShare && idle && !isCompactNow() && !toolbar} myPeer={myPeer} watching={false} drawSurface={drawSurface} />
       </div>
       <VoiceChatPanel
         open={voiceChat}
@@ -535,6 +584,65 @@ function Stage({ channel, room, chatRoom, extras }: { channel: Channel; room: Ro
         people={{ people: participants, users, camOf, speakingOf, myPeer, extra: party ? (p) => <PartyPersonExtra roomId={room.id} party={party} p={p} /> : undefined }}
       />
     </div>
+  );
+}
+
+/** Meetings: the person who spoke last (someone else when you're not alone), held a moment so the view doesn't flicker. */
+function useLastSpeaker(participants: VoiceParticipant[], speakingOf: (p: VoiceParticipant) => boolean, myPeer: string | null) {
+  const last = useRef<string | undefined>(undefined);
+  const since = useRef(0);
+  const others = participants.filter((p) => p.peerId !== myPeer);
+  const talking = others.find(speakingOf);
+  const now = Date.now();
+  // Switch only after the current speaker has had the stage for a second and a half.
+  if (talking && talking.peerId !== last.current && now - since.current > 1500) {
+    last.current = talking.peerId;
+    since.current = now;
+  }
+  if (last.current && !participants.some((p) => p.peerId === last.current)) last.current = undefined;
+  return last.current ?? others[0]?.peerId;
+}
+
+const LAYOUTS: { value: 'auto' | 'grid' | 'speaker'; label: string; detail: string; icon: ReactNode }[] = [
+  { value: 'auto', label: 'Auto', detail: 'A grid, with anyone pinned or spotlighted big', icon: <Sparkles size={15} /> },
+  { value: 'grid', label: 'Grid', detail: 'Everyone the same size', icon: <LayoutGrid size={15} /> },
+  { value: 'speaker', label: 'Speaker', detail: 'Whoever’s talking or presenting, big', icon: <RectangleHorizontal size={15} /> },
+];
+
+/** Meetings: how the call is laid out (remembered on this device). */
+function LayoutPicker() {
+  const layout = useSettings((s) => s.meetingLayout);
+  const [menu, setMenu] = useState<Anchor | null>(null);
+  const current = LAYOUTS.find((l) => l.value === layout) ?? LAYOUTS[0];
+  return (
+    <>
+      <Tooltip label="Change layout" side="bottom">
+        <button
+          aria-label="Change layout"
+          onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
+          className={clsx('grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full text-fg-2 transition-colors hover:bg-fill-2 hover:text-fg compact:h-9 compact:w-9', menu && 'bg-fill-2 text-fg')}
+        >
+          {current.value === 'speaker' ? <RectangleHorizontal size={17} /> : <LayoutGrid size={17} />}
+        </button>
+      </Tooltip>
+      <Popover open={!!menu} anchor={menu} onClose={() => setMenu(null)} side="bottom" align="end" offset={8} className="w-[260px] p-1.5">
+        <div className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-fg-3">Layout</div>
+        {LAYOUTS.map((l) => (
+          <button
+            key={l.value}
+            onClick={() => (useSettings.getState().set({ meetingLayout: l.value }), setMenu(null))}
+            className={clsx('flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors', layout === l.value ? 'bg-accent/12' : 'hover:bg-fill-2')}
+          >
+            <span className={clsx('grid h-7 w-7 shrink-0 place-items-center rounded-full', layout === l.value ? 'bg-accent text-white' : 'bg-fill-2 text-fg-2')}>{l.icon}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium">{l.label}</span>
+              <span className="block text-[11.5px] leading-snug text-fg-3">{l.detail}</span>
+            </span>
+            {layout === l.value && <Check size={14} className="shrink-0 text-accent" />}
+          </button>
+        ))}
+      </Popover>
+    </>
   );
 }
 
@@ -573,11 +681,13 @@ function Grid({ tiles, screenOf, featured, ...rest }: StreamProps & { tiles: Til
   // A phone held upright fills its screen better with square tiles than with wide ones.
   const aspect = compact && h > w * 1.15 ? 1 : 16 / 9;
   const big = featured && tiles.length > 1 ? tiles.find((t) => t.key === featured) : undefined;
-  const render = (t: Tile, width: number, height: number) =>
-    t.kind === 'music' ? (
+  const render = (t: Tile, width: number, height: number, isBig = false) =>
+    t.kind === 'board' ? (
+      <BoardTile key={t.key} channelId={rest.channelId} width={width} height={height} big={isBig} />
+    ) : t.kind === 'music' ? (
       <MusicTile key={t.key} p={t.p} mine={t.p.peerId === rest.myPeer} width={width} height={height} />
     ) : (
-      <TileView key={t.key} tile={t} width={width} height={height} stream={t.kind === 'screen' ? screenOf(t.p) : rest.camOf(t.p)} {...rest} />
+      <TileView key={t.key} tile={t} width={width} height={height} big={isBig} stream={t.kind === 'screen' ? screenOf(t.p) : rest.camOf(t.p)} {...rest} />
     );
 
   // Pinned or spotlighted: that person fills the stage, everyone else in a strip beside it
@@ -595,7 +705,7 @@ function Grid({ tiles, screenOf, featured, ...rest }: StreamProps & { tiles: Til
           <LayoutGroup>
             <div className="grid min-h-0 min-w-0 flex-1 place-items-center">
               <AnimatePresence mode="popLayout" initial={false}>
-                {w > 0 && render(big, mainW, Math.round(mainW / aspect))}
+                {w > 0 && render(big, mainW, Math.round(mainW / aspect), true)}
               </AnimatePresence>
             </div>
             <div
@@ -645,8 +755,9 @@ function TileView({
   myPeer,
   channelId,
   meeting,
+  big,
   ref,
-}: StreamProps & { tile: Tile; width: number; height: number; stream?: MediaStream; ref?: React.Ref<HTMLDivElement> }) {
+}: StreamProps & { tile: Tile; width: number; height: number; big?: boolean; stream?: MediaStream; ref?: React.Ref<HTMLDivElement> }) {
   const { p, kind } = tile;
   const pinned = !!meeting && meeting.pinned === p.userId;
   const spotlit = !!meeting && meeting.spotlight === p.userId;
@@ -686,7 +797,10 @@ function TileView({
         </div>
       ) : kind === 'screen' ? (
         stream ? (
-          <StreamVideo stream={stream} contain className="bg-black" />
+          <>
+            <StreamVideo stream={stream} contain className="bg-black" />
+            {meeting && <DrawLayer channelId={channelId} surface={`screen:${p.peerId}`} aspect={streamAspect(stream)} interactive={big} />}
+          </>
         ) : (
           <div className="grid h-full place-items-center bg-black/40 text-white/70">
             <Spinner />
@@ -783,11 +897,26 @@ function TileView({
 
 // ─── Watching a shared screen ────────────────────────────────────────────────
 
-function ScreenMedia({ stream }: { stream?: MediaStream }) {
+/** A video's picture shape (width / height), from its track; 16:9 until it's known. */
+function streamAspect(stream?: MediaStream) {
+  const s = stream?.getVideoTracks()[0]?.getSettings();
+  return s?.width && s?.height ? s.width / s.height : 16 / 9;
+}
+
+function ScreenMedia({ stream, channelId, surface }: { stream?: MediaStream; channelId?: string; surface?: string }) {
+  // The picture's shape can change (a shared window resized): checked now and then.
+  const [aspect, setAspect] = useState(() => streamAspect(stream));
+  useEffect(() => {
+    const t = setInterval(() => setAspect(streamAspect(stream)), 1000);
+    return () => clearInterval(t);
+  }, [stream]);
   return (
     <div className="absolute inset-0">
       {stream ? (
-        <StreamVideo stream={stream} contain stage />
+        <>
+          <StreamVideo stream={stream} contain stage />
+          {channelId && surface && <DrawLayer channelId={channelId} surface={surface} aspect={aspect} interactive />}
+        </>
       ) : (
         <div className="grid h-full place-items-center text-white/70">
           <div className="flex flex-col items-center gap-3">
@@ -820,6 +949,7 @@ function Dock({
   hidden,
   myPeer,
   watching,
+  drawSurface,
 }: {
   channel: Channel;
   room: Room;
@@ -827,6 +957,8 @@ function Dock({
   hidden: boolean;
   myPeer: string | null;
   watching: boolean;
+  /** Meetings: what the drawing tools would draw on, if anything. */
+  drawSurface?: string | null;
 }) {
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
@@ -858,6 +990,12 @@ function Dock({
   const micHeld = useHeldBack(channel.id, 'mic');
   const funHeld = useHeldBack(channel.id, 'reactions');
   const [hostMenu, setHostMenu] = useState<Anchor | null>(null);
+  // Meetings: drawing (on the whiteboard or a shared screen) and the whiteboard itself.
+  const canDraw = useCanDraw(channel.id, drawSurface);
+  const canPresent = useCanPresent(channel.id) && meeting;
+  const boardOpen = useMeetings((s) => !!s.settings[channel.id]?.board);
+  const drawOpen = useDraw((s) => s.open);
+  const toggleDraw = () => useDraw.getState().set({ open: !drawOpen, ...(drawOpen ? {} : { tool: useDraw.getState().tool === 'pointer' ? 'pen' : useDraw.getState().tool }) });
   const toggleCamera = () => (camHeld && !camera ? toast({ kind: 'info', title: HELD_BACK_NOTE.camera }) : void voice.toggleCamera());
   const toggleShare = () => (screen ? voice.stopScreen() : shareHeld ? toast({ kind: 'info', title: HELD_BACK_NOTE.share }) : void voice.startScreen());
   const micLabel = muteLeft ? `Muted by a rule for ${clock(muteLeft)}` : serverMuted ? (micHeld ? HELD_BACK_NOTE.mic : meeting ? 'The host muted you' : 'Muted by an admin') : muted || deafened ? 'Unmute' : 'Mute';
@@ -925,6 +1063,16 @@ function Dock({
           {meeting && (
             <MenuItem icon={<Hand size={15} />} onClick={() => (setMoreMenu(null), voice.toggleHand())}>
               {hand ? 'Lower your hand' : 'Raise your hand'}
+            </MenuItem>
+          )}
+          {canPresent && (
+            <MenuItem icon={<Presentation size={15} />} onClick={() => (setMoreMenu(null), toggleBoard(channel.id, !boardOpen))}>
+              {boardOpen ? 'Close the whiteboard' : 'Open a whiteboard'}
+            </MenuItem>
+          )}
+          {canDraw && (
+            <MenuItem icon={<PenLine size={15} />} onClick={() => (setMoreMenu(null), toggleDraw())}>
+              {drawOpen ? 'Hide the drawing tools' : 'Draw and mark up'}
             </MenuItem>
           )}
           {fun && (
@@ -1015,6 +1163,16 @@ function Dock({
       {meeting && (
         <DockButton label={hand ? 'Lower your hand' : 'Raise your hand'} state={hand ? 'on' : 'normal'} onClick={() => voice.toggleHand()}>
           <Hand size={19} />
+        </DockButton>
+      )}
+      {canPresent && (
+        <DockButton label={boardOpen ? 'Close the whiteboard' : 'Open a whiteboard'} state={boardOpen ? 'on' : 'normal'} onClick={() => toggleBoard(channel.id, !boardOpen)}>
+          <Presentation size={19} />
+        </DockButton>
+      )}
+      {canDraw && (
+        <DockButton label={drawOpen ? 'Hide the drawing tools' : 'Draw and mark up'} state={drawOpen ? 'on' : 'normal'} onClick={toggleDraw}>
+          <PenLine size={19} />
         </DockButton>
       )}
       {fun && (

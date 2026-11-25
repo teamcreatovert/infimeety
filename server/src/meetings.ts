@@ -31,17 +31,29 @@ export interface MeetingRow {
   owner_id: string;
   invite_code: string;
   expires_at: number;
+  starts_at: number | null;
+  repeat: string | null;
 }
+
+/** "For later" links last this long if nobody uses them. */
+export const MEETING_LATER_TTL = 30 * 24 * 3600_000;
+/** How far ahead a meeting can be scheduled. */
+export const MEETING_MAX_AHEAD = 90 * 24 * 3600_000;
 
 /** The live meeting behind a code, or null once it has ended. */
 export async function findMeeting(env: Env, rawCode: string): Promise<MeetingRow | null> {
   const code = cleanMeetingCode(rawCode);
   if (!code) return null;
-  const row = await env.DB.prepare("SELECT id, name, owner_id, invite_code, expires_at FROM channels WHERE invite_code = ? AND kind = 'meeting'")
+  let row = await env.DB.prepare("SELECT id, name, owner_id, invite_code, expires_at, starts_at, repeat FROM channels WHERE invite_code = ? AND kind = 'meeting'")
     .bind(code)
     .first<MeetingRow>();
   if (row && row.expires_at <= Date.now()) {
-    // The hub's alarm normally gets there first; this covers a missed one.
+    // The hub's alarm normally gets there first; this covers a missed one. A repeating meeting
+    // comes back at its next time instead of ending.
+    if (row.repeat && (await hub(env, row.id).rollMeeting())) {
+      row = await env.DB.prepare('SELECT id, name, owner_id, invite_code, expires_at, starts_at, repeat FROM channels WHERE id = ?').bind(row.id).first<MeetingRow>();
+      return row;
+    }
     await endMeeting(env, row.id);
     return null;
   }
@@ -59,6 +71,7 @@ export async function meetingPreview(env: Env, code: string): Promise<MeetingPre
     host: toPublicUser(host ?? { id: row.owner_id, name: 'Someone', username: null, avatar_url: null }),
     inCall: await hub(env, row.id).callSize(),
     expiresAt: row.expires_at,
+    startsAt: row.starts_at ?? null,
     ...(rules ? { access: rules.access, locked: rules.locked } : {}),
   };
 }
@@ -100,7 +113,7 @@ export async function endMeeting(env: Env, channelId: string) {
 
 /** Safety net for meetings whose hub alarm never ran. */
 export async function sweepMeetings(env: Env) {
-  const { results } = await env.DB.prepare("SELECT id FROM channels WHERE kind = 'meeting' AND expires_at <= ? LIMIT 20")
+  const { results } = await env.DB.prepare("SELECT id FROM channels WHERE kind = 'meeting' AND repeat IS NULL AND expires_at <= ? LIMIT 20")
     .bind(Date.now())
     .all<{ id: string }>();
   for (const r of results) await endMeeting(env, r.id);

@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { Check, Globe, Hand, Lock, MessageSquareText, Mic, MicOff, ScreenShare, ShieldCheck, SmilePlus, UserCheck, Video } from 'lucide-react';
+import { Check, Globe, Hand, Lock, MessageSquareLock, MessageSquareText, Mic, MicOff, PenLine, ScreenShare, ShieldCheck, SmilePlus, UserCheck, Video } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DEFAULT_MEETING, type MeetingSettings, type VoiceParticipant } from '../../../../shared/protocol';
 import { Switch } from '../ui/primitives';
@@ -12,9 +12,10 @@ const ACCESS: { value: MeetingSettings['access']; label: string; detail: string;
   { value: 'restricted', label: 'Restricted', detail: 'Everyone asks first, and you let them in', icon: <ShieldCheck size={15} /> },
 ];
 
-const EVERYONE: { key: 'share' | 'chat' | 'mic' | 'camera' | 'reactions'; label: string; icon: ReactNode }[] = [
+const EVERYONE: { key: 'share' | 'chat' | 'privateChat' | 'mic' | 'camera' | 'reactions'; label: string; icon: ReactNode }[] = [
   { key: 'share', label: 'Share their screen', icon: <ScreenShare size={15} /> },
   { key: 'chat', label: 'Send chat messages', icon: <MessageSquareText size={15} /> },
+  { key: 'privateChat', label: 'Message each other privately', icon: <MessageSquareLock size={15} /> },
   { key: 'mic', label: 'Turn on their mic', icon: <Mic size={15} /> },
   { key: 'camera', label: 'Turn on their camera', icon: <Video size={15} /> },
   { key: 'reactions', label: 'Send reactions', icon: <SmilePlus size={15} /> },
@@ -71,6 +72,12 @@ export function HostControls({ channelId, participants, myPeer, onDone }: { chan
             <Switch checked={rules[e.key]} onChange={(v) => set({ [e.key]: v })} />
           </Row>
         ))}
+      </Section>
+
+      <Section title="Advanced">
+        <Row icon={<PenLine size={15} />} label="Draw on shared screens" detail={rules.share ? 'You, co-hosts and everyone who can share can mark up a shared screen' : 'You and co-hosts can mark up a shared screen'}>
+          <Switch checked={rules.annotate} onChange={(v) => set({ annotate: v })} />
+        </Row>
       </Section>
 
       <div className="mt-1 grid grid-cols-2 gap-1.5 px-1 pb-1">
