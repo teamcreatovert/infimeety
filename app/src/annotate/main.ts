@@ -1,4 +1,4 @@
-import { listen } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import type { Stroke } from '../../../shared/protocol';
 import { paint } from '../lib/drawPaint';
 
@@ -37,3 +37,57 @@ void listen<{ strokes: Stroke[]; lasers: Laser[] }>('annotate:state', (e) => {
   redraw();
 });
 window.addEventListener('resize', redraw);
+
+// Drawing on your own screen: while a tool is on, this window takes the mouse (otherwise clicks
+// go straight through to your apps). Points go to the app, which draws and shares them. Messages
+// go one after another (never overtaking each other), numbered, so the app can drop repeats.
+let chain: Promise<unknown> = Promise.resolve();
+let n = 0;
+let stroke = 0;
+const tell = (k: 'down' | 'move' | 'up', pts: number[]) => {
+  const msg = { k, pts, s: stroke, n: ++n };
+  chain = chain.then(() => emitTo('main', 'annotate:input', msg)).catch(() => {});
+};
+let queued: number[] = [];
+let flushing = false;
+const flush = () => {
+  flushing = false;
+  if (!queued.length) return;
+  tell('move', queued);
+  queued = [];
+};
+const at = (e: PointerEvent) => [e.clientX / window.innerWidth, e.clientY / window.innerHeight];
+let down = false;
+const onDown = (e: PointerEvent) => {
+  if (e.button !== 0) return;
+  down = true;
+  stroke++;
+  tell('down', at(e));
+};
+const onMove = (e: PointerEvent) => {
+  if (!down) return;
+  const merged = e.getCoalescedEvents?.() ?? [];
+  for (const ev of merged.length ? merged : [e]) queued.push(...at(ev));
+  if (!flushing) {
+    flushing = true;
+    requestAnimationFrame(flush);
+  }
+};
+const onUp = (e: PointerEvent) => {
+  if (!down) return;
+  down = false;
+  queued.push(...at(e));
+  flush();
+  tell('up', []);
+};
+// Once per page, even if this code is loaded again.
+const w = window as unknown as { __drawInput?: boolean };
+if (!w.__drawInput) {
+  w.__drawInput = true;
+  document.addEventListener('pointerdown', onDown);
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
+}
+// A crosshair while drawing (the window only gets the mouse then).
+document.documentElement.style.cursor = 'crosshair';

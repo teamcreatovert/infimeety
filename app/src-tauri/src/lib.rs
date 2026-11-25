@@ -158,6 +158,8 @@ fn desktop_app() -> tauri::Builder<tauri::Wry> {
             desktop::is_store_install,
             desktop::open_calendar_invite,
             desktop::annotate_overlay,
+            desktop::annotate_mode,
+            desktop::drawtools_size,
             desktop::overlay_open,
             desktop::overlay_close,
             desktop::overlay_state,

@@ -3,6 +3,6 @@
   "identifier": "overlay",
   "description": "The who's-talking overlay only listens for state from the main window",
   "platforms": ["windows", "macOS", "linux"],
-  "windows": ["overlay", "annotate"],
-  "permissions": ["core:event:default"]
+  "windows": ["overlay", "annotate", "drawtools"],
+  "permissions": ["core:event:default", "core:window:allow-start-dragging"]
 }

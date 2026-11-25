@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
-import { emitTo } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { DEFAULT_MEETING, DRAW_COLORS, type Stroke } from '../../../../shared/protocol';
 import { MenuItem, Popover, Tooltip, type Anchor } from '../ui/overlay';
@@ -368,6 +368,7 @@ export function useSharerOverlay(channelId: string, meeting: boolean) {
     return () => void invoke('annotate_overlay', { open: false, source: null }).catch(() => {});
   }, [on, source]);
 
+  // Marks and tools to the on-screen windows.
   useEffect(() => {
     if (!on || !surface) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -375,12 +376,19 @@ export function useSharerOverlay(channelId: string, meeting: boolean) {
       timer = null;
       const st = useDraw.getState();
       void emitTo('annotate', 'annotate:state', { strokes: st.strokes[surface] ?? [], lasers: st.lasers[surface] ?? [] }).catch(() => {});
+      void emitTo('drawtools', 'drawtools:state', {
+        tool: st.tool,
+        color: st.color,
+        size: st.size,
+        canUndo: (st.undo[surface]?.length ?? 0) > 0,
+        canRedo: (st.redo[surface]?.length ?? 0) > 0,
+      }).catch(() => {});
     };
     push();
     const unsubscribe = useDraw.subscribe(() => {
       if (!timer) timer = setTimeout(push, 30);
     });
-    // The window may still be loading the first time: tell it again now and then.
+    // The windows may still be loading the first time: tell them again now and then.
     const again = setInterval(push, 2000);
     return () => {
       unsubscribe();
@@ -388,4 +396,70 @@ export function useSharerOverlay(channelId: string, meeting: boolean) {
       if (timer) clearTimeout(timer);
     };
   }, [on, surface]);
+
+  // The draw button's tools, and drawing straight on your screen.
+  useEffect(() => {
+    if (!on || !surface) return;
+    const me = () => useAuth.getState().me?.id ?? '';
+    let toolsOpen = false;
+    // The marks window takes the mouse only while a drawing tool is on.
+    const mode = () => void invoke('annotate_mode', { drawing: toolsOpen && useDraw.getState().tool !== 'pointer' }).catch(() => {});
+    const aspect = () => {
+      const s = useVoice.getState().localScreen?.getVideoTracks()[0]?.getSettings();
+      return s?.width && s?.height ? s.width / s.height : 16 / 9;
+    };
+    type Action = { a: string; v?: string | number; w?: number; h?: number };
+    const offTools = listen<Action>('drawtools:do', (e) => {
+      const { a, v } = e.payload;
+      const set = useDraw.getState().set;
+      if (a === 'open') {
+        toolsOpen = true;
+        if (useDraw.getState().tool === 'pointer') set({ tool: 'pen' });
+      } else if (a === 'close') toolsOpen = false;
+      else if (a === 'tool') set({ tool: v as Tool });
+      else if (a === 'color') set({ color: String(v), ...(['eraser', 'pointer', 'laser'].includes(useDraw.getState().tool) ? { tool: 'pen' as Tool } : {}) });
+      else if (a === 'size') set({ size: Number(v) });
+      else if (a === 'undo') undo(channelId, surface, me());
+      else if (a === 'redo') redo(channelId, surface, me());
+      else if (a === 'clear') clearSurface(channelId, surface, me(), false);
+      else if (a === 'layout') void invoke('drawtools_size', { width: e.payload.w, height: e.payload.h }).catch(() => {});
+      mode();
+    });
+    let session: { move: (x: number, y: number) => void; end: () => void } | null = null;
+    // The marks window numbers its messages and strokes: repeats are dropped, and points only
+    // ever go to the stroke they belong to.
+    let lastN = 0;
+    let current = -1;
+    const offInput = listen<{ k: 'down' | 'move' | 'up'; pts: number[]; s: number; n: number }>('annotate:input', (e) => {
+      const { k, pts, s, n } = e.payload;
+      if (n <= lastN) return;
+      lastN = n;
+      const t = useDraw.getState().tool;
+      if (k === 'down') {
+        session?.end();
+        current = s;
+        const [x, y] = pts;
+        if (t === 'eraser') {
+          const erase = (ex: number, ey: number) => eraseAt(channelId, surface, ex, ey, aspect(), () => true);
+          erase(x, y);
+          session = { move: erase, end: () => {} };
+        } else if (t === 'laser') {
+          session = startLaser(channelId, surface, me());
+          session.move(x, y);
+        } else session = startStroke(channelId, surface, me(), x, y);
+        return;
+      }
+      if (!session || s !== current) return;
+      for (let i = 0; i + 1 < pts.length; i += 2) session.move(pts[i], pts[i + 1]);
+      if (k === 'up') {
+        session.end();
+        session = null;
+      }
+    });
+    return () => {
+      session?.end();
+      void offTools.then((f) => f());
+      void offInput.then((f) => f());
+    };
+  }, [on, surface, channelId]);
 }

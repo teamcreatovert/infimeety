@@ -990,6 +990,7 @@ function Dock({
   const micHeld = useHeldBack(channel.id, 'mic');
   const funHeld = useHeldBack(channel.id, 'reactions');
   const [hostMenu, setHostMenu] = useState<Anchor | null>(null);
+  const [meetingMenu, setMeetingMenu] = useState<Anchor | null>(null);
   // Meetings: drawing (on the whiteboard or a shared screen) and the whiteboard itself.
   const canDraw = useCanDraw(channel.id, drawSurface);
   const canPresent = useCanPresent(channel.id) && meeting;
@@ -1080,7 +1081,7 @@ function Dock({
               {funLabel}
             </MenuItem>
           )}
-          {sharer && (
+          {sharer && !meeting && (
             <MenuItem icon={<Clapperboard size={15} />} onClick={() => (setMoreMenu(null), toggleWatch())}>
               {focusedPeer ? 'Exit watch mode' : 'Watch together'}
             </MenuItem>
@@ -1147,7 +1148,8 @@ function Dock({
           </button>
         </Tooltip>
       </div>
-      {sharer && (
+      {/* Meetings show a shared screen big already: no separate "watch" here. */}
+      {sharer && !meeting && (
         <DockButton label={focusedPeer ? 'Exit watch mode' : 'Watch together'} state={focusedPeer ? 'on' : 'normal'} onClick={toggleWatch}>
           <Clapperboard size={19} />
         </DockButton>
@@ -1161,21 +1163,14 @@ function Dock({
         </DockButton>
       )}
       {meeting && (
-        <DockButton label={hand ? 'Lower your hand' : 'Raise your hand'} state={hand ? 'on' : 'normal'} onClick={() => voice.toggleHand()}>
-          <Hand size={19} />
+        <DockButton label="More: hand, reactions, whiteboard, drawing" state={meetingMenu || hand || drawOpen || boardOpen || soundMenu ? 'on' : 'normal'} onClick={(el) => setMeetingMenu(el.getBoundingClientRect())}>
+          <span className="relative">
+            <Ellipsis size={19} />
+            {hand && <span className="emoji absolute -right-2 -top-2 text-[11px]">✋</span>}
+          </span>
         </DockButton>
       )}
-      {canPresent && (
-        <DockButton label={boardOpen ? 'Close the whiteboard' : 'Open a whiteboard'} state={boardOpen ? 'on' : 'normal'} onClick={() => toggleBoard(channel.id, !boardOpen)}>
-          <Presentation size={19} />
-        </DockButton>
-      )}
-      {canDraw && (
-        <DockButton label={drawOpen ? 'Hide the drawing tools' : 'Draw and mark up'} state={drawOpen ? 'on' : 'normal'} onClick={toggleDraw}>
-          <PenLine size={19} />
-        </DockButton>
-      )}
-      {fun && (
+      {fun && !meeting && (
         <DockButton label={funLabel} state={soundMenu || music || funTabOpen ? 'on' : 'normal'} onClick={(el) => (inLobby ? openFunTab() : setSoundMenu(el.getBoundingClientRect()))}>
           <SmilePlus size={19} />
         </DockButton>
@@ -1217,6 +1212,26 @@ function Dock({
           busy={participants.find((p) => p.music && p.peerId !== myPeer)?.userId}
           onDone={() => setSoundMenu(null)}
         />
+      </Popover>
+      <Popover open={!!meetingMenu} anchor={meetingMenu} onClose={() => setMeetingMenu(null)} side="top" align="center" offset={14} className="w-[248px] p-1.5">
+        <MenuItem icon={<Hand size={15} />} trailing={hand ? <span className="text-[11px] text-fg-3">Raised</span> : undefined} onClick={() => (setMeetingMenu(null), voice.toggleHand())}>
+          {hand ? 'Lower your hand' : 'Raise your hand'}
+        </MenuItem>
+        {fun && (
+          <MenuItem icon={<SmilePlus size={15} />} onClick={() => (setSoundMenu(meetingMenu), setMeetingMenu(null))}>
+            Reactions and applause
+          </MenuItem>
+        )}
+        {canPresent && (
+          <MenuItem icon={<Presentation size={15} />} onClick={() => (setMeetingMenu(null), toggleBoard(channel.id, !boardOpen))}>
+            {boardOpen ? 'Close the whiteboard' : 'Open a whiteboard'}
+          </MenuItem>
+        )}
+        {canDraw && (
+          <MenuItem icon={<PenLine size={15} />} onClick={() => (setMeetingMenu(null), toggleDraw())}>
+            {drawOpen ? 'Hide the drawing tools' : 'Draw and mark up'}
+          </MenuItem>
+        )}
       </Popover>
       <Popover open={!!hostMenu} anchor={hostMenu} onClose={() => setHostMenu(null)} side="top" align="center" offset={14} className="rounded-[18px]!">
         <HostControls channelId={channel.id} participants={participants} myPeer={myPeer} onDone={() => setHostMenu(null)} />

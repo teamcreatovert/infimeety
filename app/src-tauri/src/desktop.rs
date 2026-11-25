@@ -310,17 +310,17 @@ pub fn open_calendar_invite(app: AppHandle, name: String, ics: String) -> Result
 #[tauri::command]
 pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>) -> Result<(), String> {
     if !open {
-        if let Some(window) = app.get_webview_window("annotate") {
-            let _ = window.destroy();
+        for label in ["annotate", "drawtools"] {
+            if let Some(window) = app.get_webview_window(label) {
+                let _ = window.destroy();
+            }
         }
         return Ok(());
     }
     #[cfg(windows)]
     {
         use tauri::{PhysicalPosition, PhysicalSize};
-        use windows::Win32::Foundation::HWND;
         use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO};
-        use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
 
         let source = source.ok_or("nothing shared")?;
         let handle = source.strip_prefix("screen:").ok_or("not a whole screen")?.parse::<isize>().map_err(|_| "not a screen")?;
@@ -329,10 +329,9 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
             return Err("that screen isn't connected".into());
         }
         let r = info.rcMonitor;
-        let window = match app.get_webview_window("annotate") {
-            Some(window) => window,
-            None => WebviewWindowBuilder::new(&app, "annotate", WebviewUrl::App("annotate.html".into()))
-                .title("Infimeety drawing")
+        let build = |label: &str, page: &str, title: &str| {
+            WebviewWindowBuilder::new(&app, label, WebviewUrl::App(page.into()))
+                .title(title)
                 .decorations(false)
                 .transparent(true)
                 .shadow(false)
@@ -344,17 +343,80 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
                 .visible(false)
                 .additional_browser_args(BROWSER_ARGS)
                 .build()
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| e.to_string())
         };
-        window.set_position(PhysicalPosition::new(r.left, r.top)).map_err(|e| e.to_string())?;
-        window.set_size(PhysicalSize::new((r.right - r.left) as u32, (r.bottom - r.top) as u32)).map_err(|e| e.to_string())?;
-        window.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
-        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-        // Windows 10 (2004) and later; older ones would show the marks in the share as well.
-        let _ = unsafe { SetWindowDisplayAffinity(HWND(hwnd.0 as _), WDA_EXCLUDEFROMCAPTURE) };
-        window.show().map_err(|e| e.to_string())?;
+        // The marks: the whole screen, letting clicks through unless you're drawing.
+        let marks = match app.get_webview_window("annotate") {
+            Some(window) => window,
+            None => build("annotate", "annotate.html", "Infimeety drawing")?,
+        };
+        marks.set_position(PhysicalPosition::new(r.left, r.top)).map_err(|e| e.to_string())?;
+        marks.set_size(PhysicalSize::new((r.right - r.left) as u32, (r.bottom - r.top) as u32)).map_err(|e| e.to_string())?;
+        marks.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+        hide_from_capture(&marks);
+        marks.show().map_err(|e| e.to_string())?;
+        // The draw button: a small round button you can drag anywhere, opening the tools.
+        if app.get_webview_window("drawtools").is_none() {
+            let tools = build("drawtools", "drawtools.html", "Infimeety drawing tools")?;
+            let scale = tools.scale_factor().unwrap_or(1.0);
+            let size = (DRAW_BUTTON * scale) as i32;
+            tools.set_size(PhysicalSize::new(size as u32, size as u32)).map_err(|e| e.to_string())?;
+            // Right edge, a little above the middle (clear of the taskbar and most apps' own buttons).
+            tools.set_position(PhysicalPosition::new(r.right - size - (24.0 * scale) as i32, r.top + (r.bottom - r.top) * 2 / 5)).map_err(|e| e.to_string())?;
+            hide_from_capture(&tools);
+            tools.show().map_err(|e| e.to_string())?;
+        }
     }
     #[cfg(not(windows))]
     let _ = (app, source);
     Ok(())
+}
+
+/// The draw button's size (logical pixels) while it's just the button.
+#[cfg(windows)]
+const DRAW_BUTTON: f64 = 56.0;
+
+/// Screen capture leaves this window out (Windows 10 2004 and later; older ones would show it in the share).
+#[cfg(windows)]
+fn hide_from_capture(window: &tauri::WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
+    if let Ok(hwnd) = window.hwnd() {
+        let _ = unsafe { SetWindowDisplayAffinity(HWND(hwnd.0 as _), WDA_EXCLUDEFROMCAPTURE) };
+    }
+}
+
+/// Drawing on your own screen: the marks window takes the mouse while a tool is on, and lets
+/// clicks through to your apps again for the pointer.
+#[tauri::command]
+pub fn annotate_mode(app: AppHandle, drawing: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("annotate") {
+        window.set_ignore_cursor_events(!drawing).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// The draw button grows into the toolbar (and back), staying on the screen it's on.
+#[tauri::command]
+pub fn drawtools_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    use tauri::{PhysicalPosition, PhysicalSize};
+    let Some(window) = app.get_webview_window("drawtools") else { return Ok(()) };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let (w, h) = ((width.clamp(40.0, 1400.0) * scale) as i32, (height.clamp(40.0, 400.0) * scale) as i32);
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    // Grow from the button's right edge leftwards when it sits on the right half of the screen.
+    let mut x = pos.x;
+    let mut y = pos.y;
+    if let Ok(Some(m)) = window.current_monitor() {
+        let (mx, my) = (m.position().x, m.position().y);
+        let (mw, mh) = (m.size().width as i32, m.size().height as i32);
+        if pos.x + size.width as i32 / 2 > mx + mw / 2 {
+            x = pos.x + size.width as i32 - w;
+        }
+        x = x.clamp(mx, mx + mw - w);
+        y = y.clamp(my, my + mh - h);
+    }
+    window.set_size(PhysicalSize::new(w as u32, h as u32)).map_err(|e| e.to_string())?;
+    window.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())
 }
