@@ -1,6 +1,6 @@
 [package]
 name = "infimeety"
-version = "0.9.11"
+version = "0.9.12"
 description = "Infimeety — unlimited voice rooms, chat and watch-together"
 edition = "2021"
 
