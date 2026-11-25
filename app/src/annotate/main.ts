@@ -59,6 +59,12 @@ const flush = () => {
 const at = (e: PointerEvent) => [e.clientX / window.innerWidth, e.clientY / window.innerHeight];
 let down = false;
 const onDown = (e: PointerEvent) => {
+  // Right-click: stop drawing and get your mouse back (the quick way out).
+  if (e.button === 2) {
+    e.preventDefault();
+    void emitTo('main', 'drawtools:do', { a: 'tool', v: 'pointer' }).catch(() => {});
+    return;
+  }
   if (e.button !== 0) return;
   down = true;
   stroke++;
@@ -88,6 +94,7 @@ if (!w.__drawInput) {
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
   document.addEventListener('pointercancel', onUp);
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 // A crosshair while drawing (the window only gets the mouse then).
 document.documentElement.style.cursor = 'crosshair';

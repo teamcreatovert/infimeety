@@ -329,7 +329,7 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
             return Err("that screen isn't connected".into());
         }
         let r = info.rcMonitor;
-        let build = |label: &str, page: &str, title: &str| {
+        let builder = |label: &str, page: &str, title: &str| {
             WebviewWindowBuilder::new(&app, label, WebviewUrl::App(page.into()))
                 .title(title)
                 .decorations(false)
@@ -342,9 +342,8 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
                 .focusable(false)
                 .visible(false)
                 .additional_browser_args(BROWSER_ARGS)
-                .build()
-                .map_err(|e| e.to_string())
         };
+        let build = |label: &str, page: &str, title: &str| builder(label, page, title).build().map_err(|e| e.to_string());
         // The marks: the whole screen, letting clicks through unless you're drawing.
         let marks = match app.get_webview_window("annotate") {
             Some(window) => window,
@@ -357,7 +356,13 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
         marks.show().map_err(|e| e.to_string())?;
         // The draw button: a small round button you can drag anywhere, opening the tools.
         if app.get_webview_window("drawtools").is_none() {
-            let tools = build("drawtools", "drawtools.html", "Infimeety drawing tools")?;
+            // Owned by the marks window, so it always stays above it (and its buttons keep working
+            // while you draw).
+            let tools = builder("drawtools", "drawtools.html", "Infimeety drawing tools")
+                .parent(&marks)
+                .map_err(|e| e.to_string())?
+                .build()
+                .map_err(|e| e.to_string())?;
             let scale = tools.scale_factor().unwrap_or(1.0);
             let size = (DRAW_BUTTON * scale) as i32;
             tools.set_size(PhysicalSize::new(size as u32, size as u32)).map_err(|e| e.to_string())?;
@@ -374,7 +379,7 @@ pub async fn annotate_overlay(app: AppHandle, open: bool, source: Option<String>
 
 /// The draw button's size (logical pixels) while it's just the button.
 #[cfg(windows)]
-const DRAW_BUTTON: f64 = 56.0;
+const DRAW_BUTTON: f64 = 72.0;
 
 /// Screen capture leaves this window out (Windows 10 2004 and later; older ones would show it in the share).
 #[cfg(windows)]
@@ -392,6 +397,10 @@ fn hide_from_capture(window: &tauri::WebviewWindow) {
 pub fn annotate_mode(app: AppHandle, drawing: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("annotate") {
         window.set_ignore_cursor_events(!drawing).map_err(|e| e.to_string())?;
+    }
+    // The tools stay on top of the marks, whatever just happened to the stacking.
+    if let Some(tools) = app.get_webview_window("drawtools") {
+        let _ = tools.set_always_on_top(true);
     }
     Ok(())
 }

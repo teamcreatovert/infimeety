@@ -30,7 +30,7 @@ type Action =
 const send = (action: Action) => void emitTo('main', 'drawtools:do', action).catch(() => {});
 
 const TOOLS: { tool: Tool; label: string; icon: ReactNode }[] = [
-  { tool: 'pointer', label: 'Pointer: use your apps', icon: <MousePointer2 size={17} /> },
+  { tool: 'pointer', label: 'Pointer: use your apps again (or right-click anywhere)', icon: <MousePointer2 size={17} /> },
   { tool: 'pen', label: 'Pen', icon: <Pencil size={17} /> },
   { tool: 'marker', label: 'Highlighter', icon: <Highlighter size={17} /> },
   { tool: 'line', label: 'Line', icon: <Minus size={17} className="-rotate-45" /> },
@@ -94,14 +94,14 @@ export function DrawTools() {
 
   if (!open)
     return (
-      <div ref={box} className="inline-block p-1">
+      <div ref={box} className="inline-block p-3">
         <button
           aria-label="Draw on your screen"
           title="Draw on your screen (drag to move)"
           onPointerDown={down}
           onPointerMove={move}
           onClick={tap(openTools)}
-          className="grid h-12 w-12 cursor-grab place-items-center rounded-full text-white shadow-[0_6px_20px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.35)] transition-transform hover:scale-105 active:scale-95 active:cursor-grabbing"
+          className="grid h-12 w-12 cursor-grab place-items-center rounded-full text-white shadow-[0_3px_10px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.3)] outline-none transition-transform hover:scale-105 active:scale-95 active:cursor-grabbing"
           style={{ background: 'linear-gradient(145deg, #4F8CFF, #7A5CFF 55%, #C64DFF)' }}
         >
           <Pencil size={21} />
@@ -110,8 +110,8 @@ export function DrawTools() {
     );
 
   return (
-    <div ref={box} className="inline-flex flex-col p-1">
-      <div className="flex items-center gap-0.5 rounded-[18px] bg-[#1c1c22]/95 p-1.5 text-white shadow-[0_8px_28px_rgba(0,0,0,0.5),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
+    <div ref={box} className="inline-flex flex-col p-3">
+      <div className="flex items-center gap-0.5 rounded-[18px] bg-[#1c1c22]/95 p-1.5 text-white shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
         <span onPointerDown={down} onPointerMove={move} onPointerUp={() => (dragFrom.current = null)} title="Drag to move" className="grid h-9 w-5 cursor-grab place-items-center text-white/40 active:cursor-grabbing">
           <GripVertical size={15} />
         </span>
@@ -140,7 +140,7 @@ export function DrawTools() {
         </Btn>
       </div>
       {palette && (
-        <div className="mt-1.5 flex items-center gap-1.5 self-center rounded-[16px] bg-[#1c1c22]/95 p-1.5 shadow-[0_8px_28px_rgba(0,0,0,0.5),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
+        <div className="mt-1.5 flex items-center gap-1.5 self-center rounded-[16px] bg-[#1c1c22]/95 p-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.4),inset_0_0_0_1px_rgba(255,255,255,0.1)]">
           {DRAW_COLORS.map((c) => (
             <button
               key={c}
